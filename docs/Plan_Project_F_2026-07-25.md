@@ -190,15 +190,15 @@ Phân bố call theo thiết kế `enrichment_graph` (5/8 node không gọi LLM)
 **Gate M0**: `make dev` dựng được Postgres + chạy migration; `make test` xanh; `make lint` sạch;
 CI badge xanh trên push đầu tiên; `pip install -e ".[dev]"` chạy được từ clone sạch.
 
-**Trạng thái gate (2026-07-26)** — 3/5 đạt:
+**Trạng thái gate (2026-07-26)** — 4/5 đạt:
 
 | Điều kiện | | Bằng chứng |
 |---|:---:|---|
 | `make dev` → Postgres + migration | ✅ | 2 schema `app`+`langgraph` tạo được, `vector` ở `public`, `alembic upgrade head` chạy, `alembic_version` nằm ở `app` |
 | `make test` xanh | ✅ | 42 passed |
 | `make lint` sạch | ✅ | ruff `All checks passed` + mypy `no issues found` |
-| CI badge xanh trên push đầu | 🔲 | chưa commit, chưa có repo GitHub, máy chưa cài `gh` |
-| `pip install -e` từ clone sạch | 🔲 | phụ thuộc commit đầu tiên |
+| `pip install -e` từ clone sạch | ✅ | `git clone` vào thư mục tạm → `uv venv` → `uv pip install -e ".[dev]"` → 42 passed. Không thiếu file nào |
+| CI badge xanh trên push đầu | 🔲 | commit đầu `e2d4cb5` đã có (33 file, **local only**). Chưa có repo GitHub, máy chưa cài `gh` |
 
 **Artefact**: repo có CI xanh — điểm khởi đầu để mọi commit sau đo được.
 
