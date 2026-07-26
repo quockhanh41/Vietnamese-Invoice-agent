@@ -1,0 +1,28 @@
+flowchart TD
+    %% Styling
+    classDef startStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
+    classDef pythonStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
+    classDef llmStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#bf360c;
+    classDef decisionStyle fill:#fffde7,stroke:#fbc02d,stroke-width:2px,color:#f57f17;
+    classDef endStyle fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#880e4f;
+
+    START([Bắt đầu: Input Invoice File]):::startStyle --> RS{"route_source: Phân loại định dạng"}:::pythonStyle
+
+    RS -->|Có File XML chuẩn QĐ-1450| PX["parse_xml (Python Parser)<br/>• Fast (<10ms), Cost = $0<br/>• Parse thẻ XML TCT chính xác 100%"]:::pythonStyle
+    RS -->|Chỉ có File PDF Scan| VE["vision_extract (LLM Vision)<br/>• Prompt trích xuất JSON<br/>• Inject current_errors nếu Retry"]:::llmStyle
+
+    PX --> VAL["validate (Python Validation)<br/>• Kiểm tra Tổng tiền = Tiền hàng + VAT<br/>• Checksum MST & Đọc Tiền bằng chữ"]:::pythonStyle
+    VE --> VAL
+
+    VAL --> RAV{"route_after_validate: Phân loại lỗi"}:::decisionStyle
+
+    RAV -->|Lỗi EXTRACTION & attempts < 3| VE
+    RAV -->|Lỗi EXTRACTION & attempts >= 3| MQ["manual_queue<br/>Bỏ cuộc có kiểm soát (Manual Review)"]:::endStyle
+    RAV -->|Sạch 100% HOẶC Lỗi DATA| CLS["classify (LLM Rẻ)<br/>• Gán Category (Loại chi phí)<br/>• Gán Department (Phòng ban)<br/>• Tra cứu Vendor Memory"]:::llmStyle
+
+    CLS --> AUD["audit (LLM Khác Họ Model)<br/>• Phản biện kết quả classify<br/>• Chống điểm mù (Failure Mode)"]:::llmStyle
+
+    AUD --> SIG["signals (Python Anomaly Signals)<br/>• NEW_VENDOR: NCC mới<br/>• PRICE_OUTLIER: z-score giá cao<br/>• NEAR_DUPLICATE: Trùng 48h"]:::pythonStyle
+
+    SIG --> END([Kết thúc: Trả về EnrichmentState]):::startStyle
+    MQ --> END

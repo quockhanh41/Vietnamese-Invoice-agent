@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Environment — KHÔNG BAO GIỜ commit key.
+# Bài học từ Project A: .claude/settings.json ở đó chứa LANGFUSE_SECRET_KEY
+# plaintext. May là .claude/ đã bị ignore nên key chưa vào git history, nhưng
+# đó là may chứ không phải thiết kế. Ở đây ignore từ đầu + gitleaks trong CI.
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# Test / tooling cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Docker volume
+postgres_data/
+
+# LLM replay fixtures là artefact sinh ra, không phải source.
+# (Ngoại lệ: fixture đã curate cho CI thì commit — xem tests/fixtures/llm_cache/)
+tests/fixtures/llm_cache/*.tmp
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

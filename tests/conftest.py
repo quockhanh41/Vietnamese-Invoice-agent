@@ -1,0 +1,16 @@
+"""Global test config — deterministic observability baseline.
+
+Chạy TRƯỚC mọi import của test module (pytest load conftest.py sớm nhất).
+`observability.py` quyết định bật/tắt tracing **ngay lúc import**, và
+`config.py` đọc file `.env`, nên nếu không có mấy dòng dưới đây thì key
+Langfuse thật của máy dev sẽ rò vào test session và test bắn trace lên cloud.
+
+Trick copy từ Project A `tests/conftest.py` — pydantic-settings và
+`load_dotenv()` đều KHÔNG override env var đã tồn tại, nên set ở đây là thắng.
+"""
+
+import os
+
+os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
+os.environ.pop("LANGFUSE_PUBLIC_KEY", None)
+os.environ.pop("LANGFUSE_SECRET_KEY", None)

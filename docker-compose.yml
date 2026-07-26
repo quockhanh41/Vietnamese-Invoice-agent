@@ -1,0 +1,31 @@
+# MỘT service. Không Redis, không Qdrant.
+#
+# Project A dùng Redis vì có session/cache thật; ở đây nó không có việc gì làm.
+# Vector search (nếu tới M7) đi bằng pgvector trong chính database này.
+# Một service không có việc là một gánh nặng — xem plan §4.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: invoice-agent-postgres
+    environment:
+      POSTGRES_USER: invoice
+      POSTGRES_PASSWORD: invoice
+      POSTGRES_DB: invoice_agent
+    ports:
+      # 5433 chứ không phải 5432: máy dev thường đã có Postgres chạy sẵn ở
+      # cổng mặc định. Đổi ở đây thì phải đổi cả DATABASE_URL trong config.py.
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      # `make dev` chờ healthcheck này rồi mới chạy migration — không có nó thì
+      # migration chạy trước khi Postgres nhận connection và fail ngẫu nhiên.
+      test: ["CMD-SHELL", "pg_isready -U invoice -d invoice_agent"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres_data:

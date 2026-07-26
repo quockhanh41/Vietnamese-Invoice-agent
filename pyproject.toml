@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vietnamese-invoice-agent"
+version = "0.1.0"
+description = "Agent xử lý hóa đơn điện tử & chi phí Việt Nam — LangGraph + HITL + Postgres"
+readme = "README.md"
+# Python hệ thống của máy dev là 3.9.6 — KHÔNG đủ. Dùng python3.13 (3.13.7).
+requires-python = ">=3.13"
+
+dependencies = [
+    # ── Nhóm load-bearing: PIN CHẶT ────────────────────────────────────────
+    # Correctness của cả dự án rơi vào checkpointer + interrupt semantics.
+    # Bump là một quyết định có chủ đích kèm test HITL durability xanh
+    # (nguyên tắc 6, docs/Plan_Project_F_2026-07-25.md §0), không phải `pip -U`.
+    "langgraph==1.2.9",
+    "langgraph-checkpoint-postgres==3.1.0",
+
+    # ── Nhóm còn lại: để floor ─────────────────────────────────────────────
+    # fastapi ≥0.140 là BẮT BUỘC, không phải sở thích: fastapi <0.137 cap
+    # starlette<0.50, xung đột fastmcp 3.x (cần starlette>=1.0.1). Hạ xuống
+    # dưới 0.140 thì MCP server ở M7 phải chạy process riêng.
+    "fastapi>=0.140",
+    "uvicorn[standard]>=0.30.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "psycopg[binary,pool]>=3.2.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.6.0",
+    "litellm>=1.50.0",
+    # langfuse latest là 4.x nhưng observability.py copy nguyên vẹn từ Project A
+    # được viết cho SDK v3. Lên 4.x là một cuộc migration, không phải bump.
+    "langfuse>=3.15,<4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/invoice_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+# E501 (dòng dài) tắt vì comment tiếng Việt giải thích "vì sao" đáng giá hơn
+# việc gói dòng cho đẹp — line-length vẫn được formatter tôn trọng.
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.13"
+packages = ["invoice_agent"]
+mypy_path = "src"
+warn_unused_configs = true
+warn_redundant_casts = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+# litellm không ship type stub.
+module = ["litellm.*", "langfuse.*"]
+ignore_missing_imports = true

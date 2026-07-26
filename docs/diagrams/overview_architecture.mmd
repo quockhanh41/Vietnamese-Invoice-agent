@@ -1,0 +1,50 @@
+flowchart TB
+    %% Styling
+    classDef batchStyle fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#01579b;
+    classDef enrichStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#e65100;
+    classDef approvalStyle fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#1b5e20;
+    classDef actionStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c;
+
+    subgraph BATCH ["1. BATCH GRAPH (Vài phút / Đơn vị công việc)"]
+        direction TB
+        B1["ingest: Đọc ZIP / List File XML"] --> B2["cost_gate: Kiểm tra Token & Budget Cap"]
+        B2 --> B3["fan_out: Tạo list Send() × N"]
+    end
+
+    subgraph ENRICH ["2. ENRICHMENT GRAPH (Subgraph cho 1 Hóa đơn)"]
+        direction TB
+        E1{"route_source"} -->|XML| E2["parse_xml"]
+        E1 -->|PDF| E3["vision_extract"]
+        E2 --> E4["validate: Kiểm tra số học"]
+        E3 --> E4
+        E4 --> E5{"route_after_validate"}
+        E5 -->|Extraction Error| E3
+        E5 -->|Hết lượt / PDF mờ| E6["manual_queue"]
+        E5 -->|Sạch / Data Error| E7["classify: LLM Phân loại"]
+        E7 --> E8["audit: LLM Phản biện (Model khác họ)"]
+        E8 --> E9["signals: Code Python gắn Cờ Anomaly"]
+    end
+
+    subgraph APPR ["3. APPROVAL GRAPH (Vài giờ - vài ngày / Đơn vị chú ý)"]
+        direction TB
+        A1["load_snapshot: Đọc dữ liệu & cờ"] --> A2["suggest: Tra cứu Episodic Memory"]
+        A2 --> A3["approval_gate: ⏸ interrupt() - Chờ Kế toán"]
+        A3 -->|"Resume Command"| A4["apply_decision: Lưu quyết định"]
+        A4 --> A5{"Quyết định?"}
+        A5 -->|Approved| A6["post_entry: Hạch toán Nợ/Có"]
+        A5 -->|Rejected| A7["record_rejection: Đánh dấu Từ chối"]
+        A6 --> A8["learn: Cập nhật Memory"]
+        A7 --> A8
+    end
+
+    B3 -->|"Send() × N"| E1
+    E9 --> B4["reconcile_budget: SERIAL Join theo phòng ban"]
+    E6 --> B4
+    B4 --> B5{"route_outcomes"}
+    B5 -->|26 Hóa đơn Sạch| ACT1["auto_post: Post trực tiếp Sổ cái"]:::actionStyle
+    B5 -->|4 Hóa đơn Có Cờ| ACT2["Ghi DB approvals & Mở Thread Approval"]:::actionStyle
+    ACT2 -.->|"Khởi tạo Thread appr:inv_id"| A1
+
+    class BATCH batchStyle;
+    class ENRICH enrichStyle;
+    class APPR approvalStyle;

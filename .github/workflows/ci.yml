@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      # Postgres THẬT, không sqlite/mock. Cả dự án này đứng trên hành vi thật
+      # của Postgres — CHECK constraint, REVOKE, schema isolation, checkpointer.
+      # Test trên sqlite là test một hệ thống khác.
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: invoice
+          POSTGRES_PASSWORD: invoice
+          POSTGRES_DB: invoice_agent
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U invoice -d invoice_agent"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://invoice:invoice@localhost:5433/invoice_agent
+      # KHÔNG có API key nào trong CI, và đó là chủ ý: LLM_MODE=replay đọc
+      # fixture cache thay vì gọi mạng (design doc §11.4). CI xanh mà không có
+      # secret nghĩa là fork PR cũng chạy được test, và test không thể hỏng vì
+      # rate limit của người khác.
+      LLM_MODE: replay
+      LANGFUSE_TRACING_ENABLED: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks cần lịch sử để quét commit, không chỉ cây làm việc.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies (từ lock, không resolve lại)
+        run: |
+          uv venv --python 3.13
+          uv pip sync requirements.lock
+          uv pip install -e ".[dev]" --no-deps
+
+      - name: Init schemas app + langgraph
+        # `services:` không chạy docker-entrypoint-initdb.d, nên init_db.sql
+        # phải được áp thủ công ở đây.
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+          PGPASSWORD=invoice psql -h localhost -p 5433 -U invoice -d invoice_agent -v ON_ERROR_STOP=1 -f scripts/init_db.sql
+
+      - name: Lint (ruff)
+        run: uv run ruff check src tests migrations
+
+      - name: Typecheck (mypy)
+        run: uv run mypy
+
+      - name: Test (pytest)
+        run: uv run pytest
+
+  secrets:
+    # Job riêng: rò key là lỗi bảo mật, không phải lỗi test. Tách ra thì log
+    # đọc rõ hơn và job này không bị bỏ qua khi test đỏ.
+    #
+    # Bài học từ Project A: `.claude/settings.json` ở đó chứa
+    # LANGFUSE_SECRET_KEY plaintext. May là `.claude/` đã bị gitignore nên key
+    # chưa vào history — nhưng đó là may, không phải thiết kế.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

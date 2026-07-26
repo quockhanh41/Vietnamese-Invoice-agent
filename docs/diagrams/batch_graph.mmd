@@ -1,0 +1,37 @@
+sequenceDiagram
+    autonumber
+    actor User as User / API Client
+    participant BG as batch_graph Engine
+    participant EG as enrichment_graph (x N)
+    participant BDB as Postgres DB (app.budgets)
+    participant APDB as Postgres DB (app.approvals)
+    participant JDB as Postgres DB (app.journal_entries)
+
+    User->>BG: Upload Batch File (VD: 30 Hóa đơn)
+    BG->>BG: 1. ingest: Đọc danh sách file
+    BG->>BG: 2. cost_gate: Kiểm tra Token Limit & Budget Cap
+    
+    Note over BG,EG: 3. Fan-out N tasks Send() song song (max_concurrency = 4..6)
+    par Xử lý Hóa đơn 1..N
+        BG->>EG: enrich_one(inv_1)
+        BG->>EG: enrich_one(inv_2)
+        BG->>EG: ...
+        BG->>EG: enrich_one(inv_N)
+    end
+    EG-->>BG: Trả về kết quả N EnrichmentState
+    
+    Note over BG,BDB: 4. reconcile_budget: SERIAL Join theo phòng ban
+    loop Lần lượt từng phòng ban & thứ tự (issue_date, series, number)
+        BG->>BDB: SELECT ... FOR UPDATE (Lock dòng ngân sách)
+        BG->>BG: Trừ dần số dư & Bật cờ BUDGET_BREACH nếu âm
+        BG->>BDB: Ghi log budget_consumption
+    end
+
+    Note over BG,JDB: 5. route_outcomes: Phân nhánh kết quả
+    par Hóa đơn Sạch (VD: 26 cái)
+        BG->>JDB: auto_post(): Ghi bút toán Nợ/Có trực tiếp Sổ cái
+    and Hóa đơn Có Cờ (VD: 4 cái)
+        BG->>APDB: Ghi row approvals & Khởi tạo Thread approval_graph (appr:inv_id)
+    end
+    
+    BG-->>User: Hoàn tất Batch (26 Sạch đã post, 4 đang chờ Kế toán duyệt)

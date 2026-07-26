@@ -1,0 +1,27 @@
+flowchart TD
+    %% Styling
+    classDef startStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1;
+    classDef nodeStyle fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c;
+    classDef interruptStyle fill:#ffe0b2,stroke:#f57c00,stroke-width:3px,color:#e65100;
+    classDef checkStyle fill:#fffde7,stroke:#fbc02d,stroke-width:2px,color:#f57f17;
+    classDef postStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20;
+    classDef rejStyle fill:#ffebee,stroke:#c62828,stroke-width:2px,color:#b71c1c;
+
+    START([Kích hoạt Thread: appr:invoice_id]):::startStyle --> LOAD["load_snapshot<br/>Đọc dữ liệu hóa đơn & danh sách cờ từ DB"]:::nodeStyle
+    LOAD --> SUG["suggest<br/>Tra cứu Episodic Memory (SQL + pgvector)<br/>Gợi ý các ca tương tự từng duyệt"]:::nodeStyle
+
+    SUG --> GATE["approval_gate: ⏸ interrupt()<br/>• State ghi checkpoint xuống Postgres (schema langgraph)<br/>• Process có thể kill / Restart server không mất data<br/>• Thread treo chờ Kế toán bấm Duyệt"]:::interruptStyle
+
+    GATE -.->|"Kế toán duyệt trên UI / MCP Client<br/>Gửi Command(resume=decision, reason)"| RESUME["Graph Resume chạy tiếp từ Node apply_decision"]:::nodeStyle
+
+    RESUME --> AD["apply_decision<br/>Lưu kết quả duyệt vào DB app.approvals"]:::nodeStyle
+    AD --> DEC{"Quyết định?"}:::checkStyle
+
+    DEC -->|Approved| PE["post_entry (Bảo mật 3 Lớp)<br/>1. Check state decision == approved<br/>2. Verify DB app.approvals record<br/>3. Ghi bút toán Nợ/Có vào app.journal_entries"]:::postStyle
+
+    DEC -->|Rejected| RR["record_rejection<br/>Đánh dấu Hóa đơn Từ chối trong app.invoices"]:::rejStyle
+
+    PE --> LRN["learn<br/>• Ghi lý do vào episodic_decisions (vector embedding)<br/>• Cập nhật Vendor Notes nếu Kế toán sửa field"]:::nodeStyle
+    RR --> LRN
+
+    LRN --> END([Kết thúc Thread Approval]):::startStyle
