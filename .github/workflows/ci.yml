@@ -66,14 +66,20 @@ jobs:
           sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
           PGPASSWORD=invoice psql -h localhost -p 5433 -U invoice -d invoice_agent -v ON_ERROR_STOP=1 -f scripts/init_db.sql
 
+      # `.venv/bin/…` chứ KHÔNG phải `uv run …`: trong thư mục có pyproject.toml
+      # `[project]`, `uv run` vào project mode, sinh `uv.lock` và **re-resolve
+      # từ pyproject** — tức là ném đi cái `uv pip sync requirements.lock` ở
+      # trên và cài version khác. Đo được 2026-07-26: uv run tạo uv.lock 497KB.
+      # Lock chỉ có nghĩa nếu không ai resolve lại sau nó.
+      # Cùng lệnh với Makefile, nên CI chạy đúng thứ dev chạy.
       - name: Lint (ruff)
-        run: uv run ruff check src tests migrations
+        run: .venv/bin/ruff check src tests migrations
 
       - name: Typecheck (mypy)
-        run: uv run mypy
+        run: .venv/bin/mypy
 
       - name: Test (pytest)
-        run: uv run pytest
+        run: .venv/bin/python -m pytest
 
   secrets:
     # Job riêng: rò key là lỗi bảo mật, không phải lỗi test. Tách ra thì log
@@ -86,7 +92,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # gitleaks quét lịch sử, không phải cây làm việc — cần full history.
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # CLI trực tiếp, KHÔNG dùng `gitleaks/gitleaks-action@v2`.
+      #
+      # Action đó quét theo *range của từng push*: nó dựng
+      #   --log-opts=--no-merges --first-parent <commits[0].id>^..<head>
+      # Hai hệ quả, cả hai đều đã cắn repo này:
+      #
+      # 1. Push đầu tiên chứa commit gốc, mà commit gốc không có parent →
+      #    `<root>^` là revision không tồn tại → job đỏ. Đây chính là lỗi CI
+      #    ngày 2026-07-26.
+      # 2. Cách vá bằng `BASE_REF` làm baseRef == headRef, và khi đó action
+      #    chuyển sang `--log-opts=-1` → quét ĐÚNG MỘT commit. Commit gốc
+      #    (33 file) không bao giờ được quét, và vì push handler chỉ nhìn
+      #    range của chính nó, sẽ không push nào quét nó nữa. `before` cũng
+      #    là 0000… ở MỌI lần push branch mới, nên lỗ này lặp lại chứ không
+      #    phải chỉ xảy ra một lần.
+      #
+      # `gitleaks detect` không kèm --log-opts quét TOÀN BỘ history. Với repo
+      # cỡ này tốn dưới 1 giây, và không có edge case nào để nhớ.
+      # Exit code 1 khi tìm thấy leak → job đỏ, đúng mong muốn.
+      - name: gitleaks (toàn bộ history)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
+            detect --source=/repo --redact -v

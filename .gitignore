@@ -16,6 +16,11 @@ venv/
 !.env.example
 .claude/settings.local.json
 
+# uv.lock — repo này khoá version bằng `requirements.lock` (uv pip compile).
+# `uv run` tự sinh uv.lock và re-resolve từ pyproject, tạo lock thứ hai lệch
+# với cái đầu. Một nguồn sự thật thôi; CI gọi thẳng .venv/bin/… để tránh hẳn.
+uv.lock
+
 # Test / tooling cache
 .pytest_cache/
 .mypy_cache/
