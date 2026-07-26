@@ -14,8 +14,16 @@ venv/
 # PDF cũng bị chặn: nhà cung cấp gửi ZIP chứa CẢ .xml lẫn .pdf, và bản PDF mang
 # đúng PII đó ở dạng người đọc được + QR tra cứu. M3.4 có cần mẫu PDF cho nhánh
 # vision, nhưng phải là bản đã ẩn danh đặt trong tests/fixtures/.
-/*.xml
-/*.pdf
+# KHÔNG neo `/` — nhà cung cấp giao hóa đơn trong THƯ MỤC (vd
+# PC06BB0378706…/ chứa .xml + 2 bản .pdf). Neo root chỉ chặn được file rời và
+# để lọt nguyên thư mục; đã suýt lọt 2 PDF có số CCCD vì lỗi này.
+# Bản ẩn danh nằm dưới tests/ nên được whitelist lại ngay bên dưới.
+*.xml
+*.pdf
+*.zip
+!tests/**/*.xml
+!tests/**/*.pdf
+!docs/**/*.pdf
 invoices_raw/
 
 # Environment — KHÔNG BAO GIỜ commit key.
