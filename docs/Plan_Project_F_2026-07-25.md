@@ -1,6 +1,6 @@
 # 🧾 Roadmap Project F — Vietnamese Invoice & Expense Agent
 
-> **Ngày lập**: 2026-07-25 · **Cập nhật §1**: 2026-07-26 · **Trạng thái**: bản sống — cập nhật sau mỗi milestone
+> **Ngày lập**: 2026-07-25 · **Cập nhật §1**: 2026-07-27 · **Trạng thái**: bản sống — cập nhật sau mỗi milestone
 > **Tiền đề**: đọc kèm [`project-f-system-design.md`](project-f-system-design.md) (thiết kế đầy đủ),
 > [`project-b-additional-candidates.md`](../../phase-5-agentic-ai/project-b-additional-candidates.md)
 > (vì sao chọn F — nằm ngoài repo này, ở `phase-5-agentic-ai/`),
@@ -49,46 +49,53 @@
 
 ## 1. Vị trí hiện tại (tóm tắt 1 đoạn)
 
-**Cập nhật 2026-07-26 — M0 đã làm xong, M1 chưa bắt đầu.** Repo đã `git init` riêng (được ignore
-trong repo `LLM/`, đúng pattern của `vietnamese-legal-bot`), src-layout `src/invoice_agent/` cài
-bằng `uv pip install -e ".[dev]"` — **không file nào cần `sys.path.insert`**. Chạy được:
-`make dev` (Postgres 17 + pgvector, healthcheck, 2 schema `app`/`langgraph`, `alembic upgrade head`
-với `alembic_version` hạ cánh đúng schema `app`) và `make check` (**ruff sạch + mypy sạch + 42 test
-xanh**). Đã có: `config.py` (`pydantic-settings`, `NoDecode` + validator tách CSV), `gateway.py`
-port từ Project A nhưng **nhận `Settings` thay vì tự `os.getenv`**, `observability.py` copy nguyên
-vẹn 41 dòng, `requirements.lock` 333 dòng sinh bằng `uv`, CI workflow (ruff/mypy/pytest trên
-Postgres thật + gitleaks job riêng), `CLAUDE.md`, `.env.example`. **Ba ràng buộc dependency đã
-verify LIVE lần này, không phải nhớ lại**: `fastapi 0.140.0 → starlette 1.3.1` (≥1.0.1 nên fastmcp
-3.x dùng chung process được), `langfuse 3.15.0` (<4.0.0, khớp SDK v3 của `observability.py`),
-`langgraph 1.2.9 + langgraph-checkpoint-postgres 3.1.0`.
+**Cập nhật 2026-07-27 — M0 xong, M1 đang mở (1.1 + 1.2 đạt, 1.3–1.6 chưa).**
 
-**Còn thiếu để đóng gate M0**: chưa `git commit`, chưa có repo GitHub nên **chưa có CI badge xanh**
-và chưa test được `pip install -e` từ clone sạch. Máy chưa cài `gh` CLI.
+**M0 — nền chạy được.** Repo `git init` riêng, đã push lên
+`github.com/quockhanh41/Vietnamese-Invoice-agent` (private). src-layout `src/invoice_agent/` cài
+bằng `uv pip install -e ".[dev]"` — **không file nào cần `sys.path.insert`**. `make dev` dựng
+Postgres 17 + pgvector, 2 schema `app`/`langgraph`, `alembic upgrade head` với `alembic_version`
+hạ cánh đúng schema `app`. `make check` = ruff sạch + mypy sạch + **42 test xanh**. Có `config.py`
+(`pydantic-settings`, `NoDecode` + validator tách CSV), `gateway.py` port từ Project A nhưng
+**nhận `Settings` thay vì tự `os.getenv`**, `observability.py` copy nguyên vẹn 41 dòng,
+`requirements.lock`, CI (ruff/mypy/pytest trên Postgres thật + gitleaks quét full history),
+`CLAUDE.md`, `.env.example`. **Ba ràng buộc dependency verify LIVE**: `fastapi 0.140.0 →
+starlette 1.3.1`, `langfuse 3.15.0` (<4.0.0), `langgraph 1.2.9 + checkpoint-postgres 3.1.0`.
 
-**Còn ở project khác, CHƯA port** (tính vào scope M3, không phải "đã có"):
-`execute_tool_with_retry` + `DISPATCH_TABLE` ở
-`../phase-5-agentic-ai/react-pattern-tool-use/mini-project/agent.py` — xử lý đúng 4 failure mode
-thật, port ở M3.2 và **bỏ hàm calculator dùng `eval()`**. Cộng ~49 file `.mmd` diagram (44 ở
-phase-5 + 5 ở Project A) và convention milestone-có-gate + `docs/superpowers/{specs,plans}`.
+**M1.1 + 1.2 — đạt gấp bội.** `tests/fixtures/real_samples/` có **8 hóa đơn thật, 8 nhà cung cấp,
+3 phiên bản schema**, đều đã ẩn danh (4 file cuối là hóa đơn người nhà, có sự đồng ý). Chúng
+**bác bỏ 10 giả định** của bảng M1.2 gốc và cho ra **luật validation đo được 8/8** — xem bảng
+"Thực tế vs giả định" ở M1 và README của thư mục fixtures. Đây là toàn bộ giá trị của gate cứng:
+nếu viết parser theo trí nhớ thì generator cũng sinh XML khớp luật sai đó, 300/300 pass, và
+report ghi `false-positive rate 0%` — một con số bịa.
 
-**Chưa từng viết bao giờ** (phải tính vào scope, không phải copy): `interrupt()` / `Command(resume=)`
-hiện đại — module `human-in-the-loop/` chỉ có prose, `support_agent.py` dùng `interrupt_before` cũ và
-LLM đều mock; `PostgresSaver` — mới chỉ wire `MemorySaver`; `Send`/fan-out — zero code; MCP server —
-chỉ có sketch 19 dòng; multi-agent supervisor — zero code; LangFuse cho *agent* — module dạy
-LangSmith, zero code LangFuse; cost tracking — Project A **hoàn toàn không có** (dashboard hardcode
-`$0.00`).
-**Nợ kỹ thuật kế thừa — trạng thái xử lý**: ✅ `os.getenv` rải rác + `_get_model_chain` trùng ở 2
-file → đã gom vào một `config.py` với `pydantic-settings` (M0.2); ✅ `sys.path.insert` ở mọi file →
-đã hết nhờ src-layout (M0.1); ✅ không lint/typecheck/CI-on-push → đã có ruff + mypy + CI (M0.6);
-🔲 `main.py` 643 dòng với `routes/` rỗng → tách routes thật, đến M5.6 mới làm.
-**⚠️ Đính chính (kiểm tra 2026-07-26)**: bản roadmap đầu ghi `vietnamese-legal-bot/.claude/settings.json`
-"đang commit Langfuse key plaintext" — **sai**. File có chứa `LANGFUSE_SECRET_KEY` plaintext nhưng
-`.gitignore:33` đã loại cả thư mục `.claude/`, và `git log --all -- .claude/settings.json` trả về
-**rỗng** ở cả hai repo → key **chưa bao giờ vào lịch sử git**. Vẫn nên chuyển sang
-`settings.local.json` / env var cho sạch, nhưng đây là việc vệ sinh, **không phải sự cố rò rỉ** và
-không cần rotate gấp.
+**Chưa làm, theo đúng thứ tự**: 1.3 `xml_schema.py` · 1.4 `xml_parser.py` · 1.5 spike HITL
+(`interrupt()` + `PostgresSaver` + `kill -9` + resume — **không phụ thuộc XML, làm song song
+được**) · 1.6 verify `include_object` với bảng checkpoint thật + ADR.
 
-**Bước kế tiếp thực sự**: M0.1 — `git init` repo riêng + dựng src-layout. Không có gì trước nó.
+**Còn ở project khác, CHƯA port** (tính vào scope M3): `execute_tool_with_retry` +
+`DISPATCH_TABLE` ở `../phase-5-agentic-ai/react-pattern-tool-use/mini-project/agent.py` — port ở
+M3.2 và **bỏ hàm calculator dùng `eval()`**.
+
+**Chưa từng viết bao giờ** (phải tính vào scope, không phải copy): `interrupt()` /
+`Command(resume=)` hiện đại — module `human-in-the-loop/` chỉ có prose, `support_agent.py` dùng
+`interrupt_before` cũ và LLM đều mock; `PostgresSaver` — mới chỉ wire `MemorySaver`; `Send`/fan-out
+— zero code; MCP server — chỉ có sketch 19 dòng; LangFuse cho *agent* — module dạy LangSmith, zero
+code LangFuse; cost tracking — Project A **hoàn toàn không có** (dashboard hardcode `$0.00`).
+
+**Nợ kỹ thuật kế thừa**: ✅ `os.getenv` rải rác → một `config.py` (M0.2) · ✅ `sys.path.insert` →
+src-layout (M0.1) · ✅ không lint/typecheck/CI → đã có (M0.6) · 🔲 `main.py` 643 dòng với `routes/`
+rỗng → tách routes thật, đến M5.6.
+
+**⚠️ Bài học bảo mật của chính repo này**: hóa đơn thật mang PII **và** chứng thư số, mà
+**gitleaks không bắt được PII** — nó tìm token. `.gitignore` là lớp phòng thủ duy nhất, và nó
+**đã từng thủng**: neo `/*.xml` chỉ chặn file rời ở root, để lọt nguyên thư mục nhà cung cấp gửi
+kèm 2 PDF có số CCCD (vá ở `bb8718d`). Đính chính một cảnh báo cũ: bản roadmap đầu ghi
+`vietnamese-legal-bot/.claude/settings.json` "đang commit Langfuse key plaintext" — **sai**,
+`.claude/` đã bị gitignore và `git log --all` trả về rỗng; key chưa bao giờ vào history.
+
+**Bước kế tiếp**: 1.3 `xml_schema.py` viết theo 8 file thật, hoặc 1.5 spike HITL trước — hai việc
+độc lập nhau.
 
 ---
 
