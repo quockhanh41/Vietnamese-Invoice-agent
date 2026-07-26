@@ -211,12 +211,53 @@ phải tuần 5. Đây là milestone dồn rủi ro lên đầu — không làm 
 
 | # | Việc | Tham chiếu |
 |---|---|---|
-| 1.1 | **Kiếm 2–3 file XML hóa đơn điện tử THẬT** — Viettel Invoice / VNPT / MISA meInvoice / BKAV eHoadon đều publish sample; cổng TCT có phụ lục QĐ-1450. Commit vào `tests/fixtures/real_samples/` | §12 R1 |
-| 1.2 | **Đối chiếu cấu trúc**: `TDiep` → `TTChung`/`DLieu` → `HDon` → `DLHDon` → `TTChung`(`KHMSHDon`, `KHHDon`, `SHDon`, `NLap`) + `NDHDon`(`NBan`, `NMua`, `DSHHDVu`, `TToan`); line: `TChat`, `STT`, `THHDVu`, `DVTinh`, `SLuong`, `DGia`, `ThTien`, `TSuat`. **Kiểm tra NĐ 70/2025/NĐ-CP** (sửa NĐ 123/2020, hiệu lực 01/06/2025) có đổi field nào | §12 R1 |
+| 1.1 | 🟡 **Kiếm 2–3 file XML THẬT.** Đã có **1/3** — `tests/fixtures/real_samples/vnpt_hoadon_banhang_2.1.0.xml` (VNPT, đã ẩn danh 2026-07-26, xem README thư mục đó). **Còn thiếu, ưu tiên theo thứ tự**: (a) một **hóa đơn GTGT** `KHMSHDon=1` — mẫu đang có là hóa đơn bán hàng trực tiếp, **không có trường thuế nào**, mà cả pipeline thuế + TT133 xoay quanh GTGT; (b) nhà cung cấp khác (Viettel/MISA/BKAV); (c) hóa đơn nhiều dòng hàng | §12 R1 |
+| 1.2 | ✅ **Đối chiếu cấu trúc — ĐÃ LÀM 2026-07-26, và giả định cũ SAI 4 chỗ.** Xem bảng "Thực tế vs giả định" ngay dưới bảng này. Vẫn còn phải **kiểm tra NĐ 70/2025/NĐ-CP** (sửa NĐ 123/2020, hiệu lực 01/06/2025) và đối chiếu lại khi có mẫu GTGT | §12 R1 |
 | 1.3 | `xml_schema.py` — **một nơi duy nhất** chứa element path + namespace. Viết theo file thật *trước*, generator sẽ viết *sau* và **độc lập** (đây là cơ chế chống eval tuần hoàn) | §10.1 |
 | 1.4 | `xml_parser.py` deterministic, parse được 2–3 file thật | §3.2 |
 | 1.5 | **Spike HITL**: graph 3 node + `interrupt()` + `PostgresSaver` ở schema `langgraph`. Chạy → dừng → `kill -9` → khởi động lại → `Command(resume=)` → hoàn tất | §5.2 |
 | 1.6 | Xử luôn **va chạm Alembic**: `include_object` trong `migrations/env.py` loại schema `langgraph` (không có nó, `--autogenerate` sinh `DROP TABLE checkpoints`), `version_table_schema='app'`. **Ghi ADR ngay hôm chạy được** | §2.10 |
+
+#### Thực tế vs giả định — đo trên file thật 2026-07-26
+
+Bảng cấu trúc ở M1.2 bản đầu **viết theo trí nhớ về QĐ-1450 và sai 4 chỗ**. Đây chính là thứ mà
+gate "phải có XML thật" tồn tại để bắt. Ghi lại vì nó là nội dung ADR, không phải lỗi cần giấu.
+
+| Giả định cũ | Thực tế trên file VNPT | Hậu quả nếu không biết |
+|---|---|---|
+| `TDiep → TTChung/DLieu → HDon → …` | **Không có `TDiep`.** Root là `HDon` thẳng; con của root là `DLHDon`, `MCCQT`, `DSCKS`, `Fkey` | Parser mong `TDiep` **fail 100% ngay file thật đầu tiên**. `TDiep` là phong bì khi truyền lên CQT, file giao cho người mua không có |
+| có namespace phải xử lý | Phần dữ liệu **không namespace**. Chỉ subtree `Signature` mang `xmlns=…xmldsig#` | XPath viết kèm namespace → không khớp node nào |
+| dòng hàng có `TSuat`, `DVTinh` | **Cả hai vắng mặt.** `KHMSHDon=2` = hóa đơn bán hàng theo phương pháp trực tiếp → không có trường thuế nào | Model bắt buộc `TSuat` → parse fail trên mọi hóa đơn không-GTGT. **Mọi field thuế phải Optional** |
+| `NMua` có `MST` | **Không có** — người mua là cá nhân. Chỉ `Ten`, `DChi`, `MKHang`, `DCTDTu` | Validator checksum MST ở M2.6 nổ trên hóa đơn bán lẻ |
+| *(không hề dự đoán)* | **`TTKhac`** — khối extension `(TTruong, KDLieu, DLieu)`, có ở **cả `TTChung` lẫn từng dòng hàng** | Xem ngay dưới — đây là phát hiện đắt nhất |
+
+**Bẫy validation, phát hiện đắt nhất:**
+
+```
+sum(ThTien) = 0          TgTTTBSo = 3.500.000        →  LỆCH
+tiền thật:  TTKhac/TTin[TTruong='Amount']/DLieu = 3500000
+```
+
+Validation `sum(ThTien) == TgTTTBSo` — đúng thứ nhóm defect "sai số học 6%" (§10.2) đang test — sẽ
+gắn cờ một hóa đơn **thật, hợp lệ, đã được Cục Thuế ký số** là sai số học. Đó là false positive
+trên hóa đơn sạch, chính là metric `flag false-positive rate ≤5%`.
+
+Và đây là cách vòng tuần hoàn giết dự án nếu không có file thật: parser viết theo trí nhớ sẽ chứa
+đúng validation đó; generator cũng sinh XML "đúng chuẩn" có `ThTien` khớp tổng; **300/300 pass**;
+bug chỉ lộ khi gặp hóa đơn thật — tức là không bao giờ, vì corpus toàn đồ tự sinh. Report sẽ ghi
+`false-positive rate 0%` và con số đó là bịa.
+
+**Chi tiết khác phải mã hoá vào `xml_schema.py`**: `<SLuong />`/`<DGia />`/`<TLCKhau />`/`<STCKhau />`
+rỗng dạng self-closing (parse ra `None`, không phải `0`); `TgTTTBChu` =
+`'Ba  triệu năm trăm ngàn đồng./.'` — **hai dấu cách**, **"ngàn"** không phải "nghìn", hậu tố `./.`
+(§10.3 dùng nó làm mã hoá độc lập thứ hai của tổng tiền → phải normalize trước khi so).
+Trường có mà plan không liệt kê: `PBan`, `MCCQT`, `Fkey`, `MSTTCGP`, `HDDCKPTQuan`, `DVTTe`, `TGia`,
+`HTTToan`, `THDon`, `MKHang`, `DCTDTu`, `STKNHang`, `TNHang`.
+
+**⚠️ Hóa đơn thật mang PII** (tên, email, mã khách hàng, MST, số tài khoản) **và chứng thư số thật**.
+gitleaks **không bắt được** — nó tìm token, không tìm PII. `.gitignore` chặn `/*.xml` và `/*.pdf` ở
+root; chỉ bản **đã ẩn danh** trong `tests/fixtures/real_samples/` mới được commit. Nguyên tắc ẩn danh:
+**giữ cấu trúc, thay giá trị** — kiểm chứng bằng cách so cây tag gốc vs ẩn danh phải giống hệt.
 
 **Gate M1**: `test_hitl_survives_restart.py` **xanh** (10/10 lần); 2–3 XML thật parse ra
 `InvoiceData` đúng; `alembic revision --autogenerate` trên schema đã có checkpoint **không** sinh ra
@@ -418,7 +459,7 @@ ngay; **mọi con số trong README trace được về `docs/eval-report.md` tr
 | Milestone | Trạng thái | Ngày xong | Ghi chú |
 |---|---|---|---|
 | M0 — Nền sạch | 🟡 | | Code + `make dev` + `make check` (42 test) xanh 2026-07-26. **Còn treo**: commit đầu + repo GitHub → chưa có CI badge, chưa test clone sạch. Alembic scaffolding làm luôn ở đây vì gate đòi "chạy migration" mà 0.1–0.7 không có hạng mục nào dựng nó |
-| M1 — XML thật + HITL spike | 🔲 | | **Gate cứng** — không qua thì không mở M2 |
+| M1 — XML thật + HITL spike | 🟡 | | **Gate cứng** — không qua thì không mở M2. 1.1 được 1/3 file (VNPT, non-GTGT); 1.2 xong và **bác bỏ 4 giả định** — xem bảng "Thực tế vs giả định". 1.3–1.6 chưa bắt đầu; `xml_schema.py` nên đợi có mẫu **hóa đơn GTGT** rồi hãy viết |
 | M2 — Corpus + schema + domain | 🔲 | | |
 | M3 — Extraction + tools + cost + replay | 🔲 | | |
 | M4 — Multi-agent + memory + serialization | 🔲 | | |

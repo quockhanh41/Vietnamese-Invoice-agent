@@ -7,6 +7,17 @@ dist/
 .venv/
 venv/
 
+# Hóa đơn THẬT chưa ẩn danh — KHÔNG BAO GIỜ commit.
+# Hóa đơn điện tử mang PII (tên, email, mã khách hàng, MST, số tài khoản) và cả
+# chứng thư số thật. gitleaks KHÔNG bắt được thứ này — nó tìm token, không tìm PII.
+# Bản đã ẩn danh nằm ở tests/fixtures/real_samples/ và được commit có chủ đích.
+# PDF cũng bị chặn: nhà cung cấp gửi ZIP chứa CẢ .xml lẫn .pdf, và bản PDF mang
+# đúng PII đó ở dạng người đọc được + QR tra cứu. M3.4 có cần mẫu PDF cho nhánh
+# vision, nhưng phải là bản đã ẩn danh đặt trong tests/fixtures/.
+/*.xml
+/*.pdf
+invoices_raw/
+
 # Environment — KHÔNG BAO GIỜ commit key.
 # Bài học từ Project A: .claude/settings.json ở đó chứa LANGFUSE_SECRET_KEY
 # plaintext. May là .claude/ đã bị ignore nên key chưa vào git history, nhưng
