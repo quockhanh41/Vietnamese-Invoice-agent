@@ -211,7 +211,7 @@ phải tuần 5. Đây là milestone dồn rủi ro lên đầu — không làm 
 
 | # | Việc | Tham chiếu |
 |---|---|---|
-| 1.1 | 🟡 **Kiếm 2–3 file XML THẬT.** Đã có **1/3** — `tests/fixtures/real_samples/vnpt_hoadon_banhang_2.1.0.xml` (VNPT, đã ẩn danh 2026-07-26, xem README thư mục đó). **Còn thiếu, ưu tiên theo thứ tự**: (a) một **hóa đơn GTGT** `KHMSHDon=1` — mẫu đang có là hóa đơn bán hàng trực tiếp, **không có trường thuế nào**, mà cả pipeline thuế + TT133 xoay quanh GTGT; (b) nhà cung cấp khác (Viettel/MISA/BKAV); (c) hóa đơn nhiều dòng hàng | §12 R1 |
+| 1.1 | ✅ **Kiếm 2–3 file XML THẬT — ĐẠT, có 4 file / 4 nhà cung cấp** trong `tests/fixtures/real_samples/` (ẩn danh 2026-07-26, xem README thư mục đó): VNPT bán hàng · **Viettel Post GTGT** · **Phong Vũ GTGT dạng `TDiep`, `PBan` 2.0.0** · Hộ KD có `DLQRCode` + dòng `TChat=4`. Phủ được: cả 2 dạng root, cả 2 `PBan`, cả GTGT lẫn không, 3 hình dạng MST. **Còn thiếu (không chặn gate)**: hóa đơn ≥3 dòng có giá trị, hóa đơn có chiết khấu ≠0, hóa đơn điều chỉnh/thay thế, MISA/BKAV | §12 R1 |
 | 1.2 | ✅ **Đối chiếu cấu trúc — ĐÃ LÀM 2026-07-26, và giả định cũ SAI 4 chỗ.** Xem bảng "Thực tế vs giả định" ngay dưới bảng này. Vẫn còn phải **kiểm tra NĐ 70/2025/NĐ-CP** (sửa NĐ 123/2020, hiệu lực 01/06/2025) và đối chiếu lại khi có mẫu GTGT | §12 R1 |
 | 1.3 | `xml_schema.py` — **một nơi duy nhất** chứa element path + namespace. Viết theo file thật *trước*, generator sẽ viết *sau* và **độc lập** (đây là cơ chế chống eval tuần hoàn) | §10.1 |
 | 1.4 | `xml_parser.py` deterministic, parse được 2–3 file thật | §3.2 |
@@ -223,36 +223,61 @@ phải tuần 5. Đây là milestone dồn rủi ro lên đầu — không làm 
 Bảng cấu trúc ở M1.2 bản đầu **viết theo trí nhớ về QĐ-1450 và sai 4 chỗ**. Đây chính là thứ mà
 gate "phải có XML thật" tồn tại để bắt. Ghi lại vì nó là nội dung ADR, không phải lỗi cần giấu.
 
-| Giả định cũ | Thực tế trên file VNPT | Hậu quả nếu không biết |
+> **Đính chính 2026-07-26 (n=1 → n=4).** Bản viết lúc mới có 1 file khẳng định *"Không có
+> `TDiep`, root là `HDon` thẳng"*. **Sai** — đó là kết luận rút từ một mẫu. File Phong Vũ có
+> root = **`TDiep`** → `TTChung` + `DLieu` → … → `HDon`. **Cả hai dạng đều tồn tại thật**;
+> bảng M1.2 gốc không sai, nó mô tả dạng phong bì. Parser phải **định vị `HDon`**, không được
+> giả định nó là root. Bài học chung: đừng tổng quát hoá từ một file — đó là lý do gate ghi
+> "2–3 file", không phải "1 file".
+
+| Giả định cũ | Thực tế trên 4 file | Hậu quả nếu không biết |
 |---|---|---|
-| `TDiep → TTChung/DLieu → HDon → …` | **Không có `TDiep`.** Root là `HDon` thẳng; con của root là `DLHDon`, `MCCQT`, `DSCKS`, `Fkey` | Parser mong `TDiep` **fail 100% ngay file thật đầu tiên**. `TDiep` là phong bì khi truyền lên CQT, file giao cho người mua không có |
-| có namespace phải xử lý | Phần dữ liệu **không namespace**. Chỉ subtree `Signature` mang `xmlns=…xmldsig#` | XPath viết kèm namespace → không khớp node nào |
-| dòng hàng có `TSuat`, `DVTinh` | **Cả hai vắng mặt.** `KHMSHDon=2` = hóa đơn bán hàng theo phương pháp trực tiếp → không có trường thuế nào | Model bắt buộc `TSuat` → parse fail trên mọi hóa đơn không-GTGT. **Mọi field thuế phải Optional** |
-| `NMua` có `MST` | **Không có** — người mua là cá nhân. Chỉ `Ten`, `DChi`, `MKHang`, `DCTDTu` | Validator checksum MST ở M2.6 nổ trên hóa đơn bán lẻ |
-| *(không hề dự đoán)* | **`TTKhac`** — khối extension `(TTruong, KDLieu, DLieu)`, có ở **cả `TTChung` lẫn từng dòng hàng** | Xem ngay dưới — đây là phát hiện đắt nhất |
+| root luôn là `TDiep` | **Cả hai**: `HDon` (3 file) và `TDiep` (1 file). Con của root tuỳ NCC: `DLHDon`, `MCCQT`, `DSCKS`, `Fkey`, `DLQRCode` | Parser cứng theo một dạng fail hẳn nửa số file |
+| có namespace phải xử lý | Phần dữ liệu **không namespace** ở cả 4 file. Chỉ subtree `Signature` mang `xmlns=…xmldsig#` | XPath viết kèm namespace → không khớp node nào |
+| dòng hàng luôn có `TSuat`, `DVTinh` | Vắng ở hóa đơn bán hàng (`KHMSHDon=2`); có ở GTGT (`=1`) dưới dạng **chuỗi `'8%'`, `'10%'`** | Model bắt buộc `TSuat` → fail mọi hóa đơn không-GTGT. Parse `'8%'` thành số → `ValueError`. **Mọi field thuế phải Optional** |
+| `NMua` có `MST` | Vắng ở 3/4 file. Và "thiếu" có **hai kiểu**: element rỗng → `''`, element vắng → `None` | Validator MST ở M2.6 nổ trên hóa đơn bán lẻ |
+| MST là "10/13 số" | **3 hình dạng**: `0104093672` (10), `0304998358-042` (**có gạch**, chi nhánh), `052098014618` (**12 số**, hộ kinh doanh) | Validator từ chối 2/3 dạng thật |
+| *(không dự đoán)* | **`TTKhac`** — khối `(TTruong, KDLieu, DLieu)` ở `TTChung`, `NBan`, `NMua`, từng dòng hàng, và `TToan`. **Thứ tự con khác nhau giữa NCC**: Viettel `DLieu,KDLieu,TTruong` vs VNPT/Phong Vũ `TTruong,KDLieu,DLieu` | Đọc theo **vị trí** là vỡ. Và xem ngay dưới — đây là phát hiện đắt nhất |
+| *(không dự đoán)* | **`TChat=4` là dòng GHI CHÚ**, không phải hàng hoá — chỉ có `THHDVu`, không giá trị tiền | Cộng nó vào số học là sai; đòi `ThTien` trên mọi dòng là crash |
+| *(không dự đoán)* | Số tiền có cả `47777` lẫn **`21618409.09000000`** (8 chữ số thập phân) | `float` sai ở đồng cuối. Bắt buộc `Decimal` |
 
-**Bẫy validation, phát hiện đắt nhất:**
+**Bẫy validation — phát hiện đắt nhất, và đã ĐO được:**
 
 ```
-sum(ThTien) = 0          TgTTTBSo = 3.500.000        →  LỆCH
-tiền thật:  TTKhac/TTin[TTruong='Amount']/DLieu = 3500000
+luật ngây thơ   sum(ThTien) == TgTTTBSo            →  bắn nhầm 4/5 hóa đơn THẬT, HỢP LỆ
+luật đúng       sum(ThTien | TChat==1, fallback TTKhac[Amount]) + TgTThue == TgTTTBSo   →  4/4 ✅
 ```
 
-Validation `sum(ThTien) == TgTTTBSo` — đúng thứ nhóm defect "sai số học 6%" (§10.2) đang test — sẽ
-gắn cờ một hóa đơn **thật, hợp lệ, đã được Cục Thuế ký số** là sai số học. Đó là false positive
-trên hóa đơn sạch, chính là metric `flag false-positive rate ≤5%`.
+Luật ngây thơ — đúng thứ nhóm defect "sai số học 6%" (§10.2) đang test — gắn cờ hóa đơn **thật,
+hợp lệ, đã được Cục Thuế ký số** là sai số học. Đó là false positive trên hóa đơn sạch, chính là
+metric `flag false-positive rate ≤5%`.
 
-Và đây là cách vòng tuần hoàn giết dự án nếu không có file thật: parser viết theo trí nhớ sẽ chứa
-đúng validation đó; generator cũng sinh XML "đúng chuẩn" có `ThTien` khớp tổng; **300/300 pass**;
-bug chỉ lộ khi gặp hóa đơn thật — tức là không bao giờ, vì corpus toàn đồ tự sinh. Report sẽ ghi
+Ba thành phần của luật đúng, **không cái nào đoán được**, mỗi cái do một file khác nhau phát hiện:
+
+- **`TChat==1`** — loại dòng ghi chú `TChat=4` (`hokinhdoanh_…`)
+- **fallback `TTKhac[Amount]`** — VNPT để `ThTien=0`, tiền thật nằm trong extension (`vnpt_…`)
+- **`+ TgTThue`** — hóa đơn GTGT thì `ThTien` là tiền **trước** thuế (`viettelpost_…`, `phongvu_…`)
+
+Đây là cách vòng tuần hoàn giết dự án nếu không có file thật: parser viết theo trí nhớ sẽ chứa
+đúng luật ngây thơ; generator cũng sinh XML "đúng chuẩn" khớp luật đó; **300/300 pass**; bug chỉ
+lộ khi gặp hóa đơn thật — tức là không bao giờ, vì corpus toàn đồ tự sinh. Report sẽ ghi
 `false-positive rate 0%` và con số đó là bịa.
 
 **Chi tiết khác phải mã hoá vào `xml_schema.py`**: `<SLuong />`/`<DGia />`/`<TLCKhau />`/`<STCKhau />`
 rỗng dạng self-closing (parse ra `None`, không phải `0`); `TgTTTBChu` =
 `'Ba  triệu năm trăm ngàn đồng./.'` — **hai dấu cách**, **"ngàn"** không phải "nghìn", hậu tố `./.`
 (§10.3 dùng nó làm mã hoá độc lập thứ hai của tổng tiền → phải normalize trước khi so).
-Trường có mà plan không liệt kê: `PBan`, `MCCQT`, `Fkey`, `MSTTCGP`, `HDDCKPTQuan`, `DVTTe`, `TGia`,
-`HTTToan`, `THDon`, `MKHang`, `DCTDTu`, `STKNHang`, `TNHang`.
+`THTTLTSuat` đứng **đầu** `TToan` ở NCC này, **cuối** ở NCC kia. `PBan` có cả `2.0.0` lẫn `2.1.0`.
+Trường có mà plan không liệt kê: `PBan`, `MCCQT`, `Fkey`, `DLQRCode`, `MSTTCGP`, `HDDCKPTQuan`,
+`DVTTe`, `TGia`, `HTTToan`, `THDon`, `MHHDVu`, `TThue`, `TgTCThue`, `TgTThue`, `TTCKTMai`, `DSLPhi`,
+`HDCTTChinh`, `MKHang`, `DCTDTu`, `HVTNMHang`, `STKNHang`, `TNHang`, `Fax`, `Website`.
+
+**Dữ liệu rác CÓ THẬT** — validator đòi "hợp lệ" sẽ gắn cờ oan: `NMua/Ten = '.'`,
+`NMua/STKNHang = '.'`, `HVTNMHang` chứa **email** thay vì họ tên, `NMua/DChi` =
+`'Người mua không lấy hóa đơn'`, và một file **không có `NMua/Ten`** nào cả.
+
+**Câu hỏi mở cho M2.6**: MST 12 số của hộ kinh doanh sinh từ CCCD — chưa rõ có quy tắc checksum
+công khai áp dụng được không. Đừng cho validator từ chối nó cho tới khi trả lời được.
 
 **⚠️ Hóa đơn thật mang PII** (tên, email, mã khách hàng, MST, số tài khoản) **và chứng thư số thật**.
 gitleaks **không bắt được** — nó tìm token, không tìm PII. `.gitignore` chặn `/*.xml` và `/*.pdf` ở
@@ -459,7 +484,7 @@ ngay; **mọi con số trong README trace được về `docs/eval-report.md` tr
 | Milestone | Trạng thái | Ngày xong | Ghi chú |
 |---|---|---|---|
 | M0 — Nền sạch | 🟡 | | Code + `make dev` + `make check` (42 test) xanh 2026-07-26. **Còn treo**: commit đầu + repo GitHub → chưa có CI badge, chưa test clone sạch. Alembic scaffolding làm luôn ở đây vì gate đòi "chạy migration" mà 0.1–0.7 không có hạng mục nào dựng nó |
-| M1 — XML thật + HITL spike | 🟡 | | **Gate cứng** — không qua thì không mở M2. 1.1 được 1/3 file (VNPT, non-GTGT); 1.2 xong và **bác bỏ 4 giả định** — xem bảng "Thực tế vs giả định". 1.3–1.6 chưa bắt đầu; `xml_schema.py` nên đợi có mẫu **hóa đơn GTGT** rồi hãy viết |
+| M1 — XML thật + HITL spike | 🟡 | | **Gate cứng** — không qua thì không mở M2. ✅ 1.1 đạt (4 file / 4 NCC) · ✅ 1.2 xong, **bác bỏ 7 giả định** + suy được luật validation đúng 4/4 (bảng "Thực tế vs giả định") · 🔲 1.3–1.6. Đủ căn cứ viết `xml_schema.py`; 1.5 (spike HITL) không phụ thuộc XML, làm song song được |
 | M2 — Corpus + schema + domain | 🔲 | | |
 | M3 — Extraction + tools + cost + replay | 🔲 | | |
 | M4 — Multi-agent + memory + serialization | 🔲 | | |
