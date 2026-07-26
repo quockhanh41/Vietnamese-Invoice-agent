@@ -211,7 +211,7 @@ phải tuần 5. Đây là milestone dồn rủi ro lên đầu — không làm 
 
 | # | Việc | Tham chiếu |
 |---|---|---|
-| 1.1 | ✅ **Kiếm 2–3 file XML THẬT — ĐẠT, có 4 file / 4 nhà cung cấp** trong `tests/fixtures/real_samples/` (ẩn danh 2026-07-26, xem README thư mục đó): VNPT bán hàng · **Viettel Post GTGT** · **Phong Vũ GTGT dạng `TDiep`, `PBan` 2.0.0** · Hộ KD có `DLQRCode` + dòng `TChat=4`. Phủ được: cả 2 dạng root, cả 2 `PBan`, cả GTGT lẫn không, 3 hình dạng MST. **Còn thiếu (không chặn gate)**: hóa đơn ≥3 dòng có giá trị, hóa đơn có chiết khấu ≠0, hóa đơn điều chỉnh/thay thế, MISA/BKAV | §12 R1 |
+| 1.1 | ✅ **ĐẠT gấp bội — 8 file / 8 nhà cung cấp / 3 phiên bản schema** trong `tests/fixtures/real_samples/` (ẩn danh 2026-07-26→27, xem README thư mục đó). Phủ: cả 2 dạng root, cả 3 `PBan` (2.0.0 / 2.0.1 / 2.1.0), GTGT lẫn không-GTGT, 3 hình dạng MST, hóa đơn **7 dòng**, dòng ghi chú `TChat=4`, `CCCDan`, `DLQRCode`. 4 file sau là hóa đơn **người nhà, có sự đồng ý**. **Còn thiếu (không chặn gate)**: chiết khấu ≠0, hóa đơn điều chỉnh/thay thế, nhiều mức thuế trong một tờ, MISA/BKAV | §12 R1 |
 | 1.2 | ✅ **Đối chiếu cấu trúc — ĐÃ LÀM 2026-07-26, và giả định cũ SAI 4 chỗ.** Xem bảng "Thực tế vs giả định" ngay dưới bảng này. Vẫn còn phải **kiểm tra NĐ 70/2025/NĐ-CP** (sửa NĐ 123/2020, hiệu lực 01/06/2025) và đối chiếu lại khi có mẫu GTGT | §12 R1 |
 | 1.3 | `xml_schema.py` — **một nơi duy nhất** chứa element path + namespace. Viết theo file thật *trước*, generator sẽ viết *sau* và **độc lập** (đây là cơ chế chống eval tuần hoàn) | §10.1 |
 | 1.4 | `xml_parser.py` deterministic, parse được 2–3 file thật | §3.2 |
@@ -235,18 +235,34 @@ gate "phải có XML thật" tồn tại để bắt. Ghi lại vì nó là nộ
 | root luôn là `TDiep` | **Cả hai**: `HDon` (3 file) và `TDiep` (1 file). Con của root tuỳ NCC: `DLHDon`, `MCCQT`, `DSCKS`, `Fkey`, `DLQRCode` | Parser cứng theo một dạng fail hẳn nửa số file |
 | có namespace phải xử lý | Phần dữ liệu **không namespace** ở cả 4 file. Chỉ subtree `Signature` mang `xmlns=…xmldsig#` | XPath viết kèm namespace → không khớp node nào |
 | dòng hàng luôn có `TSuat`, `DVTinh` | Vắng ở hóa đơn bán hàng (`KHMSHDon=2`); có ở GTGT (`=1`) dưới dạng **chuỗi `'8%'`, `'10%'`** | Model bắt buộc `TSuat` → fail mọi hóa đơn không-GTGT. Parse `'8%'` thành số → `ValueError`. **Mọi field thuế phải Optional** |
-| `NMua` có `MST` | Vắng ở 3/4 file. Và "thiếu" có **hai kiểu**: element rỗng → `''`, element vắng → `None` | Validator MST ở M2.6 nổ trên hóa đơn bán lẻ |
+| `NMua` có `MST` | Vắng ở hầu hết file. Và "thiếu" có **ba** biểu hiện: `'0'`, element rỗng → `''`, element vắng → `None` | Validator MST ở M2.6 nổ trên hóa đơn bán lẻ |
 | MST là "10/13 số" | **3 hình dạng**: `0104093672` (10), `0304998358-042` (**có gạch**, chi nhánh), `052098014618` (**12 số**, hộ kinh doanh) | Validator từ chối 2/3 dạng thật |
 | *(không dự đoán)* | **`TTKhac`** — khối `(TTruong, KDLieu, DLieu)` ở `TTChung`, `NBan`, `NMua`, từng dòng hàng, và `TToan`. **Thứ tự con khác nhau giữa NCC**: Viettel `DLieu,KDLieu,TTruong` vs VNPT/Phong Vũ `TTruong,KDLieu,DLieu` | Đọc theo **vị trí** là vỡ. Và xem ngay dưới — đây là phát hiện đắt nhất |
 | *(không dự đoán)* | **`TChat=4` là dòng GHI CHÚ**, không phải hàng hoá — chỉ có `THHDVu`, không giá trị tiền | Cộng nó vào số học là sai; đòi `ThTien` trên mọi dòng là crash |
 | *(không dự đoán)* | Số tiền có cả `47777` lẫn **`21618409.09000000`** (8 chữ số thập phân) | `float` sai ở đồng cuối. Bắt buộc `Decimal` |
+| `THDon` cho biết loại hóa đơn | **Free-text rác** — 6 biến thể gồm `'TT78 AC'` | Chỉ được dùng `KHMSHDon` để nhận loại |
+| `HVTNMHang` ≈ `Ten` | **Hai người khác nhau**: `Ten='NGUYỄN THỊ C'` vs `HVTNMHang='LÊ VĂN D'` (chủ tài khoản vs người trực tiếp mua). Chỗ khác nó chứa **email** | Gộp hai trường là mất dữ liệu và sai ngữ nghĩa |
+| `PBan` có 2 phiên bản | **Ba**: `2.0.0`, `2.0.1`, `2.1.0` | |
 
 **Bẫy validation — phát hiện đắt nhất, và đã ĐO được:**
 
 ```
 luật ngây thơ   sum(ThTien) == TgTTTBSo            →  bắn nhầm 4/5 hóa đơn THẬT, HỢP LỆ
-luật đúng       sum(ThTien | TChat==1, fallback TTKhac[Amount]) + TgTThue == TgTTTBSo   →  4/4 ✅
+luật đúng       sum(ThTien | TChat==1, fallback TTKhac[Amount]) + TgTThue == TgTTTBSo   →  8/8 ✅
 ```
+
+**Và ở mức DÒNG thì không được so bằng `==`** — đo trên 8 file thật:
+
+| Phép kiểm | Sai lệch max | Kết luận |
+|---|---:|---|
+| `SLuong × DGia` vs `ThTien` | **0.01** | cần tolerance |
+| `ThTien × TSuat` vs `TThue` | **0.48** | thuế làm tròn tới đồng, **lệch cả hai chiều** |
+| `Σ ThTien` vs `TgTCThue` | **0** | so `==` được |
+| `Σ TThue` vs `TgTThue` | **0** | so `==` được |
+
+Ca cụ thể: `3 × 398181.33 = 1194543.99` nhưng `ThTien = 1194544`. Người bán chia ngược đơn giá từ
+thành tiền đã làm tròn. **Chỉ hóa đơn nhiều dòng có đơn giá lẻ mới lộ ra** — generator tự sinh luôn
+chia hết vì nó nhân xuôi từ đơn giá.
 
 Luật ngây thơ — đúng thứ nhóm defect "sai số học 6%" (§10.2) đang test — gắn cờ hóa đơn **thật,
 hợp lệ, đã được Cục Thuế ký số** là sai số học. Đó là false positive trên hóa đơn sạch, chính là
