@@ -87,6 +87,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Resolve gitleaks BASE_REF for push
+        if: github.event_name == 'push'
+        run: |
+          if git rev-parse "${{ github.event.before }}^" >/dev/null 2>&1; then
+            echo "BASE_REF=${{ github.event.before }}" >> "$GITHUB_ENV"
+          else
+            echo "BASE_REF=$GITHUB_SHA" >> "$GITHUB_ENV"
+          fi
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
