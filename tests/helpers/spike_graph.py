@@ -9,6 +9,12 @@ khi resume** — đó là ngữ nghĩa LangGraph, không phải bug. Side effect
 node với `interrupt()` sẽ chạy hai lần. Tách `n1_record` ra node RIÊNG phía
 trước cổng là cách duy nhất để nó không bị lặp.
 
+Cả hai node đều ghi vào bảng đếm để câu trên là số đo chứ không phải lời kể.
+Đo 2026-07-27 (LangGraph 1.2.9), sau `kill -9` + resume:
+
+    n1_record (TRƯỚC cổng)  ->  1 row
+    n2_gate   (CHỨA cổng)   ->  2 row
+
 Đây là kiến thức load-bearing cho M5: `post_entry` phải là node riêng SAU
 `approval_gate`, `suggest` phải nằm TRƯỚC. Ánh xạ sang §5.1 design doc:
 
@@ -37,20 +43,29 @@ class SpikeState(TypedDict):
     decision: str
 
 
-def record_side_effect(thread_id: str) -> None:
+def record_side_effect(thread_id: str, node: str) -> None:
     """Insert one row. Stand-in for the irreversible write M5 must never repeat."""
-    with psycopg.connect(get_settings().database_url) as conn:
+    # `app_dsn` chứ không phải `database_url` trần: đây là chỗ DUY NHẤT trong
+    # spike mô phỏng write action của M5, nên nó phải nối y hệt cách production
+    # nối. Tên bảng vẫn qualify `app.` — search_path là lưới đỡ, không phải lý
+    # do để viết tên bảng mơ hồ.
+    with psycopg.connect(get_settings().app_dsn) as conn:
         conn.execute(
-            "INSERT INTO app.spike_counter (thread_id) VALUES (%s)", (thread_id,)
+            "INSERT INTO app.spike_counter (thread_id, node) VALUES (%s, %s)",
+            (thread_id, node),
         )
 
 
 def n1_record(state: SpikeState) -> dict[str, Any]:
-    record_side_effect(state["thread_id"])
+    record_side_effect(state["thread_id"], "n1_record")
     return {"trace": ["n1_record"]}
 
 
 def n2_gate(state: SpikeState) -> dict[str, Any]:
+    # Ghi TRƯỚC `interrupt()` — cố ý. Đây chính là chỗ M5 sẽ đặt write action
+    # nếu ai đó gộp `post_entry` vào cùng node với cổng duyệt, nên đếm ở đây là
+    # cách đo trực tiếp cái giá của việc gộp. Sau resume phải == 2.
+    record_side_effect(state["thread_id"], "n2_gate")
     decision = interrupt(
         {
             "cau_hoi": "Duyệt hóa đơn này?",
