@@ -1,7 +1,8 @@
 # Spec — HITL durability + cô lập schema Alembic (M1.5 + M1.6)
 
 > **Ngày**: 2026-07-27 · **Phạm vi**: M1.5, M1.6 · **Trạng thái**: chờ duyệt
-> Spec chị em: *XML extraction (M1.3 + M1.4)* — chưa viết, độc lập hoàn toàn với spec này.
+> Spec chị em: *XML extraction (M1.3 + M1.4)* — `2026-07-27-xml-extraction-design.md`, độc lập
+> hoàn toàn với spec này.
 
 ## 1. Vì sao làm cái này, và vì sao làm TRƯỚC
 
