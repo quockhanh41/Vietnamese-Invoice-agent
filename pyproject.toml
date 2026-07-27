@@ -58,8 +58,11 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-# E501 (dòng dài) tắt vì comment tiếng Việt giải thích "vì sao" đáng giá hơn
-# việc gói dòng cho đẹp — line-length vẫn được formatter tôn trọng.
+# E501 (long lines) is off because the "why" comments this project insists on are
+# worth more than tidy wrapping — `line-length` above still applies to the formatter.
+# (Reason restated 2026-07-27: it used to say "because Vietnamese comments", which
+# stopped being the reason when authoring switched to English. The rule did not
+# change, only its justification.)
 ignore = ["E501"]
 
 [tool.mypy]
