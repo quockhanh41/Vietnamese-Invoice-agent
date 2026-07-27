@@ -33,6 +33,14 @@ dependencies = [
     # langfuse latest là 4.x nhưng observability.py copy nguyên vẹn từ Project A
     # được viết cho SDK v3. Lên 4.x là một cuộc migration, không phải bump.
     "langfuse>=3.15,<4.0.0",
+    # Vendor XML is UNTRUSTED input. Measured 2026-07-27 on Python 3.13.5:
+    # stdlib xml.etree blocks external entities (XXE -> ParseError) but DOES
+    # expand internal ones — a billion-laughs payload at 11 nested levels
+    # expanded to 4096 chars, so the real thing is a memory DoS. defusedxml
+    # 0.7.1 defaults are forbid_dtd=False/forbid_entities=True/
+    # forbid_external=True: both payloads raise EntitiesForbidden while a
+    # harmless bare <!DOCTYPE> still parses.
+    "defusedxml>=0.7.1",
 ]
 
 [project.optional-dependencies]
@@ -41,6 +49,9 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    # defusedxml ships no py.typed. With this stub package mypy resolves
+    # fromstring() to Element[str]; without it, every call is Any.
+    "types-defusedxml>=0.7",
 ]
 
 [tool.hatch.build.targets.wheel]

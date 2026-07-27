@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hand-written for tests. NOT a real invoice, NOT anonymised vendor data.
+     Purpose: the real TDiep fixture (phongvu_) cannot catch a './/' parser,
+     because its envelope PBan/MST/SLuong all happen to EQUAL the invoice's.
+     Here every one of the three differs, so './/' fails loudly. -->
+<TDiep>
+  <TTChung>
+    <PBan>9.9.9</PBan>
+    <MST>9999999999</MST>
+    <SLuong>99</SLuong>
+    <MLTDiep>202</MLTDiep>
+  </TTChung>
+  <DLieu>
+    <HDon>
+      <DLHDon>
+        <TTChung>
+          <PBan>2.1.0</PBan>
+          <THDon>Hóa đơn giá trị gia tăng</THDon>
+          <KHMSHDon>1</KHMSHDon>
+          <KHHDon>C26TSY</KHHDon>
+          <SHDon>4242</SHDon>
+          <NLap>2026-05-20</NLap>
+          <DVTTe>VND</DVTTe>
+          <TGia>1</TGia>
+        </TTChung>
+        <NDHDon>
+          <NBan>
+            <Ten>CÔNG TY TNHH TỔNG HỢP</Ten>
+            <MST>0104093672</MST>
+            <DChi>1 Đường Mẫu, Hà Nội</DChi>
+          </NBan>
+          <NMua>
+            <Ten>NGUYỄN VĂN B</Ten>
+            <DChi>2 Đường Mẫu, Hà Nội</DChi>
+          </NMua>
+          <DSHHDVu>
+            <HHDVu>
+              <TChat>1</TChat>
+              <STT>1</STT>
+              <THHDVu>Hàng mẫu</THHDVu>
+              <DVTinh>Cái</DVTinh>
+              <SLuong>3</SLuong>
+              <DGia>100000</DGia>
+              <ThTien>300000</ThTien>
+              <TSuat>8%</TSuat>
+              <TThue>24000</TThue>
+            </HHDVu>
+          </DSHHDVu>
+          <TToan>
+            <TgTCThue>300000</TgTCThue>
+            <TgTThue>24000</TgTThue>
+            <TgTTTBSo>324000</TgTTTBSo>
+            <TgTTTBChu>Ba trăm hai mươi bốn nghìn đồng</TgTTTBChu>
+          </TToan>
+        </NDHDon>
+      </DLHDon>
+    </HDon>
+  </DLieu>
+</TDiep>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Hand-written for tests. Two HDon in one envelope. A parser that silently
+     took the first would drop the second without a sound. Must raise. -->
+<TDiep>
+  <TTChung>
+    <PBan>2.1.0</PBan>
+    <MST>0104093672</MST>
+    <SLuong>2</SLuong>
+  </TTChung>
+  <DLieu>
+    <HDon>
+      <DLHDon>
+        <TTChung><KHMSHDon>1</KHMSHDon><KHHDon>C26TSY</KHHDon><SHDon>1</SHDon><NLap>2026-05-20</NLap></TTChung>
+      </DLHDon>
+    </HDon>
+    <HDon>
+      <DLHDon>
+        <TTChung><KHMSHDon>1</KHMSHDon><KHHDon>C26TSY</KHHDon><SHDon>2</SHDon><NLap>2026-05-20</NLap></TTChung>
+      </DLHDon>
+    </HDon>
+  </DLieu>
+</TDiep>
