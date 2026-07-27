@@ -17,9 +17,13 @@ the parser scores 100% and that 100% proves only that the generator and the pars
 other. The report would then say `false-positive rate 0%` and that number would be invented.
 
 M1.2 already demonstrated this is not hypothetical. The structure table written from memory was
-**wrong in four places**, and the naive validation rule `sum(ThTien) == TgTTTBSo` flags **4 of 5**
-real, valid, tax-authority-signed invoices as arithmetic errors. That is a false positive on a clean
-invoice — precisely the headline metric `flag false-positive rate ≤5%`.
+**wrong in four places**, and the naive validation rule `sum(ThTien) == TgTTTBSo` flags real, valid,
+tax-authority-signed invoices as arithmetic errors. Plan §M1.2 records **4 of 5**, measured when the
+corpus held 5 files; re-measured 2026-07-27 across all 8 it is **6 of 8** — five because `ThTien`
+excludes VAT (`dienluc_`, `lienket_`, `newimage_`, `phongvu_`, `viettelpost_`) and one because VNPT
+parks the amount in `TTKhac`. Only the two non-VAT invoices `hokinhdoanh_` and `ktx_` match. Every
+one of those six is a false positive on a clean invoice — precisely the headline metric
+`flag false-positive rate ≤5%`.
 
 So the ordering rule stands: `xml_schema.py` is written against the files in
 `tests/fixtures/real_samples/` **first**, and the Jinja generator at M2.1 is written **after and
