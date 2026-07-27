@@ -13,8 +13,9 @@ In "INTERRUPTED" ra stdout (đã flush) khi graph dừng, rồi ngủ vô hạn 
 import sys
 import time
 
-from invoice_agent.checkpointer import build_checkpointer
 from tests.helpers.spike_graph import build_spike_graph
+
+from invoice_agent.checkpointer import build_checkpointer
 
 
 def main(thread_id: str) -> None:

@@ -16,9 +16,9 @@ from pathlib import Path
 import psycopg
 import pytest
 from langgraph.types import Command
+from tests.helpers.spike_graph import build_spike_graph
 
 from invoice_agent.checkpointer import build_checkpointer
-from tests.helpers.spike_graph import build_spike_graph
 
 # Mặc định 3 cho vòng lặp local nhanh; CI đặt 10 để đóng gate M1.
 # Đọc lúc pytest COLLECTION vì `parametrize` chạy ở thì đó — đổi biến giữa
@@ -31,25 +31,40 @@ HITL_RUNS = int(os.getenv("HITL_RUNS", "3"))
 CHECKPOINT_TIMEOUT_S = 30
 
 
-def _count(dsn: str, thread_id: str) -> int:
+def _count(dsn: str, thread_id: str, node: str) -> int:
     with psycopg.connect(dsn) as conn:
         return conn.execute(
-            "SELECT count(*) FROM app.spike_counter WHERE thread_id = %s", (thread_id,)
+            "SELECT count(*) FROM app.spike_counter WHERE thread_id = %s AND node = %s",
+            (thread_id, node),
         ).fetchone()[0]
 
 
-def _checkpoint_exists(dsn: str, thread_id: str) -> bool:
+def _interrupt_persisted(dsn: str, thread_id: str) -> bool:
+    """Đã có `interrupt` NẰM TRONG Postgres cho thread này chưa.
+
+    Hỏi đúng câu hỏi, không phải câu gần đúng. Bản đầu tiên hỏi "có row nào
+    trong `langgraph.checkpoints` chưa" — đo 2026-07-27 cho thấy đó là câu sai:
+    một lần chạy tới interrupt ghi **3** checkpoint, và cái đầu tiên
+    (`step=-1, source=input`) hạ cánh TRƯỚC KHI node nào chạy. Khoảng cách từ
+    nó tới checkpoint của interrupt là ~9ms (đọc từ timestamp trong
+    checkpoint_id kiểu UUIDv6). Một lần poll rơi vào khe đó thì cha giết con
+    trước cả `n1_record`, test đỏ, và ta đi đổ tội cho LangGraph.
+
+    `checkpoint_writes.channel = '__interrupt__'` chỉ tồn tại khi cổng đã thật
+    sự dừng và đã được ghi xuống — không có khe hở nào.
+    """
     with psycopg.connect(dsn) as conn:
         return (
             conn.execute(
-                "SELECT count(*) FROM langgraph.checkpoints WHERE thread_id = %s",
+                "SELECT count(*) FROM langgraph.checkpoint_writes "
+                "WHERE thread_id = %s AND channel = '__interrupt__'",
                 (thread_id,),
             ).fetchone()[0]
             > 0
         )
 
 
-def _wait_for_checkpoint(dsn: str, thread_id: str, child: subprocess.Popen) -> None:
+def _wait_for_interrupt(dsn: str, thread_id: str, child: subprocess.Popen) -> None:
     """Đợi tới khi state THẬT SỰ nằm trong Postgres.
 
     Đây là toàn bộ khác biệt giữa test xanh 10/10 và test flaky. Không có bước
@@ -64,7 +79,7 @@ def _wait_for_checkpoint(dsn: str, thread_id: str, child: subprocess.Popen) -> N
                 f"process con chết sớm (rc={child.returncode}).\n"
                 f"stdout:\n{stdout}\nstderr:\n{stderr}"
             )
-        if _checkpoint_exists(dsn, thread_id):
+        if _interrupt_persisted(dsn, thread_id):
             return
         time.sleep(0.2)
     child.kill()
@@ -88,7 +103,7 @@ def test_hitl_survives_restart(requires_postgres, run):
         env=env,
     )
     try:
-        _wait_for_checkpoint(requires_postgres, thread_id, child)
+        _wait_for_interrupt(requires_postgres, thread_id, child)
 
         os.kill(child.pid, signal.SIGKILL)
         child.wait(timeout=10)
@@ -98,7 +113,12 @@ def test_hitl_survives_restart(requires_postgres, run):
             f"con phải chết vì SIGKILL, nhận rc={child.returncode}"
         )
 
-        assert _count(requires_postgres, thread_id) == 1, "n1_record phải đã chạy 1 lần"
+        assert _count(requires_postgres, thread_id, "n1_record") == 1, (
+            "n1_record phải đã chạy 1 lần"
+        )
+        assert _count(requires_postgres, thread_id, "n2_gate") == 1, (
+            "thân n2_gate phải đã chạy 1 lần trước khi process chết"
+        )
 
         # Checkpointer HOÀN TOÀN MỚI — process cũ đã chết, không có gì tái dùng.
         with build_checkpointer() as saver:
@@ -108,8 +128,18 @@ def test_hitl_survives_restart(requires_postgres, run):
         assert "__interrupt__" not in final, "resume bị bỏ qua"
         assert final["decision"] == "approved"
         assert final["trace"] == ["n1_record", "n2_gate", "n3_finish"]
-        # Điều kiện CẦN của "không bao giờ post hai lần".
-        assert _count(requires_postgres, thread_id) == 1, "side effect bị lặp sau resume"
+
+        # Điều kiện CẦN của "không bao giờ post hai lần" — và nó chỉ đúng cho
+        # node TRƯỚC cổng.
+        assert _count(requires_postgres, thread_id, "n1_record") == 1, (
+            "side effect ở node trước cổng bị lặp sau resume"
+        )
+        # Nửa còn lại của phát hiện, đo qua RANH GIỚI PROCESS: 1 lần ở process
+        # đã bị kill -9, 1 lần nữa ở process này. Đây là lý do `post_entry` của
+        # M5 không được nằm cùng node với `approval_gate`.
+        assert _count(requires_postgres, thread_id, "n2_gate") == 2, (
+            "node CHỨA interrupt() phải chạy lại từ đầu sau resume"
+        )
     finally:
         if child.poll() is None:
             child.kill()
