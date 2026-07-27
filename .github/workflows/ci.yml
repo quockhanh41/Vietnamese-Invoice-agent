@@ -38,6 +38,10 @@ jobs:
       # rate limit của người khác.
       LLM_MODE: replay
       LANGFUSE_TRACING_ENABLED: "false"
+      # Gate M1 đòi 10/10. Local mặc định 3 cho vòng lặp nhanh; CI chạy đủ.
+      # `test_ci_runs_the_full_ten` chặn việc dòng này bị gỡ mà không ai biết.
+      HITL_RUNS: "10"
+
 
     steps:
       - uses: actions/checkout@v4
