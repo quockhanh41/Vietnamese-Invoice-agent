@@ -53,6 +53,20 @@ For multi-step tasks, state a brief plan:
 
 ## Project-Specific Guidelines
 
+**Language — write everything in English.** Documentation, code comments (including the "why"
+comments this project insists on), docstrings, commit messages, ADRs, specs, and plans: **English**.
+In effect from 2026-07-27; before that the convention was Vietnamese, so most of the repo is still
+Vietnamese. Do **not** mass-translate. Existing Vietnamese prose gets rewritten only when a task is
+already rewriting that passage for another reason — a translation diff mixed into functional work
+makes the functional part unreviewable.
+
+**Exception — the product still speaks Vietnamese.** Text the *system emits or ingests* is domain
+data, not authoring style, and stays Vietnamese: flag-explanation narratives (`ReconciliationAgent`,
+`explain_flags`), report commentary (`ReportingAgent`), the prompt-injection corpus (§9.1 of the
+design doc), the `keywords_vi` baseline, UI copy, and the demo script. Translating any of those
+changes what the system does. Before switching a string to English, ask: does a user read this, or
+does a model? If either, it stays Vietnamese.
+
 **Safety property — three layers, never thin out any layer.**
 The LLM never toggles a flag and never posts an accounting entry (journal entry). Flags are deterministically computed by Python from source-of-truth DB state. Write actions must pass guard code + DB constraints + tests. An agent's response model **must not contain** approval/flag/status fields — structured output *is* the security boundary. Before adding any field to a Pydantic response model, ask: Could the LLM use this to self-authorize?
 
