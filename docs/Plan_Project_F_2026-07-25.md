@@ -49,13 +49,13 @@
 
 ## 1. Vị trí hiện tại (tóm tắt 1 đoạn)
 
-**Cập nhật 2026-07-27 — M0 xong, M1 đang mở (1.1 + 1.2 đạt, 1.3–1.6 chưa).**
+**Updated 2026-07-27 — M0 closed, gate 5/5. M1 open: 1.1, 1.2, 1.5, 1.6 done; 1.3 and 1.4 remain.**
 
 **M0 — nền chạy được.** Repo `git init` riêng, đã push lên
 `github.com/quockhanh41/Vietnamese-Invoice-agent` (private). src-layout `src/invoice_agent/` cài
 bằng `uv pip install -e ".[dev]"` — **không file nào cần `sys.path.insert`**. `make dev` dựng
 Postgres 17 + pgvector, 2 schema `app`/`langgraph`, `alembic upgrade head` với `alembic_version`
-hạ cánh đúng schema `app`. `make check` = ruff sạch + mypy sạch + **42 test xanh**. Có `config.py`
+hạ cánh đúng schema `app`. `make check` = ruff sạch + mypy sạch + **55 test xanh**. Có `config.py`
 (`pydantic-settings`, `NoDecode` + validator tách CSV), `gateway.py` port từ Project A nhưng
 **nhận `Settings` thay vì tự `os.getenv`**, `observability.py` copy nguyên vẹn 41 dòng,
 `requirements.lock`, CI (ruff/mypy/pytest trên Postgres thật + gitleaks quét full history),
@@ -69,15 +69,37 @@ starlette 1.3.1`, `langfuse 3.15.0` (<4.0.0), `langgraph 1.2.9 + checkpoint-post
 nếu viết parser theo trí nhớ thì generator cũng sinh XML khớp luật sai đó, 300/300 pass, và
 report ghi `false-positive rate 0%` — một con số bịa.
 
-**M1.5 + 1.6 — xong.** `interrupt()` + `PostgresSaver` sống sót qua `kill -9` **10/10 lần**, và
-side effect ở node trước cổng **không lặp** sau resume (`count == 1`). `alembic --autogenerate` trên
-database đã có 4 bảng checkpoint **không sinh lệnh DROP nào**. ADR
-`0002-alembic-langgraph-schema-isolation.md` đã viết. Phát hiện đo được, load-bearing cho M5: node
-**chứa** `interrupt()` chạy lại từ đầu khi resume, node **trước** nó thì không — nên `post_entry`
-bắt buộc phải là node riêng SAU `approval_gate`.
+**M1.5 + 1.6 — done, then hardened by review on 2026-07-27.** `interrupt()` + `PostgresSaver`
+survive `kill -9` **10/10** on a clean CI runner, and `alembic revision --autogenerate` against a
+database holding 4 real checkpoint tables emits **no DROP**. ADR
+`0002-alembic-langgraph-schema-isolation.md` is written.
 
-**Còn lại của M1**: 1.3 `xml_schema.py` · 1.4 `xml_parser.py` — viết theo 8 fixture thật, spec chưa
-có, cần chạy brainstorming riêng.
+The review found the first cut of both tests asserted less than they claimed, and both are fixed:
+
+- **The Alembic guard did not touch the thing it guarded.** It re-implemented `include_object`
+  inside the test. Measured: replacing the body in `migrations/env.py` with `return True` left the
+  test **green** while real autogenerate emitted `drop_table` for all four checkpoint tables **and**
+  `alembic_version`. It now drives `alembic revision --autogenerate` for real, and is
+  mutation-verified red/green.
+- **Half of the load-bearing finding was never measured.** `trace` cannot show it: the first pass of
+  the gate node raises `GraphInterrupt` and commits nothing, so it appears once in `trace` whether
+  its body ran once or twice. A `node` column now counts per node — **`n1_record` (before the gate)
+  = 1, `n2_gate` (contains `interrupt()`) = 2**, measured across the process boundary.
+- **The restart test could kill too early.** It polled for *any* checkpoint row, but a run to
+  interrupt writes **3**, the first (`step=-1, source=input`) landing before any node runs — a ~9ms
+  window in which the kill precedes `n1_record`. It now polls
+  `checkpoint_writes.channel = '__interrupt__'`.
+- **CI never ran migrations.** `init_db.sql` creates empty schemas only, so every Postgres test
+  would have failed on a fresh runner. `alembic upgrade head` is now a CI step.
+
+**Consequence for M5, sharper than before**: `post_entry` must be a node **after** `approval_gate`
+— *and* idempotent. Node placement only stops the repeat caused by `interrupt()`. Measured
+2026-07-27: `kill -9` **inside** a post-gate node, after its write and before its checkpoint commits,
+then resume from a new process → the node runs again → **2 rows**, i.e. two journal entries. What
+actually stops that is the M2.4 `UNIQUE` constraint plus the M5.3 guard, not the graph shape.
+
+**Remaining in M1**: 1.3 `xml_schema.py` · 1.4 `xml_parser.py` — written against the 8 real
+fixtures. No spec yet; needs its own brainstorming pass.
 
 
 **Còn ở project khác, CHƯA port** (tính vào scope M3): `execute_tool_with_retry` +
@@ -101,8 +123,8 @@ kèm 2 PDF có số CCCD (vá ở `bb8718d`). Đính chính một cảnh báo c�
 `vietnamese-legal-bot/.claude/settings.json` "đang commit Langfuse key plaintext" — **sai**,
 `.claude/` đã bị gitignore và `git log --all` trả về rỗng; key chưa bao giờ vào history.
 
-**Bước kế tiếp**: 1.3 `xml_schema.py` viết theo 8 file thật, hoặc 1.5 spike HITL trước — hai việc
-độc lập nhau.
+**Next**: 1.3 `xml_schema.py`, then 1.4 `xml_parser.py`, both written against the 8 real fixtures.
+They are the last two items standing between M1 and its gate.
 
 ---
 
@@ -174,13 +196,13 @@ Phân bố call theo thiết kế `enrichment_graph` (5/8 node không gọi LLM)
 
 | # | Việc | Tham chiếu |
 |---|---|---|
-| 0.1 | Repo `vietnamese-invoice-agent` (sibling, git riêng), **src-layout** + `pip install -e .` → xóa sạch nhu cầu `sys.path.insert` | §11.2 |
-| 0.2 | **Một** `config.py` với `pydantic-settings`. Model chain là `Annotated[list[str], NoDecode]` — không có nó pydantic-settings chạy `json.loads()` trước validator `mode="before"` và `groq/a,gemini/b` sẽ raise | §11.2 |
-| 0.3 | `docker-compose.yml`: **chỉ** postgres + pgvector. `init_db.sql` tạo 2 schema `app` + `langgraph` | §2.10 |
-| 0.4 | Copy `observability.py` **nguyên vẹn**; copy `gateway.py` + test của nó | §11.1 |
-| 0.5 | **Pin version**: `langgraph==1.2.9`, `langgraph-checkpoint-postgres==3.1.0`, `litellm`, `sqlalchemy`, `alembic`, `psycopg`. Pin **chặt** nhóm load-bearing, để **floor** cho phần còn lại + `requirements.lock` | §11 |
-| 0.6 | CI: ruff + mypy + pytest **on push**, service postgres thật, `LLM_MODE=replay` (không cần API key) + gitleaks | §11.2 |
-| 0.7 | `CLAUDE.md` (copy Karpathy guidelines, viết lại 3 bullet cuối) + `Makefile` | §11.1 |
+| 0.1 | ✅ **Done 2026-07-26.** Pushed to `github.com/quockhanh41/Vietnamese-Invoice-agent` (private). `sys.path.insert` now appears exactly once in the repo — inside the `__init__.py` docstring stating it is not needed. Repo `vietnamese-invoice-agent` (sibling, git riêng), **src-layout** + `pip install -e .` | §11.2 |
+| 0.2 | ✅ **Done 2026-07-26 — and it hid a second bug until 2026-07-27.** The `NoDecode` trap is locked by tests. M1.5 then exposed an unrelated defect in the same file: `options=-csearch_path=…` was never URL-encoded, so psycopg rejected the DSN while SQLAlchemy silently accepted it — i.e. Alembic worked and `PostgresSaver` died. Fixed in `542adb3`; the old tests could not catch it because they compared strings instead of opening a connection. **Một** `config.py` với `pydantic-settings`. Model chain là `Annotated[list[str], NoDecode]` — không có nó pydantic-settings chạy `json.loads()` trước validator `mode="before"` và `groq/a,gemini/b` sẽ raise | §11.2 |
+| 0.3 | ✅ **Done 2026-07-26**, re-verified from an empty volume 2026-07-27 (`docker compose down -v` → `up` → `init_db.sql`): both schemas created, `vector` in `public`. `docker-compose.yml`: **chỉ** postgres + pgvector. `init_db.sql` tạo 2 schema `app` + `langgraph` | §2.10 |
+| 0.4 | ✅ **Done 2026-07-26.** `observability.py` copied verbatim (41 lines, unchanged). `gateway.py` ported but takes `Settings` instead of calling `os.getenv` itself, with `tests/test_gateway.py`. Copy `observability.py` **nguyên vẹn**; copy `gateway.py` + test của nó | §11.1 |
+| 0.5 | ✅ **Done 2026-07-26.** `requirements.lock` = 333 pinned lines; tight pins on the load-bearing pair, floors elsewhere. **Pin version**: `langgraph==1.2.9`, `langgraph-checkpoint-postgres==3.1.0`, `litellm`, `sqlalchemy`, `alembic`, `psycopg`. Pin **chặt** nhóm load-bearing, để **floor** cho phần còn lại + `requirements.lock` | §11 |
+| 0.6 | ✅ **Done 2026-07-26, one hole closed 2026-07-27.** ruff + mypy + pytest on real Postgres 17, `LLM_MODE=replay`, no API keys, gitleaks over full history. The hole: the workflow created the schemas but never ran `alembic upgrade head`, so every Postgres test would have failed on a clean runner the moment one needed a table — invisible until M1.5 added such tests (`eed6be9`). CI: ruff + mypy + pytest **on push**, service postgres thật, `LLM_MODE=replay` (không cần API key) + gitleaks | §11.2 |
+| 0.7 | ✅ **Done 2026-07-26.** `CLAUDE.md` rewritten in English 2026-07-27 and given the authoring-language rule (`4a35802`): docs/comments/commits in English, product output stays Vietnamese. `CLAUDE.md` (copy Karpathy guidelines, viết lại 3 bullet cuối) + `Makefile` | §11.1 |
 
 **⚠️ Ba ràng buộc dependency đã xác minh 2026-07-25** (thử cài thật rồi xóa):
 - `fastapi <0.137` cap `starlette<0.50`, xung đột `fastmcp 3.x` (cần `starlette>=1.0.1`) → **fastapi
@@ -193,8 +215,9 @@ Phân bố call theo thiết kế `enrichment_graph` (5/8 node không gọi LLM)
 > có hạng mục nào dựng Alembic** — 0.5 chỉ pin nó như một dependency. Đã bổ sung scaffolding tối
 > thiểu: `alembic.ini` (KHÔNG chứa `sqlalchemy.url` — DSN lấy từ `config.py` để tránh nguồn sự thật
 > thứ hai) + `migrations/env.py` với `include_object` loại schema `langgraph` và
-> `version_table_schema="app"`. Hai thứ này mới chỉ **được viết**; **verify với bảng checkpoint
-> thật + ADR vẫn thuộc M1.6** và gate M1 vẫn giữ nguyên.
+> `version_table_schema="app"`. ✅ **Both verified 2026-07-27 at M1.6** against 4 real checkpoint
+> tables, by a test that drives `alembic revision --autogenerate` for real and is mutation-verified:
+> break `include_object` and it goes red. ADR 0002 written.
 >
 > Cũng phát hiện khi chạy thật: SQLAlchemy đọc scheme để chọn driver, `postgresql://` trần nghĩa là
 > **psycopg2** (repo này cài psycopg 3) → Alembic chết với `ModuleNotFoundError`. `config.py` giữ
@@ -204,7 +227,7 @@ Phân bố call theo thiết kế `enrichment_graph` (5/8 node không gọi LLM)
 **Gate M0**: `make dev` dựng được Postgres + chạy migration; `make test` xanh; `make lint` sạch;
 CI badge xanh trên push đầu tiên; `pip install -e ".[dev]"` chạy được từ clone sạch.
 
-**Trạng thái gate (2026-07-26)** — 4/5 đạt:
+**Trạng thái gate (cập nhật 2026-07-27)** — **5/5 đạt, M0 đóng**:
 
 | Điều kiện | | Bằng chứng |
 |---|:---:|---|
@@ -212,7 +235,7 @@ CI badge xanh trên push đầu tiên; `pip install -e ".[dev]"` chạy được
 | `make test` xanh | ✅ | 42 passed |
 | `make lint` sạch | ✅ | ruff `All checks passed` + mypy `no issues found` |
 | `pip install -e` từ clone sạch | ✅ | `git clone` vào thư mục tạm → `uv venv` → `uv pip install -e ".[dev]"` → 42 passed. Không thiếu file nào |
-| CI badge xanh trên push đầu | 🔲 | commit đầu `e2d4cb5` đã có (33 file, **local only**). Chưa có repo GitHub, máy chưa cài `gh` |
+| CI badge xanh trên push đầu | ✅ | Honest version: the **first** run (`30201551409`, 2026-07-26) was **red** — the `gitleaks-action` push-range bug, since replaced by the plain CLI and documented in `ci.yml`. Green from `30202319143` onward. Latest `30233872335` (2026-07-27): **62 passed** with `HITL_RUNS=10` on real Postgres 17 |
 
 **Artefact**: repo có CI xanh — điểm khởi đầu để mọi commit sau đo được.
 
@@ -227,10 +250,10 @@ phải tuần 5. Đây là milestone dồn rủi ro lên đầu — không làm 
 |---|---|---|
 | 1.1 | ✅ **ĐẠT gấp bội — 8 file / 8 nhà cung cấp / 3 phiên bản schema** trong `tests/fixtures/real_samples/` (ẩn danh 2026-07-26→27, xem README thư mục đó). Phủ: cả 2 dạng root, cả 3 `PBan` (2.0.0 / 2.0.1 / 2.1.0), GTGT lẫn không-GTGT, 3 hình dạng MST, hóa đơn **7 dòng**, dòng ghi chú `TChat=4`, `CCCDan`, `DLQRCode`. 4 file sau là hóa đơn **người nhà, có sự đồng ý**. **Còn thiếu (không chặn gate)**: chiết khấu ≠0, hóa đơn điều chỉnh/thay thế, nhiều mức thuế trong một tờ, MISA/BKAV | §12 R1 |
 | 1.2 | ✅ **Đối chiếu cấu trúc — ĐÃ LÀM 2026-07-26, và giả định cũ SAI 4 chỗ.** Xem bảng "Thực tế vs giả định" ngay dưới bảng này. Vẫn còn phải **kiểm tra NĐ 70/2025/NĐ-CP** (sửa NĐ 123/2020, hiệu lực 01/06/2025) và đối chiếu lại khi có mẫu GTGT | §12 R1 |
-| 1.3 | `xml_schema.py` — **một nơi duy nhất** chứa element path + namespace. Viết theo file thật *trước*, generator sẽ viết *sau* và **độc lập** (đây là cơ chế chống eval tuần hoàn) | §10.1 |
-| 1.4 | `xml_parser.py` deterministic, parse được 2–3 file thật | §3.2 |
-| 1.5 | **Spike HITL**: graph 3 node + `interrupt()` + `PostgresSaver` ở schema `langgraph`. Chạy → dừng → `kill -9` → khởi động lại → `Command(resume=)` → hoàn tất | §5.2 |
-| 1.6 | Xử luôn **va chạm Alembic**: `include_object` trong `migrations/env.py` loại schema `langgraph` (không có nó, `--autogenerate` sinh `DROP TABLE checkpoints`), `version_table_schema='app'`. **Ghi ADR ngay hôm chạy được** | §2.10 |
+| 1.3 | 🔲 **Not started** — no `xml_schema.py` exists yet. This is what the last open M1 gate condition is waiting on. `xml_schema.py` — **một nơi duy nhất** chứa element path + namespace. Viết theo file thật *trước*, generator sẽ viết *sau* và **độc lập** (đây là cơ chế chống eval tuần hoàn) | §10.1 |
+| 1.4 | 🔲 **Not started**, depends on 1.3. `xml_parser.py` deterministic, parse được 2–3 file thật | §3.2 |
+| 1.5 | ✅ **Done 2026-07-27 — 10/10 under real `kill -9`, hardened the same day after review.** A real child process is SIGKILLed and `returncode == -9` is asserted, so a child dying of anything else cannot pass silently. Two defects found in the first cut: the parent polled for *any* checkpoint row, but a run to interrupt writes **3** and the first (`step=-1, source=input`) lands before any node runs — a ~9ms window where the kill preceded `n1_record`; it now polls `checkpoint_writes.channel = '__interrupt__'`. And a `node` column now measures **both** halves of the finding (`n1_record` = 1, `n2_gate` = 2) instead of only the first. **Spike HITL**: graph 3 node + `interrupt()` + `PostgresSaver` ở schema `langgraph`. Chạy → dừng → `kill -9` → khởi động lại → `Command(resume=)` → hoàn tất | §5.2 |
+| 1.6 | ✅ **Done 2026-07-27, ADR written the same day** as the rule demands. The guard now drives the real `alembic revision --autogenerate` instead of a copy of the filter — the copy was worthless: with `include_object` replaced by `return True` it stayed **green** while real autogenerate emitted `drop_table` for all 4 checkpoint tables **and** `alembic_version`. Xử luôn **va chạm Alembic**: `include_object` trong `migrations/env.py` loại schema `langgraph` (không có nó, `--autogenerate` sinh `DROP TABLE checkpoints`), `version_table_schema='app'`. **Ghi ADR ngay hôm chạy được** | §2.10 |
 
 #### Thực tế vs giả định — đo trên file thật 2026-07-26
 
@@ -320,6 +343,18 @@ lệnh DROP nào.
 **Artefact**: **terminal recording** — graph dừng ở `interrupt()`, process bị `kill -9`, khởi động
 lại, resume, post xong. *Riêng cái này đã hơn phần lớn portfolio project.* Cộng ADR
 `0001-three-graphs-not-one.md` + `0002-alembic-langgraph-schema-isolation.md`.
+
+**Gate status (2026-07-27)** — 2/3, blocked only on the XML half:
+
+| Condition | | Evidence |
+|---|:---:|---|
+| `test_hitl_survives_restart.py` green 10/10 | ✅ | CI run `30233872335`, `HITL_RUNS=10` on a clean runner. Locally 40/40 in 20s while hunting for flakiness |
+| No repeated side effect | ✅ | Per-node counts across the process boundary: `n1_record` = 1, `n2_gate` = 2. The second number is the measurement of *why* `post_entry` cannot share a node with the gate |
+| `--autogenerate` emits no DROP | ✅ | `test_alembic_ignores_langgraph.py` runs the real command and is mutation-verified: break `include_object` → red |
+| 2–3 real XML parse into `InvoiceData` | 🔲 | Needs 1.3 + 1.4. **This is the whole of what M1 still owes** |
+
+Artefacts still owed: the terminal recording (deferred to M8 by the M1.5 spec — the tests prove it
+*can* be recorded) and ADR `0001-three-graphs-not-one.md`.
 
 > **Nếu không tìm được XML thật trong 2 ngày**: escalate — hỏi cộng đồng dev VN (AI Vietnam FB
 > group), hoặc xin 1 file ẩn danh từ kế toán quen. **Không được bắt đầu M2 nếu chưa có.** Viết
@@ -513,9 +548,8 @@ ngay; **mọi con số trong README trace được về `docs/eval-report.md` tr
 
 | Milestone | Trạng thái | Ngày xong | Ghi chú |
 |---|---|---|---|
-| M0 — Nền sạch | 🟡 | | Code + `make dev` + `make check` (42 test) xanh 2026-07-26. **Còn treo**: commit đầu + repo GitHub → chưa có CI badge, chưa test clone sạch. Alembic scaffolding làm luôn ở đây vì gate đòi "chạy migration" mà 0.1–0.7 không có hạng mục nào dựng nó |
-| M1 — XML thật + HITL spike | 🟡 | | ✅ 1.1 (8 file/8 NCC) · ✅ 1.2 · ✅ **1.5 HITL durability — `kill -9` 10/10, không lặp side effect** · ✅ **1.6 Alembic cô lập schema + ADR 0002** · 🔲 1.3 `xml_schema.py` · 🔲 1.4 `xml_parser.py` |
-
+| M0 — Nền sạch | ✅ | 2026-07-27 | Gate 5/5. `make dev` + `make check` green; CI green on real Postgres (`30233872335`, 62 passed). Alembic scaffolding was pulled in here because the gate demanded "run migrations" while 0.1–0.7 contained no item that built it. A CI hole survived until 2026-07-27: the workflow created the schemas but never ran `alembic upgrade head`, invisible until a test needed a table |
+| M1 — XML thật + HITL spike | 🟡 | | ✅ 1.1 (8 files / 8 vendors) · ✅ 1.2 · ✅ **1.5 HITL durability — `kill -9` 10/10, no repeated side effect** · ✅ **1.6 Alembic schema isolation + ADR 0002** · 🔲 1.3 `xml_schema.py` · 🔲 1.4 `xml_parser.py`. Both HITL tests were rewritten on 2026-07-27 after review: the Alembic guard tested a copy of `include_object` rather than the real one, and the interrupt-node re-run — the finding M5 depends on — was asserted but never measured. Both now hold, and ADR 0002 records that node placement is necessary, not sufficient |
 | M2 — Corpus + schema + domain | 🔲 | | |
 | M3 — Extraction + tools + cost + replay | 🔲 | | |
 | M4 — Multi-agent + memory + serialization | 🔲 | | |
