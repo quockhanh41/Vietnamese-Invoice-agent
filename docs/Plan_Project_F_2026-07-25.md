@@ -69,9 +69,16 @@ starlette 1.3.1`, `langfuse 3.15.0` (<4.0.0), `langgraph 1.2.9 + checkpoint-post
 nếu viết parser theo trí nhớ thì generator cũng sinh XML khớp luật sai đó, 300/300 pass, và
 report ghi `false-positive rate 0%` — một con số bịa.
 
-**Chưa làm, theo đúng thứ tự**: 1.3 `xml_schema.py` · 1.4 `xml_parser.py` · 1.5 spike HITL
-(`interrupt()` + `PostgresSaver` + `kill -9` + resume — **không phụ thuộc XML, làm song song
-được**) · 1.6 verify `include_object` với bảng checkpoint thật + ADR.
+**M1.5 + 1.6 — xong.** `interrupt()` + `PostgresSaver` sống sót qua `kill -9` **10/10 lần**, và
+side effect ở node trước cổng **không lặp** sau resume (`count == 1`). `alembic --autogenerate` trên
+database đã có 4 bảng checkpoint **không sinh lệnh DROP nào**. ADR
+`0002-alembic-langgraph-schema-isolation.md` đã viết. Phát hiện đo được, load-bearing cho M5: node
+**chứa** `interrupt()` chạy lại từ đầu khi resume, node **trước** nó thì không — nên `post_entry`
+bắt buộc phải là node riêng SAU `approval_gate`.
+
+**Còn lại của M1**: 1.3 `xml_schema.py` · 1.4 `xml_parser.py` — viết theo 8 fixture thật, spec chưa
+có, cần chạy brainstorming riêng.
+
 
 **Còn ở project khác, CHƯA port** (tính vào scope M3): `execute_tool_with_retry` +
 `DISPATCH_TABLE` ở `../phase-5-agentic-ai/react-pattern-tool-use/mini-project/agent.py` — port ở
@@ -507,7 +514,8 @@ ngay; **mọi con số trong README trace được về `docs/eval-report.md` tr
 | Milestone | Trạng thái | Ngày xong | Ghi chú |
 |---|---|---|---|
 | M0 — Nền sạch | 🟡 | | Code + `make dev` + `make check` (42 test) xanh 2026-07-26. **Còn treo**: commit đầu + repo GitHub → chưa có CI badge, chưa test clone sạch. Alembic scaffolding làm luôn ở đây vì gate đòi "chạy migration" mà 0.1–0.7 không có hạng mục nào dựng nó |
-| M1 — XML thật + HITL spike | 🟡 | | **Gate cứng** — không qua thì không mở M2. ✅ 1.1 đạt (4 file / 4 NCC) · ✅ 1.2 xong, **bác bỏ 7 giả định** + suy được luật validation đúng 4/4 (bảng "Thực tế vs giả định") · 🔲 1.3–1.6. Đủ căn cứ viết `xml_schema.py`; 1.5 (spike HITL) không phụ thuộc XML, làm song song được |
+| M1 — XML thật + HITL spike | 🟡 | | ✅ 1.1 (8 file/8 NCC) · ✅ 1.2 · ✅ **1.5 HITL durability — `kill -9` 10/10, không lặp side effect** · ✅ **1.6 Alembic cô lập schema + ADR 0002** · 🔲 1.3 `xml_schema.py` · 🔲 1.4 `xml_parser.py` |
+
 | M2 — Corpus + schema + domain | 🔲 | | |
 | M3 — Extraction + tools + cost + replay | 🔲 | | |
 | M4 — Multi-agent + memory + serialization | 🔲 | | |
