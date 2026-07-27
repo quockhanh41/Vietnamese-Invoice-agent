@@ -53,9 +53,8 @@ def include_object(object, name, type_, reflected, compare_to) -> bool:
     schema = getattr(object, "schema", None)
     if schema == LANGGRAPH_SCHEMA:
         return False
-    if name == "alembic_version" and schema != APP_SCHEMA:
-        return False
-    return True
+    return not (name == "alembic_version" and schema != APP_SCHEMA)
+
 
 
 
