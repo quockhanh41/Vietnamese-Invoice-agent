@@ -9,7 +9,10 @@ generator and the parser agree with each other, and the eval report's
 
 That risk is not hypothetical. The structure table written from memory at M1.2
 was wrong in four places, and the naive rule `sum(ThTien) == TgTTTBSo` flags
-4 of 5 real, valid, tax-authority-signed invoices as arithmetic errors.
+6 of the 8 real, valid, tax-authority-signed invoices as arithmetic errors —
+five because `ThTien` excludes VAT, one because VNPT parks the amount in
+`TTKhac`. (Plan §M1.2 records "4 of 5"; that was measured when the corpus held
+5 files. `test_the_naive_rule_would_be_wrong` asserts the current 6.)
 
 EVERY PATH HERE IS RELATIVE TO `HDon` AND CONTAINS NO `.//`. Measured
 2026-07-27: `phongvu_gtgt_tdiep_2.0.0.xml` has root `TDiep`, whose `TTChung`

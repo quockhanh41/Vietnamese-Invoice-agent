@@ -98,8 +98,27 @@ The review found the first cut of both tests asserted less than they claimed, an
 then resume from a new process → the node runs again → **2 rows**, i.e. two journal entries. What
 actually stops that is the M2.4 `UNIQUE` constraint plus the M5.3 guard, not the graph shape.
 
-**Remaining in M1**: 1.3 `xml_schema.py` · 1.4 `xml_parser.py` — written against the 8 real
-fixtures. No spec yet; needs its own brainstorming pass.
+**M1.3 + 1.4 — done 2026-07-27, then hardened by review the same day**, exactly as 1.5 and 1.6 were.
+`xml_schema.py` (path map anchored at `HDon`), `models.py` (`InvoiceData`), `xml_parser.py`. 8/8 real
+fixtures parse; `make check` green with 116 tests. Spec
+`docs/superpowers/specs/2026-07-27-xml-extraction-design.md`, plan
+`docs/superpowers/plans/2026-07-27-xml-extraction.md`. **M1 gate 4/4.**
+
+The review found two tests that passed while guarding nothing — the third and fourth instance of this
+pattern in this milestone, and worth recording rather than quietly fixing:
+
+- **The entity guard did not guard.** `test_entity_declarations_rejected` asserted only the exception
+  *type*, and stayed **green** with `defusedxml` swapped for stdlib `ET`. The payloads' root is
+  `<r>`, so under stdlib the billion-laughs document *parses* (expanding to `'AAAA'`×4) and then dies
+  in `locate_hdon` as "unrecognised root element", while XXE dies as "malformed XML" — both
+  `XmlExtractionError`, so the assertion was satisfied by an error unrelated to entity expansion. It
+  now matches on `"unsafe XML rejected"` and is mutation-verified red for both payloads.
+- **The six header `TTKhac` bags had no test at all.** Breaking 2 of 6 `EXT_SCOPES` paths left all
+  116 tests **green** — a wrong path yields no bag rather than an error, so it is silent data loss.
+  `test_header_ext_scopes_are_populated_from_real_files` now pins one measured key per scope.
+- **A claim was corrected, not just the code.** Row 1.3's first cut said "5/5 mutation tests
+  verified". Measured: 3 of 5 turn their named guard red, field-level `.//` is caught by the static
+  guard rather than the behavioural one, and the entity mutation was not caught at all until fixed.
 
 
 **Còn ở project khác, CHƯA port** (tính vào scope M3): `execute_tool_with_retry` +
@@ -123,8 +142,13 @@ kèm 2 PDF có số CCCD (vá ở `bb8718d`). Đính chính một cảnh báo c�
 `vietnamese-legal-bot/.claude/settings.json` "đang commit Langfuse key plaintext" — **sai**,
 `.claude/` đã bị gitignore và `git log --all` trả về rỗng; key chưa bao giờ vào history.
 
-**Next**: 1.3 `xml_schema.py`, then 1.4 `xml_parser.py`, both written against the 8 real fixtures.
-They are the last two items standing between M1 and its gate.
+**Next**: M2 — corpus + schema + deterministic core. The gate is open, but four things are owed and
+none of them blocks it: ADR `0001-three-graphs-not-one.md`; the terminal recording (deferred to M8);
+the **NĐ 70/2025/NĐ-CP** field check that M1.2 still owes — `InvoiceLine.item_kind` is deliberately
+`int | None` rather than defaulting to `1` until that answers whether QĐ-1450 permits omitting
+`TChat`; and whether `TSuat` can carry the non-percent codes `KCT`/`KKKNT`, which the parser rejects
+loudly today because no fixture contains one. **M2.1's generator must not read `xml_schema.py`** —
+that independence is the whole anti-circularity mechanism.
 
 ---
 
@@ -250,8 +274,8 @@ phải tuần 5. Đây là milestone dồn rủi ro lên đầu — không làm 
 |---|---|---|
 | 1.1 | ✅ **ĐẠT gấp bội — 8 file / 8 nhà cung cấp / 3 phiên bản schema** trong `tests/fixtures/real_samples/` (ẩn danh 2026-07-26→27, xem README thư mục đó). Phủ: cả 2 dạng root, cả 3 `PBan` (2.0.0 / 2.0.1 / 2.1.0), GTGT lẫn không-GTGT, 3 hình dạng MST, hóa đơn **7 dòng**, dòng ghi chú `TChat=4`, `CCCDan`, `DLQRCode`. 4 file sau là hóa đơn **người nhà, có sự đồng ý**. **Còn thiếu (không chặn gate)**: chiết khấu ≠0, hóa đơn điều chỉnh/thay thế, nhiều mức thuế trong một tờ, MISA/BKAV | §12 R1 |
 | 1.2 | ✅ **Đối chiếu cấu trúc — ĐÃ LÀM 2026-07-26, và giả định cũ SAI 4 chỗ.** Xem bảng "Thực tế vs giả định" ngay dưới bảng này. Vẫn còn phải **kiểm tra NĐ 70/2025/NĐ-CP** (sửa NĐ 123/2020, hiệu lực 01/06/2025) và đối chiếu lại khi có mẫu GTGT | §12 R1 |
-| 1.3 | 🔲 **Not started** — no `xml_schema.py` exists yet. This is what the last open M1 gate condition is waiting on. `xml_schema.py` — **một nơi duy nhất** chứa element path + namespace. Viết theo file thật *trước*, generator sẽ viết *sau* và **độc lập** (đây là cơ chế chống eval tuần hoàn) | §10.1 |
-| 1.4 | 🔲 **Not started**, depends on 1.3. `xml_parser.py` deterministic, parse được 2–3 file thật | §3.2 |
+| 1.3 | ✅ **Done 2026-07-27** — `src/invoice_agent/extraction/xml_schema.py`. All element paths anchored at `HDon` without `.//`. Sharp `TTKhac['Amount']` key match for VNPT (4 other vendors carry a gross-amount key; a loose match double-counts tax on 4/8). **Mutation results, stated precisely because the first pass overstated them**: positional `ext_bag`, `money('')→Decimal(0)` and `len(found)!=1→<1` each turn their guard red. Field-level `.//` is caught by the *static* guard `test_no_field_path_uses_descendant_search`, **not** by `test_envelope_values_do_not_leak` — `locate_hdon` returns the inner `HDon` and every scope lookup is relative to it, so field-level `.//` cannot reach the envelope at all; only a root-anchored lookup can, and that is what the behavioural test actually catches. Spec `docs/superpowers/specs/2026-07-27-xml-extraction-design.md`. | §10.1 |
+| 1.4 | ✅ **Done 2026-07-27** — `src/invoice_agent/extraction/xml_parser.py` & `models.py`. 8/8 real fixtures parse against a hand-transcribed golden table. Sufficiency test proves `InvoiceData` carries every field needed for the measured M1.2 validation rule. Secured with `defusedxml` (measured stdlib entity expansion). **Two holes found by review the same day, both closed** — and both were tests that passed while guarding nothing, the third and fourth instance of the M1.5/1.6 pattern: (a) `test_entity_declarations_rejected` asserted only the exception *type*, so it stayed green with `defusedxml` swapped for stdlib `ET` — the payloads' root is `<r>`, so billion-laughs parsed and then died in `locate_hdon`; it now matches on `"unsafe XML rejected"` and is mutation-verified red. (b) Nothing asserted the six header-level `TTKhac` bags — breaking 2 of 6 `EXT_SCOPES` paths left all 116 tests green, i.e. silent data loss; `test_header_ext_scopes_are_populated_from_real_files` now pins one real key per scope. | §3.2 |
 | 1.5 | ✅ **Done 2026-07-27 — 10/10 under real `kill -9`, hardened the same day after review.** A real child process is SIGKILLed and `returncode == -9` is asserted, so a child dying of anything else cannot pass silently. Two defects found in the first cut: the parent polled for *any* checkpoint row, but a run to interrupt writes **3** and the first (`step=-1, source=input`) lands before any node runs — a ~9ms window where the kill preceded `n1_record`; it now polls `checkpoint_writes.channel = '__interrupt__'`. And a `node` column now measures **both** halves of the finding (`n1_record` = 1, `n2_gate` = 2) instead of only the first. **Spike HITL**: graph 3 node + `interrupt()` + `PostgresSaver` ở schema `langgraph`. Chạy → dừng → `kill -9` → khởi động lại → `Command(resume=)` → hoàn tất | §5.2 |
 | 1.6 | ✅ **Done 2026-07-27, ADR written the same day** as the rule demands. The guard now drives the real `alembic revision --autogenerate` instead of a copy of the filter — the copy was worthless: with `include_object` replaced by `return True` it stayed **green** while real autogenerate emitted `drop_table` for all 4 checkpoint tables **and** `alembic_version`. Xử luôn **va chạm Alembic**: `include_object` trong `migrations/env.py` loại schema `langgraph` (không có nó, `--autogenerate` sinh `DROP TABLE checkpoints`), `version_table_schema='app'`. **Ghi ADR ngay hôm chạy được** | §2.10 |
 
@@ -344,14 +368,14 @@ lệnh DROP nào.
 lại, resume, post xong. *Riêng cái này đã hơn phần lớn portfolio project.* Cộng ADR
 `0001-three-graphs-not-one.md` + `0002-alembic-langgraph-schema-isolation.md`.
 
-**Gate status (2026-07-27)** — 2/3, blocked only on the XML half:
+**Gate status (2026-07-27)** — 4/4, M1 gate fully closed:
 
 | Condition | | Evidence |
 |---|:---:|---|
 | `test_hitl_survives_restart.py` green 10/10 | ✅ | CI run `30233872335`, `HITL_RUNS=10` on a clean runner. Locally 40/40 in 20s while hunting for flakiness |
 | No repeated side effect | ✅ | Per-node counts across the process boundary: `n1_record` = 1, `n2_gate` = 2. The second number is the measurement of *why* `post_entry` cannot share a node with the gate |
 | `--autogenerate` emits no DROP | ✅ | `test_alembic_ignores_langgraph.py` runs the real command and is mutation-verified: break `include_object` → red |
-| 2–3 real XML parse into `InvoiceData` | 🔲 | Needs 1.3 + 1.4. **This is the whole of what M1 still owes** |
+| 2–3 real XML parse into `InvoiceData` | ✅ | `test_xml_parser.py`: 8/8 real fixtures parse into `InvoiceData`. Sufficiency test confirms model contains all inputs needed for measured M1.2 validation rule |
 
 Artefacts still owed: the terminal recording (deferred to M8 by the M1.5 spec — the tests prove it
 *can* be recorded) and ADR `0001-three-graphs-not-one.md`.

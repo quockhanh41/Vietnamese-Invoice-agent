@@ -98,6 +98,45 @@ def test_ext_bag_is_order_independent():
     assert vnpt.lines[0].ext["VATAmount"] == "0"
 
 
+# Every one of the six header-level TTKhac scopes, with a real key measured
+# 2026-07-27. Without this, breaking an EXT_SCOPES path is SILENT: a wrong path
+# yields no bag rather than an error, and the whole suite stays green — measured
+# while reviewing, with 2 of 6 paths deliberately broken.
+EXT_SCOPE_EVIDENCE = [
+    ("ktx_banhang_cccd_2.1.0.xml", "dlhdon", "Số bảo mật", "REDACTED_SO_BAO_MAT"),
+    ("ktx_banhang_cccd_2.1.0.xml", "ttchung", "truong", "Trường Đại học Mẫu"),
+    ("dienluc_gtgt_cccd_2.1.0.xml", "seller", "TenDviQly", "Điện lực MẪU"),
+    ("lienket_gtgt_7dong_2.1.0.xml", "buyer", "Loại giấy tờ  người mua", ""),
+    ("phongvu_gtgt_tdiep_2.0.0.xml", "ndhdon", "PONumber", "00000AAA00"),
+    ("lienket_gtgt_7dong_2.1.0.xml", "totals", "Tổng tiền phí", "0"),
+]
+
+
+@pytest.mark.parametrize(
+    "name,scope,key,value",
+    EXT_SCOPE_EVIDENCE,
+    ids=[f"{row[1]}:{row[0][:8]}" for row in EXT_SCOPE_EVIDENCE],
+)
+def test_header_ext_scopes_are_populated_from_real_files(name, scope, key, value):
+    """Each EXT_SCOPES path resolves against a real invoice that uses it.
+
+    Note the buyer row asserts an EMPTY value: `lienket_` really does ship
+    'Loại giấy tờ  người mua' with no DLieu — two spaces in the key included.
+    That distinguishes 'key present, value empty' from 'scope path broken', the
+    two states a missing bag would otherwise conflate.
+    """
+    invoice = _parse(REAL, name)
+    assert scope in invoice.ext, f"scope {scope!r} produced no bag — check EXT_SCOPES path"
+    assert invoice.ext[scope][key] == value
+
+
+def test_ext_scope_evidence_covers_every_declared_scope():
+    """Guards the guard: a seventh scope added to EXT_SCOPES without evidence
+    above would otherwise inherit the same silent-failure hole.
+    """
+    assert {row[1] for row in EXT_SCOPE_EVIDENCE} == set(sch.EXT_SCOPES)
+
+
 def test_missing_buyer_is_not_an_error():
     """hokinhdoanh_ has no NMua/Ten at all. A validator demanding one would
     flag a real, valid, tax-authority-signed invoice.
@@ -139,8 +178,17 @@ def test_entity_declarations_rejected(payload):
     levels produced 4096 chars, so the real payload is a memory DoS. defusedxml
     raises EntitiesForbidden for both; we wrap it as XmlExtractionError so the
     graph routes it like any other unreadable document.
+
+    `match=` pins the REASON, and it is load-bearing. Asserting the exception
+    type alone made this test pass with defusedxml swapped for stdlib ET —
+    measured 2026-07-27 while reviewing: these payloads have root `<r>`, so the
+    billion-laughs one PARSES under stdlib (expanding to 'AAAA'*4) and then dies
+    in locate_hdon with "unrecognised root element", while XXE dies as
+    "malformed XML". Both are XmlExtractionError, so the guard was satisfied by
+    an error that had nothing to do with entity expansion. With `match=`, the
+    swap turns this red for both payloads.
     """
-    with pytest.raises(XmlExtractionError):
+    with pytest.raises(XmlExtractionError, match="unsafe XML rejected"):
         parse_invoice_xml(payload)
 
 
