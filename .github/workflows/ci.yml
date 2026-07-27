@@ -70,6 +70,13 @@ jobs:
           sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
           PGPASSWORD=invoice psql -h localhost -p 5433 -U invoice -d invoice_agent -v ON_ERROR_STOP=1 -f scripts/init_db.sql
 
+      - name: Migrate (alembic upgrade head)
+        # `init_db.sql` chỉ tạo SCHEMA rỗng, không tạo bảng nào. Không có bước
+        # này thì `app.spike_counter` không tồn tại và mọi test chạm Postgres
+        # đỏ với "relation does not exist". Local không lộ ra vì `make dev` đã
+        # gọi migrate hộ; CI thì không có `make dev`.
+        run: .venv/bin/alembic upgrade head
+
       # `.venv/bin/…` chứ KHÔNG phải `uv run …`: trong thư mục có pyproject.toml
       # `[project]`, `uv run` vào project mode, sinh `uv.lock` và **re-resolve
       # từ pyproject** — tức là ném đi cái `uv pip sync requirements.lock` ở
