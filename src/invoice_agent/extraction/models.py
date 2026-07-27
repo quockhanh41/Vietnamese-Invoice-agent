@@ -79,8 +79,8 @@ class InvoiceData(BaseModel):
     exchange_rate: Decimal | None = None  # TGia — '1' and '1.00' both occur
 
     seller_name: str | None = None
-    # MST has three real shapes: '0104093672' (10), '0304998358-042' (branch,
-    # with a dash) and '052098014618' (12, household business). M2.6's
+    # MST has three real shapes: '0100000003' (10), '0300000018-042' (branch,
+    # with a dash) and '050000000000' (12, household business). M2.6's
     # validator must accept all three.
     seller_tax_code: str | None = None
     seller_address: str | None = None

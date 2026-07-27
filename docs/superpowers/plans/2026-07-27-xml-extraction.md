@@ -738,7 +738,7 @@ The synthetic fixtures exist because the real corpus **cannot** catch the `.//` 
         <NDHDon>
           <NBan>
             <Ten>CÔNG TY TNHH TỔNG HỢP</Ten>
-            <MST>0104093672</MST>
+            <MST>0100000003</MST>
             <DChi>1 Đường Mẫu, Hà Nội</DChi>
           </NBan>
           <NMua>
@@ -780,7 +780,7 @@ The synthetic fixtures exist because the real corpus **cannot** catch the `.//` 
 <TDiep>
   <TTChung>
     <PBan>2.1.0</PBan>
-    <MST>0104093672</MST>
+    <MST>0100000003</MST>
     <SLuong>2</SLuong>
   </TTChung>
   <DLieu>
@@ -1100,8 +1100,8 @@ class InvoiceData(BaseModel):
     exchange_rate: Decimal | None = None  # TGia — '1' and '1.00' both occur
 
     seller_name: str | None = None
-    # MST has three real shapes: '0104093672' (10), '0304998358-042' (branch,
-    # with a dash) and '052098014618' (12, household business). M2.6's
+    # MST has three real shapes: '0100000003' (10), '0300000018-042' (branch,
+    # with a dash) and '050000000000' (12, household business). M2.6's
     # validator must accept all three.
     seller_tax_code: str | None = None
     seller_address: str | None = None
@@ -1284,7 +1284,7 @@ def test_envelope_values_do_not_leak():
     """
     invoice = _parse(SYNTHETIC, "tdiep_envelope_distinct.xml")
     assert invoice.schema_version == "2.1.0"  # envelope says 9.9.9
-    assert invoice.seller_tax_code == "0104093672"  # envelope says 9999999999
+    assert invoice.seller_tax_code == "0100000003"  # envelope says 9999999999
     assert invoice.lines[0].quantity == Decimal("3")  # envelope SLuong says 99
 
 

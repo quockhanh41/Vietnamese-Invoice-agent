@@ -152,7 +152,7 @@ def test_envelope_values_do_not_leak():
     """
     invoice = _parse(SYNTHETIC, "tdiep_envelope_distinct.xml")
     assert invoice.schema_version == "2.1.0"  # envelope says 9.9.9
-    assert invoice.seller_tax_code == "0104093672"  # envelope says 9999999999
+    assert invoice.seller_tax_code == "0100000003"  # envelope says 9999999999
     assert invoice.lines[0].quantity == Decimal("3")  # envelope SLuong says 99
 
 

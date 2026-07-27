@@ -335,7 +335,7 @@ cover these cases (§2.3):
 
 | File | Purpose |
 |---|---|
-| `tdiep_envelope_distinct.xml` | envelope `PBan=9.9.9`, `MST=9999999999`, `SLuong=99`; invoice `PBan=2.1.0`, seller `MST=0104093672`, line `SLuong=3` — every collision point differs, so a `.//` parser fails |
+| `tdiep_envelope_distinct.xml` | envelope `PBan=9.9.9`, `MST=9999999999`, `SLuong=99`; invoice `PBan=2.1.0`, seller `MST=0100000003`, line `SLuong=3` — every collision point differs, so a `.//` parser fails |
 | `tdiep_two_invoices.xml` | one `TDiep`, two `HDon` — must raise |
 
 Both are hand-written, minimal, and carry no PII. Verified that `.gitignore`'s `!tests/**/*.xml`
@@ -358,7 +358,7 @@ this milestone exists to break.
 | `test_words_amount_verbatim` | `'Ba  triệu năm trăm ngàn đồng./.'` — double space and `./.` intact |
 | `test_ext_bag_is_order_independent` | Viettel (reversed child order) reads identically to VNPT |
 | `test_missing_buyer_is_not_an_error` | `hokinhdoanh_…` → `buyer_name is None`, parses fine |
-| `test_envelope_values_do_not_leak` | synthetic envelope → `schema_version == '2.1.0'` not `'9.9.9'`; `seller_tax_code == '0104093672'` not `'9999999999'`; `lines[0].quantity == 3` not `99` — all three, since any one alone could pass by luck |
+| `test_envelope_values_do_not_leak` | synthetic envelope → `schema_version == '2.1.0'` not `'9.9.9'`; `seller_tax_code == '0100000003'` not `'9999999999'`; `lines[0].quantity == 3` not `99` — all three, since any one alone could pass by luck |
 | `test_multi_invoice_envelope_raises` | synthetic 2-`HDon` `TDiep` → `XmlExtractionError` |
 | `test_entity_expansion_rejected` | billion-laughs → `XmlExtractionError` wrapping `EntitiesForbidden` |
 | `test_external_entity_rejected` | XXE → `XmlExtractionError` |
