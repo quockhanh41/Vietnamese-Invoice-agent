@@ -11,10 +11,12 @@ việc `app` và `langgraph` dùng chung một database (design doc §2.10):
 2. **`version_table_schema="app"`.** Bảng `alembic_version` phải nằm trong
    schema nghiệp vụ, không phải `public`.
 
-⚠️ Cả hai mới chỉ được VIẾT, **chưa verify với bảng checkpoint thật** — đó là
-việc của M1.6, cùng ADR `0002-alembic-langgraph-schema-isolation.md`. Gate M1
-yêu cầu: chạy `--autogenerate` trên schema đã có checkpoint và khẳng định
-không sinh ra lệnh DROP nào.
+Cả hai đã được verify với bảng checkpoint thật ở M1.6 (2026-07-27):
+`tests/test_alembic_ignores_langgraph.py` chạy `alembic revision --autogenerate`
+THẬT trên database đã có 4 bảng checkpoint và khẳng định không sinh lệnh DROP
+nào. **Đừng sửa `include_object` mà không chạy lại test đó** — đo được: thay
+thân hàm bằng `return True` thì autogenerate sinh ngay 5 lệnh `drop_table`.
+Lý do đầy đủ ở ADR `0002-alembic-langgraph-schema-isolation.md`.
 
 DSN đến từ `invoice_agent.config`, không phải `sqlalchemy.url` trong
 alembic.ini — một nơi duy nhất đọc environment.
