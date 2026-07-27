@@ -34,7 +34,11 @@ if config.config_file_name is not None:
 
 # `app_sqlalchemy_url` chứ không phải `app_dsn`: SQLAlchemy đọc scheme để chọn
 # driver, và `postgresql://` trần nghĩa là psycopg2 (không cài trong repo này).
-config.set_main_option("sqlalchemy.url", get_settings().app_sqlalchemy_url)
+# `%` trong query param phải được escape thành `%%` cho ConfigParser của Alembic.
+config.set_main_option(
+    "sqlalchemy.url", get_settings().app_sqlalchemy_url.replace("%", "%%")
+)
+
 
 # M2.4 sẽ trỏ cái này vào metadata thật của các bảng nghiệp vụ.
 target_metadata = None

@@ -14,6 +14,7 @@ decode đó, để chuỗi thô rơi đúng vào `_split_csv`. Xem `tests/test_c
 
 from functools import lru_cache
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -146,8 +147,15 @@ class Settings(BaseSettings):
         return self.app_dsn.replace("postgresql://", "postgresql+psycopg://", 1)
 
     def _with_options(self, options: str) -> str:
+        # `quote(..., safe="")` là bắt buộc, không phải cho chắc: giá trị options
+        # chứa dấu `=` (`-csearch_path=app,public`), và psycopg coi dấu `=` thứ
+        # hai trong một query param là lỗi cú pháp — `ProgrammingError: extra
+        # key/value separator "="`. Đã đo 2026-07-27: bản chưa encode nối được
+        # qua SQLAlchemy (nó tự dựng lại conninfo) nhưng psycopg trực tiếp thì
+        # không, tức là PostgresSaver chết còn Alembic vẫn chạy — kiểu bug chỉ
+        # lộ ra ở đúng chỗ tệ nhất.
         separator = "&" if "?" in self.database_url else "?"
-        return f"{self.database_url}{separator}options={options}"
+        return f"{self.database_url}{separator}options={quote(options, safe='')}"
 
 
 @lru_cache

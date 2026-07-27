@@ -14,3 +14,26 @@ import os
 os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
 os.environ.pop("LANGFUSE_PUBLIC_KEY", None)
 os.environ.pop("LANGFUSE_SECRET_KEY", None)
+
+
+import pytest
+
+from invoice_agent.config import get_settings
+
+
+@pytest.fixture(scope="session")
+def requires_postgres() -> str:
+    """DSN nghiệp vụ, đã kiểm là nối được. Skip có lý do rõ ràng nếu chưa `make dev`.
+
+    Fail thẳng thay vì để test đỏ với lỗi kết nối khó hiểu ở giữa chừng.
+    """
+    import psycopg
+
+    dsn = get_settings().database_url
+    try:
+        with psycopg.connect(dsn, connect_timeout=3):
+            pass
+    except Exception as exc:  # pragma: no cover - đường thoát môi trường
+        pytest.skip(f"Cần Postgres đang chạy (`make dev`): {exc}")
+    return dsn
+

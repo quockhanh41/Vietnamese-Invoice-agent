@@ -92,16 +92,16 @@ class TestSchemaIsolationDsn:
     def test_app_and_checkpointer_use_different_search_paths(self, monkeypatch):
         monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5433/db")
         s = make_settings()
-        assert s.app_dsn.endswith("?options=-csearch_path=app,public")
-        assert s.checkpointer_dsn.endswith("?options=-csearch_path=langgraph,public")
+        assert s.app_dsn.endswith("?options=-csearch_path%3Dapp%2Cpublic")
+        assert s.checkpointer_dsn.endswith("?options=-csearch_path%3Dlanggraph%2Cpublic")
 
     def test_public_is_always_on_the_path_for_pgvector(self, monkeypatch):
         # Extension `vector` sống ở public (scripts/init_db.sql). Bỏ public ra
         # khỏi search_path thì mọi cột kiểu vector thành "type does not exist".
         monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5433/db")
         s = make_settings()
-        assert s.app_dsn.endswith(",public")
-        assert s.checkpointer_dsn.endswith(",public")
+        assert s.app_dsn.endswith("%2Cpublic")
+        assert s.checkpointer_dsn.endswith("%2Cpublic")
 
     def test_sqlalchemy_url_names_psycopg3_explicitly(self, monkeypatch):
         # `postgresql://` trần = psycopg2 với SQLAlchemy, mà repo này cài
@@ -117,8 +117,9 @@ class TestSchemaIsolationDsn:
         s = make_settings()
         assert (
             s.app_dsn
-            == "postgresql://u:p@host/db?sslmode=require&options=-csearch_path=app,public"
+            == "postgresql://u:p@host/db?sslmode=require&options=-csearch_path%3Dapp%2Cpublic"
         )
+
 
 
 class TestLlmMode:
@@ -136,3 +137,29 @@ class TestLlmMode:
         monkeypatch.setenv("LLM_MODE", "replya")
         with pytest.raises(ValueError):
             make_settings()
+
+
+class TestDsnActuallyConnects:
+    """Hồi quy cho bug 2026-07-27: `options=-csearch_path=app,public` có hai dấu
+    `=` trong một query param, psycopg từ chối parse. Test M0 cũ chỉ so chuỗi
+    nên không bắt được — nó chỉ cắn khi psycopg nối TRỰC TIẾP, đúng lúc
+    PostgresSaver chạy."""
+
+    def test_app_dsn_connects_and_sets_search_path(self, requires_postgres, monkeypatch):
+        import psycopg
+
+        monkeypatch.setenv("DATABASE_URL", requires_postgres)
+        with psycopg.connect(make_settings().app_dsn, connect_timeout=3) as conn:
+            search_path = conn.execute("SHOW search_path").fetchone()[0]
+        assert search_path == "app,public"
+
+    def test_checkpointer_dsn_connects_and_sets_search_path(
+        self, requires_postgres, monkeypatch
+    ):
+        import psycopg
+
+        monkeypatch.setenv("DATABASE_URL", requires_postgres)
+        with psycopg.connect(make_settings().checkpointer_dsn, connect_timeout=3) as conn:
+            search_path = conn.execute("SHOW search_path").fetchone()[0]
+        assert search_path == "langgraph,public"
+
