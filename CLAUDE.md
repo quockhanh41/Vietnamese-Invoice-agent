@@ -53,34 +53,15 @@ For multi-step tasks, state a brief plan:
 
 ## Project-Specific Guidelines
 
-**Ngôn ngữ**: tài liệu, comment giải thích "vì sao", và hội thoại viết **tiếng Việt**;
-giữ nguyên thuật ngữ kỹ thuật tiếng Anh (interrupt, checkpointer, fan-out, guard…).
-Tên biến/hàm và docstring API viết tiếng Anh.
+**Safety property — three layers, never thin out any layer.**
+The LLM never toggles a flag and never posts an accounting entry (journal entry). Flags are deterministically computed by Python from source-of-truth DB state. Write actions must pass guard code + DB constraints + tests. An agent's response model **must not contain** approval/flag/status fields — structured output *is* the security boundary. Before adding any field to a Pydantic response model, ask: Could the LLM use this to self-authorize?
 
-**Safety property — ba lớp, không được làm mỏng đi lớp nào.**
-LLM không bao giờ bật một cờ, không bao giờ post một bút toán. Cờ do Python deterministic tính
-từ sự thật trong DB. Write action đi qua guard code + DB constraint + test. Response model của
-agent **không được có** field approval/flag/status — structured output *là* ranh giới an ninh.
-Trước khi thêm field vào bất kỳ Pydantic response model nào, hỏi: LLM có thể dùng nó để tự cấp
-quyền không?
+**Measure first, optimize second.** A new technique is merged only with before/after numbers on the evaluation set, and all LLM metrics must be reported alongside a non-LLM baseline (`keywords_vi`). If it does not beat the baseline by ≥15 points, that node does not need an LLM. Dropped techniques → **record the reason**; this is portfolio content, not a failure.
 
-**Đo trước, tối ưu sau.** Kỹ thuật mới chỉ merge khi có số trước/sau trên eval set, và mọi metric
-LLM phải báo cáo kèm baseline không-LLM (`keywords_vi`). Không thắng baseline ≥15 điểm thì node đó
-không cần LLM. Kỹ thuật bị bỏ → **ghi lại lý do**, đó là nội dung portfolio chứ không phải thất bại.
+**Verify with runnable commands, not intuition.** Run `make check` (ruff + mypy + pytest) before declaring completion. If Postgres is needed, run `make dev` first. Every non-obvious constant in code must include a comment stating the **date + measurement + report file name** justifying it.
 
-**Verify bằng lệnh chạy được, không phải cảm giác.** `make check` (ruff + mypy + pytest) trước khi
-nói xong. Cần Postgres thì `make dev` trước. Mọi hằng số không hiển nhiên trong code phải có comment
-ghi **ngày + phép đo + tên file report** biện minh cho nó.
+**Do not expand scope arbitrarily.** The plan is located at `docs/Plan_Project_F_2026-07-25.md`, and design at `docs/project-f-system-design.md`. Milestones have **gates** — do not open subsequent milestones without passing the gate. The "intentionally NOT doing" list in §4 of the plan consists of finalized decisions, not omissions: supervisor agent, Redis, Qdrant, custom OCR, auth/multi-tenant, real ERP integration.
 
-**Không tự ý mở scope.** Kế hoạch nằm ở `docs/Plan_Project_F_2026-07-25.md`, thiết kế ở
-`docs/project-f-system-design.md`. Milestone có **gate** — không đạt gate thì không mở milestone
-sau. Danh sách "cố tình KHÔNG làm" ở §4 của plan là quyết định đã chốt, không phải thiếu sót:
-supervisor agent, Redis, Qdrant, OCR riêng, auth/multi-tenant, tích hợp ERP thật.
+**Pin LangGraph versions — do not bump mid-way.** `langgraph==1.2.9` and `langgraph-checkpoint-postgres==3.1.0` are strictly pinned because the correctness of Human-in-the-Loop (HITL) durability depends on them. Re-pinning requires an intentional decision backed by a passing `test_hitl_survives_restart.py`, not an arbitrary `uv pip -U`.
 
-**Pin version LangGraph — không bump giữa chừng.** `langgraph==1.2.9` và
-`langgraph-checkpoint-postgres==3.1.0` pin chặt vì correctness của HITL durability rơi vào đó.
-Re-pin là quyết định có chủ đích kèm `test_hitl_survives_restart.py` xanh, không phải `uv pip -U`.
-
-**Stack**: LangGraph (3 graph: enrichment / batch / approval) · Postgres 17 + pgvector (system of
-record **và** checkpoint, hai schema `app` / `langgraph`) · LiteLLM gateway với model-chain
-fallback × key rotation · FastAPI · Langfuse (SDK v3, env-gated). Không Redis, không Qdrant.
+**Stack**: LangGraph (3 graphs: enrichment / batch / approval) · Postgres 17 + pgvector (system of record **and** checkpoint, two schemas `app` / `langgraph`) · LiteLLM gateway with model-chain fallback × key rotation · FastAPI · Langfuse (SDK v3, env-gated). No Redis, no Qdrant.
