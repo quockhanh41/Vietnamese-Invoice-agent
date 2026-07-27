@@ -26,6 +26,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from invoice_agent.config import APP_SCHEMA, LANGGRAPH_SCHEMA, get_settings
+from invoice_agent.db.models import metadata as app_metadata
 
 config = context.config
 
@@ -40,13 +41,22 @@ config.set_main_option(
 )
 
 
-# M2.4 sẽ trỏ cái này vào metadata thật của các bảng nghiệp vụ.
-target_metadata = None
+# Trỏ vào metadata của schema `app`. KHÔNG để None: với None, autogenerate coi
+# mọi bảng phản chiếu được là thừa và đề nghị DROP — kể cả bảng `app` hợp lệ,
+# làm hỏng ý nghĩa của test cô lập schema (M1.6).
+target_metadata = app_metadata
+
 
 
 def include_object(object, name, type_, reflected, compare_to) -> bool:
     """Alembic không được nhìn vào lãnh thổ của LangGraph. Xem docstring module."""
-    return getattr(object, "schema", None) != LANGGRAPH_SCHEMA
+    schema = getattr(object, "schema", None)
+    if schema == LANGGRAPH_SCHEMA:
+        return False
+    if name == "alembic_version" and schema != APP_SCHEMA:
+        return False
+    return True
+
 
 
 def run_migrations_offline() -> None:
