@@ -41,7 +41,7 @@ def test_invoice_requires_seller_tax_code(runtime_conn):
     free of NULLs. With a nullable column, Postgres treats NULLs as distinct
     and the SAME invoice inserts twice, defeating the UNIQUE that design doc
     §2.3 calls an e-invoice's identity."""
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="seller_tax_code"):
         runtime_conn.execute(models.invoices.insert(), _invoice_values(seller_tax_code=None))
 
 
@@ -62,7 +62,7 @@ def test_duplicate_invoice_is_idempotent(runtime_conn):
 
 def test_invoice_status_is_constrained(runtime_conn):
     vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
-    with pytest.raises((IntegrityError, DBAPIError)):
+    with pytest.raises((IntegrityError, DBAPIError), match="ck_invoices_status"):
         runtime_conn.execute(
             models.invoices.insert(),
             _invoice_values(status="whatever", invoice_number=f"ST{uuid.uuid4().hex[:6]}"),
@@ -83,7 +83,7 @@ def test_flag_source_must_be_deterministic(runtime_conn):
     invoice_id = invoice_repo.insert_row(
         runtime_conn, _invoice_values(invoice_number=f"FL{uuid.uuid4().hex[:6]}")
     )
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="ck_flags_raised_by"):
         flags.raise_flag(
             runtime_conn,
             invoice_id,
@@ -110,7 +110,7 @@ def _clean_invoice(conn, suffix):
 def test_unbalanced_journal_entry_rejected(runtime_conn):
     """M2 GATE CONDITION + MUTATION GUARD (drop CHECK total_debit=total_credit)."""
     invoice_id = _clean_invoice(runtime_conn, f"JB{uuid.uuid4().hex[:6]}")
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="ck_journal_balanced"):
         journal.create_entry_with_lines(
             runtime_conn,
             invoice_id=invoice_id,
@@ -128,7 +128,7 @@ def test_human_approved_requires_an_approval_row(runtime_conn):
     is a string an application can simply write — the DB layer of the safety
     property would be asserting nothing."""
     invoice_id = _clean_invoice(runtime_conn, f"JH{uuid.uuid4().hex[:6]}")
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="ck_journal_human_approved_needs_approval"):
         journal.create_entry_with_lines(
             runtime_conn,
             invoice_id=invoice_id,
@@ -181,7 +181,7 @@ def test_auto_clean_allowed_once_every_flag_is_resolved(runtime_conn):
 def test_line_cannot_be_both_debit_and_credit(runtime_conn):
     """MUTATION GUARD (drop CHECK debit=0 OR credit=0)."""
     invoice_id = _clean_invoice(runtime_conn, f"JD{uuid.uuid4().hex[:6]}")
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="ck_journal_line_one_side"):
         journal.create_entry_with_lines(
             runtime_conn,
             invoice_id=invoice_id,
@@ -200,7 +200,7 @@ def test_negative_amounts_rejected(runtime_conn):
     `debit = 0 OR credit = 0`, so without this a 'balanced' entry can be
     assembled entirely from negative amounts."""
     invoice_id = _clean_invoice(runtime_conn, f"JN{uuid.uuid4().hex[:6]}")
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="ck_journal_line_non_negative"):
         journal.create_entry_with_lines(
             runtime_conn,
             invoice_id=invoice_id,
@@ -226,7 +226,7 @@ def test_one_invoice_cannot_be_posted_twice(runtime_conn):
         posting_authority="auto_clean",
         lines=BALANCED,
     )
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="journal_entries_invoice_id_key"):
         journal.create_entry_with_lines(
             runtime_conn,
             invoice_id=invoice_id,

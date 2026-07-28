@@ -78,7 +78,7 @@ def test_two_department_wide_budgets_rejected(seeded):
 
     with seeded.begin() as conn:
         reference.upsert_department(conn, "ZZTEST", "Phòng thử nghiệm")
-    with pytest.raises(IntegrityError), seeded.begin() as conn:
+    with pytest.raises(IntegrityError, match="uq_budgets_department_period_category"), seeded.begin() as conn:
         conn.execute(
             models.budgets.insert(),
             [

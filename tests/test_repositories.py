@@ -52,7 +52,7 @@ def test_batch_status_is_constrained(runtime_conn):
     from sqlalchemy.exc import IntegrityError
 
     batch_id = batches.create_batch(runtime_conn, label="bad-status")
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="ck_batches_status"):
         batches.complete_batch(runtime_conn, batch_id, status="finished", invoice_count=1)
 
 
@@ -159,7 +159,7 @@ def test_approval_decision_is_constrained(runtime_conn):
         flags_snapshot={},
         suggestions={},
     )
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="ck_approvals_decision"):
         approvals.record_decision(
             runtime_conn, approval_id, decision="maybe", decided_by="human:test"
         )
@@ -194,7 +194,7 @@ def test_budget_consumption_is_unique_per_budget_and_invoice(runtime_conn):
         balance_after=Decimal("49999000"),
         sequence_no=1,
     )
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="uq_budget_consumption_invoice"):
         budget_consumption.record_consumption(
             runtime_conn,
             budget_id=budget_id,
