@@ -57,7 +57,7 @@ test:
 	$(PY) -m pytest
 
 lint:
-	.venv/bin/ruff check src tests migrations
+	.venv/bin/ruff check src tests migrations scripts
 
 typecheck:
 	.venv/bin/mypy

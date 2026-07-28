@@ -4,9 +4,10 @@ motivated."""
 
 from decimal import Decimal
 
-from invoice_agent.extraction.xml_parser import parse_invoice_xml  # TEST-ONLY
 from scripts.generator import defects, templates
 from tests.test_generator_templates import spec
+
+from invoice_agent.extraction.xml_parser import parse_invoice_xml  # TEST-ONLY
 
 
 def parse(s):

@@ -6,9 +6,9 @@ import random
 from decimal import Decimal
 
 import pytest
+from scripts.generator import amounts
 
 from invoice_agent.domain.money import parse_amount_words  # TEST-ONLY
-from scripts.generator import amounts
 
 # The REAL strings from tests/fixtures/real_samples/, read 2026-07-28. The
 # generator must be able to reproduce these exactly, or the corpus is written

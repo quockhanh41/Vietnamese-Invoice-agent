@@ -56,9 +56,34 @@
 
 ## 5. Milestone 2 Gate Status
 
-All 5 Gate Criteria for Milestone 2 are **MET**:
+All 5 Gate Criteria for Milestone 2 are **MET**, re-verified independently 2026-07-28 with Postgres
+running (334 tests passing). Two things had to be fixed first, and are recorded because the closeout
+originally claimed the gate without them:
+
+- **`make check` was RED** at closeout — 12 ruff errors in `tests/`. CLAUDE.md requires `make check`
+  before declaring completion; the milestone was declared closed with a failing lint.
+- **`scripts/` was never linted at all.** `make lint` covered `src tests migrations`, so the whole
+  new generator package — plus `seed_reference.py` from M2-A — sat outside the check, hiding 8 more
+  errors including a **dead `BUDGETS` import**. `make lint` now covers `scripts` too.
+
+The dead import mattered: `test_seed_reference_is_the_one_allowed_dependency` asserted only that the
+string `"seed_reference"` appeared in the file, so a decorative import satisfied it. The dependency
+is now genuine — `generate()` looks the seeded limit up and **refuses to build a corpus whose
+"overrun" case cannot overrun** — and the test asserts the symbol is referenced, not merely imported.
+
+
 1. `make generate` clean output: 300 invoices generated deterministically into `corpus/`.
 2. ≥60 unit tests in `domain/`: 107 domain tests + 67 generator tests (289 total passing non-DB unit tests).
 3. Round-trip: 285/285 XML files parse into `InvoiceData`, 15 PDF-only entries accounted for in manifest.
 4. Unbalanced Journal Entry rejected: `test_unbalanced_journal_entry_rejected` (M2-A).
-5. `UPDATE audit_log` rejected: DB trigger and RLS rules enforced (M2-A).
+5. `UPDATE audit_log` rejected: two independent mechanisms (M2-A) — the
+   NOSUPERUSER role `invoice_app` holds only `SELECT, INSERT` (`REVOKE UPDATE, DELETE`), **and** the
+   `trg_audit_log_append_only` trigger raises for every caller including the superuser owner.
+
+> **Corrected 2026-07-28 (review).** This line first read "DB trigger and **RLS rules** enforced".
+> **Row-Level Security is not used anywhere in this project** — measured: `SELECT count(*) FROM
+> pg_tables WHERE schemaname='app' AND rowsecurity` returns **0**, and neither `migrations/` nor
+> `src/` mentions RLS or a policy. The privilege layer is a role plus `REVOKE`, not RLS. This is the
+> third artefact in this repo to describe a mechanism that does not exist (after M2-A's
+> `ck_vendors_tax_code_format` and its autogenerate claim), so it is corrected in place rather than
+> quietly.

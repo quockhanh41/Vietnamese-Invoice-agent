@@ -49,12 +49,15 @@
 
 ## 1. Vị trí hiện tại (tóm tắt 1 đoạn)
 
-**Updated 2026-07-28 — M0 closed (gate 5/5). M1 closed (gate 4/4). M2-A closed and then reviewed:
-10/10 tasks, 15 tables, 9 migrations, 11/11 mutation guards re-broken independently and confirmed
-red, `make check` green with **160 tests**. Gate evidence:
-`docs/notes/2026-07-28-m2a-database-defends-itself.md`. The review found and fixed three defects the
-implementation had reported as passing — a gutted M1.6 guard, a fabricated constraint in the
-artefact, and 32 phantom autogenerate diffs; see the M2 row in §7. M2-B and M2-C are not started.**
+**Updated 2026-07-28 — M0 closed (gate 5/5). M1 closed (gate 4/4). M2 CLOSED (gate 5/5), split
+into three specs and each reviewed after implementation: M2-A schema/seed/repositories, M2-B
+`domain/`, M2-C corpus generator. `make check` green with **334 tests**; corpus is 300 manifest
+entries = 285 XML (all parse) + 15 PDF-only declared unparseable-by-design. Gate evidence in
+`docs/notes/2026-07-28-m2a-database-defends-itself.md`, `…-m2b-domain-core.md`,
+`…-m2c-corpus-generator.md`. **Every milestone review found defects the implementation had
+reported as passing** — a gutted M1.6 guard and a fabricated constraint (M2-A), a mutation guard
+that guarded nothing (M2-B), a red `make check` and an unlinted `scripts/` (M2-C). All fixed and
+re-measured. M3 is open.**
 
 
 **M0 — nền chạy được.** Repo `git init` riêng, đã push lên
@@ -600,8 +603,8 @@ ngay; **mọi con số trong README trace được về `docs/eval-report.md` tr
 |---|---|---|---|
 | M0 — Nền sạch | ✅ | 2026-07-27 | Gate 5/5. `make dev` + `make check` green; CI green on real Postgres (`30233872335`, 62 passed). Alembic scaffolding was pulled in here because the gate demanded "run migrations" while 0.1–0.7 contained no item that built it. A CI hole survived until 2026-07-27: the workflow created the schemas but never ran `alembic upgrade head`, invisible until a test needed a table |
 | M1 — XML thật + HITL spike | ✅ | 2026-07-28 | **Gate 4/4, re-verified independently 2026-07-28** (not merely re-read): `make check` 123 passed, HITL `kill -9` **10/10 locally** at `HITL_RUNS=10`, real `alembic revision --autogenerate` against the 4 live checkpoint tables emits an **empty** migration. All 6 items done: ✅ 1.1 (8 files / 8 vendors / 3 `PBan`) · ✅ 1.2 · ✅ 1.3 `xml_schema.py` · ✅ 1.4 `xml_parser.py` (8/8 parse) · ✅ 1.5 HITL durability · ✅ 1.6 Alembic isolation + ADR 0002. **8/8 guards re-confirmed red under mutation** — see the review note below. Owed, non-blocking: ADR `0001-three-graphs-not-one.md`; terminal recording (deferred to M8); NĐ 70/2025 field check |
-| M2 — Corpus + schema + domain | 🟡 **đang mở** | | **M2 được chia làm ba spec/plan riêng** (2026-07-28): **M2-A** = 2.4/2.5/2.7 (schema + seed + repositories) · **M2-B** = 2.6 (`domain/`) · **M2-C** = 2.1–2.3 (generator). A → C vì ca vượt ngân sách của generator cần đúng hạn mức mà 2.5 seed. **M2-A ✅ xong 2026-07-28**: 15 bảng / 9 revision / 11 mutation guard đều đỏ khi phá constraint (đã đo lại độc lập), `make check` xanh **160 test**, autogenerate rỗng, migrate+seed+suite chạy sạch trên database mới tạo (17 quan hệ ở `app`, 0 ở `public`). Bằng chứng: `docs/notes/2026-07-28-m2a-database-defends-itself.md`. **Ba lỗi review đã sửa**: guard M1.6 bị viết lại làm mất `saver.setup()` nên **mù trên CI** (đã khôi phục, đỏ với cả 2 mutation); artefact bịa một CHECK `ck_vendors_tax_code_format` không hề tồn tại; autogenerate sinh 32 diff ma vì `env.py` để `app` đầu search_path (đã sửa + có test riêng). **M2-B và M2-C chưa bắt đầu.** **Ba ràng buộc thừa kế từ M1, đọc trước khi viết dòng code đầu tiên**: (1) **`scripts/generate_invoices.py` KHÔNG được import hay đọc `xml_schema.py`** — nếu generator và parser cùng dựa trên một hiểu biết về format thì điểm 100% chỉ chứng minh chúng đồng ý với nhau, và `false-positive rate 0%` trong eval report là số bịa; (2) generator phải sinh được thứ hóa đơn thật đã dạy: dòng `TChat=4` không tiền, `ThTien=0` với tiền nằm ở `TTKhac['Amount']`, `TSuat` dạng chuỗi `'8%'`, đơn giá lẻ khiến `SLuong × DGia ≠ ThTien` (lệch tới 0.01), và MST cả 3 hình dạng — generator nhân xuôi từ đơn giá sẽ luôn chia hết và bỏ lỡ cả nhóm defect này; (3) `TSuat` mã `KCT`/`KKKNT` hiện parser **từ chối lớn tiếng** vì không fixture nào có — nếu M2.1 sinh ra chúng thì phải mở rộng `vat_rate()` trước, đừng để generator tạo dữ liệu mà parser không đọc nổi |
-| M3 — Extraction + tools + cost + replay | 🔲 | | |
+| M2 — Corpus + schema + domain | ✅ | 2026-07-28 | **Gate 5/5, re-verified independently 2026-07-28.** Split into three specs: **M2-A** (2.4/2.5/2.7 schema+seed+repositories, 15 bảng / 9 revision / 11 mutation guard đều đỏ) · **M2-B** (2.6 `domain/`, 107 test, 8/8 hóa đơn thật ra ZERO finding, 10 guard đỏ) · **M2-C** (2.1–2.3 generator, 67 test, 9 guard đỏ). Corpus: 300 mục = 285 XML **parse hết** + 15 PDF-only khai báo rõ là không parse được (M3.4 render). Generator KHÔNG import `xml_schema`/`xml_parser`/`domain` — có test chặn, nên điểm round-trip là bằng chứng chứ không phải lặp vòng. **Ba lần review, ba lần tìm ra lỗi mà bản implement đã báo là đạt**: guard M1.6 bị viết lại thành mù trên CI + artefact bịa `ck_vendors_tax_code_format` + 32 diff ma autogenerate (M2-A); một mutation guard xanh khi đã phá luật (M2-B); `make check` ĐỎ lúc đóng milestone + `scripts/` chưa từng được lint + `BUDGETS` import chết (M2-C). Đã sửa hết và đo lại. **Nợ, không chặn M3**: ADR `0001-three-graphs-not-one.md`; terminal recording (M8); NĐ 70/2025; KCT/KKKNT; PDF render (M3.4); injection variant 7–26 (M6.1) |
+| M3 — Extraction + tools + cost + replay | 🟡 **đang mở** | | |
 | M4 — Multi-agent + memory + serialization | 🔲 | | |
 | M5 — HITL production + API + UI | 🔲 | | |
 | M6 — Security + observability + eval | 🔲 | | |

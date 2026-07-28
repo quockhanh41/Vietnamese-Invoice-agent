@@ -6,10 +6,10 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-
-from invoice_agent.extraction.xml_parser import parse_invoice_xml  # TEST-ONLY
 from scripts.generator import templates
 from scripts.generator.templates import InvoiceSpec, LineSpec
+
+from invoice_agent.extraction.xml_parser import parse_invoice_xml  # TEST-ONLY
 
 
 def spec(**kw) -> InvoiceSpec:

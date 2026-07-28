@@ -2,12 +2,13 @@
 no less. A defect that raises nothing is a corpus bug; one that raises three
 findings makes recall unmeasurable."""
 
-from decimal import Decimal
+import random
+
+from scripts.generator import defects, templates
+from tests.test_generator_templates import spec
 
 from invoice_agent.domain import findings, validation  # TEST-ONLY
 from invoice_agent.extraction.xml_parser import parse_invoice_xml  # TEST-ONLY
-from scripts.generator import defects, templates
-from tests.test_generator_templates import spec
 
 
 def codes_for(s) -> set[str]:
@@ -47,8 +48,6 @@ def test_seeded_defects_still_parse():
                  defects.seed_bad_tax_code, defects.seed_wrong_vat_rate):
         parse_invoice_xml(templates.render(seed(spec())).encode("utf-8"))
 
-
-import random
 
 
 def test_exact_duplicate_shares_the_whole_natural_key():

@@ -1,8 +1,9 @@
 """§9.1 payloads and §9.3 negative controls."""
 
-from invoice_agent.extraction.xml_parser import parse_invoice_xml  # TEST-ONLY
 from scripts.generator import defects, templates
 from tests.test_generator_templates import spec
+
+from invoice_agent.extraction.xml_parser import parse_invoice_xml  # TEST-ONLY
 
 
 def test_all_six_design_doc_payloads_are_present():

@@ -4,8 +4,9 @@ vocabulary, M6 measures against codes that can never be raised."""
 import json
 from decimal import Decimal
 
-from invoice_agent.domain import findings  # TEST-ONLY: the cross-check
 from scripts.generator import manifest
+
+from invoice_agent.domain import findings  # TEST-ONLY: the cross-check
 
 
 def record(**kw):

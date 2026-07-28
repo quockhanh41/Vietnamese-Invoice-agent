@@ -6,14 +6,13 @@ mechanism: the parser derives its paths from its own map, the generator from
 the documents, and only then does agreement mean something.
 """
 
+import pathlib
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-import pathlib
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from markupsafe import Markup
-
 from scripts.generator.amounts import to_amount_words
 
 _TEMPLATES_DIR = pathlib.Path(__file__).parent / "templates"

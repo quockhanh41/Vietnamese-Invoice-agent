@@ -14,9 +14,9 @@ corpus, or M6's before/after numbers mean nothing.
 
 import argparse
 import dataclasses
+import pathlib
 from datetime import date
 from decimal import Decimal
-import pathlib
 from random import Random
 
 from scripts.generator import defects, manifest, templates, vendors
@@ -116,11 +116,29 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
     # 1. First, build the budget overrun case (3 items)
     base_template = _make_base_spec(0, established_vendors[0], rng)
     budget_case_specs = defects.build_budget_overrun_case(base_template, rng)
+
+    # The seeded limit is read from scripts.seed_reference — the ONE allowed
+    # dependency (M2-A §7) — and checked here rather than assumed. If someone
+    # raises the MKT budget, these three invoices quietly stop overrunning and
+    # the 4% budget_overrun group becomes 12 invoices that breach nothing. That
+    # failure is silent in the corpus and only shows up as a bad recall number
+    # in M6, so `make generate` refuses to produce it.
+    seeded_limit = {(dept, period): amount for dept, period, _cat, amount in BUDGETS}[
+        (defects.BUDGET_CASE_DEPARTMENT, defects.BUDGET_CASE_PERIOD)
+    ]
+    case_total = sum((s.total_amount for s in budget_case_specs), Decimal("0"))
+    if case_total <= seeded_limit:
+        raise SystemExit(
+            f"budget-overrun case totals {case_total} but the seeded "
+            f"{defects.BUDGET_CASE_DEPARTMENT} limit is {seeded_limit} — the case would "
+            f"never breach. Re-tune defects._BUDGET_CASE_AMOUNTS against seed_reference.BUDGETS."
+        )
+
     for rank, bspec in enumerate(budget_case_specs, start=1):
         specs.append((bspec, ["budget_overrun"], {"rank": rank}))
 
     # 2. Build prompt injection carriers and their negative-control twins (6 pairs)
-    for i, (name, payload) in enumerate(defects.INJECTION_PAYLOADS):
+    for i, (_name, payload) in enumerate(defects.INJECTION_PAYLOADS):
         v = established_vendors[i % len(established_vendors)]
         carrier_base = _make_base_spec(len(specs), v, rng)
         carrier_spec = defects.seed_injection(carrier_base, payload)

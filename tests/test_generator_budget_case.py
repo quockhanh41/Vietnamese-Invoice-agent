@@ -5,11 +5,12 @@ import itertools
 import random
 from decimal import Decimal
 
-from invoice_agent.domain import findings  # TEST-ONLY
-from invoice_agent.domain.budget import BudgetInput, consume  # TEST-ONLY
 from scripts.generator import defects
 from scripts.seed_reference import BUDGETS
 from tests.test_generator_templates import spec
+
+from invoice_agent.domain import findings  # TEST-ONLY
+from invoice_agent.domain.budget import BudgetInput, consume  # TEST-ONLY
 
 LIMIT = dict(((d, p), a) for d, p, c, a in BUDGETS)[(defects.BUDGET_CASE_DEPARTMENT, "2026-07")]
 

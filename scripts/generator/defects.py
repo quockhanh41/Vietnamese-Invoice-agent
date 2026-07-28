@@ -7,9 +7,13 @@ rather than true.
 """
 
 import dataclasses
+import datetime
 from decimal import Decimal
+from random import Random
 
+from scripts.generator.amounts import to_amount_words
 from scripts.generator.templates import InvoiceSpec, LineSpec
+from scripts.generator.vendors import invalidate_checksum
 
 
 def make_note_line(line_no: int) -> LineSpec:
@@ -57,10 +61,6 @@ def make_header_only_vat_spec(base: InvoiceSpec) -> InvoiceSpec:
     )
 
 
-from scripts.generator.amounts import to_amount_words
-from scripts.generator.vendors import invalidate_checksum
-
-
 def seed_arithmetic_error(base: InvoiceSpec) -> InvoiceSpec:
     """6% group. The declared total disagrees with the lines.
 
@@ -106,9 +106,6 @@ def seed_wrong_vat_rate(base: InvoiceSpec) -> InvoiceSpec:
     )
 
 
-import datetime
-from random import Random
-
 # Price-outlier group (2%): 10x the vendor's usual amount, well beyond the
 # z-score threshold whatever M6 finally sets it to.
 OUTLIER_MULTIPLIER = Decimal("10")
@@ -151,6 +148,10 @@ def near_duplicate_of(base: InvoiceSpec, rng: Random) -> InvoiceSpec:
 
 
 BUDGET_CASE_DEPARTMENT = "MKT"
+# Must match a (department, period) key in scripts.seed_reference.BUDGETS.
+# generate_invoices.py looks the limit up with this pair and refuses to build
+# a corpus whose "overrun" case does not actually overrun.
+BUDGET_CASE_PERIOD = "2026-07"
 
 # Item 2.3. Three Marketing invoices against the seeded MKT limit of
 # 50,000,000, verified 2026-07-28:

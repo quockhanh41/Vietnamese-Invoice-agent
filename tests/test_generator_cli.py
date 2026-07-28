@@ -2,11 +2,11 @@
 
 import collections
 import hashlib
-import pathlib
 
-from invoice_agent.extraction.xml_parser import parse_invoice_xml  # TEST-ONLY
 from scripts import generate_invoices
 from scripts.generator import manifest
+
+from invoice_agent.extraction.xml_parser import parse_invoice_xml  # TEST-ONLY
 
 
 def build(tmp_path, count=300, seed=42):

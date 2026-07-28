@@ -8,8 +8,9 @@ of a valid code are invalid, so the defect group needs no algorithm either.
 
 import random
 
-from invoice_agent.domain import taxcode  # TEST-ONLY: the independent checker
 from scripts.generator import vendors
+
+from invoice_agent.domain import taxcode  # TEST-ONLY: the independent checker
 
 
 def test_pool_is_large_enough_for_vendor_history():
