@@ -148,3 +148,40 @@ def near_duplicate_of(base: InvoiceSpec, rng: Random) -> InvoiceSpec:
         issue_date=base.issue_date + datetime.timedelta(days=rng.randint(1, 5)),
         total_in_words=None,
     )
+
+
+BUDGET_CASE_DEPARTMENT = "MKT"
+
+# Item 2.3. Three Marketing invoices against the seeded MKT limit of
+# 50,000,000, verified 2026-07-28:
+#
+#   canonical order (issue_date, series, number) -> C, B, A -> A breaches, always
+#   naive arrival-order walk                     -> ANY of A, B, C can breach
+#
+# The amounts are chosen so no single invoice breaches alone and no pair does
+# either, but all three together do. INVOICE-NUMBER ORDER IS DELIBERATELY THE
+# REVERSE OF CANONICAL ORDER — if they agreed, shuffling the input could not
+# distinguish a sorted implementation from an unsorted one, and M4's
+# test_budget_serialization.py would prove nothing.
+_BUDGET_CASE_AMOUNTS = (Decimal("20000000"), Decimal("20000000"), Decimal("15000000"))
+_BUDGET_CASE_DAYS = (20, 10, 5)
+
+
+def build_budget_overrun_case(base: InvoiceSpec, rng: Random) -> list[InvoiceSpec]:
+    """Three Marketing invoices whose canonical order is not their file order."""
+    out: list[InvoiceSpec] = []
+    for index, (amount, day) in enumerate(zip(_BUDGET_CASE_AMOUNTS, _BUDGET_CASE_DAYS, strict=True)):
+        line = LineSpec(
+            line_no=1, item_kind=1,
+            description="Chi phí quảng cáo trực tuyến tháng 07/2026",
+            unit="Gói", quantity=Decimal("1"), unit_price=amount, amount=amount,
+            vat_rate=None, vat_amount=None, ext_amount=None, self_closing=False,
+        )
+        out.append(dataclasses.replace(
+            base,
+            invoice_number=f"{901 + index:08d}",
+            issue_date=datetime.date(2026, 7, day),
+            lines=[line], subtotal=None, vat_total=None,
+            total_amount=amount, total_in_words=None, template_no="2",
+        ))
+    return out
