@@ -12,15 +12,35 @@ from invoice_agent.db import models
 
 
 def record_call(
-    conn: Connection, *, model: str, provider: str, node: str,
-    prompt_tokens: int, completion_tokens: int, cost_usd: Decimal,
-    shadow_cost_usd: Decimal, latency_ms: int, attempt: int = 1,
-    succeeded: bool = True, error: str | None = None,
+    conn: Connection,
+    *,
+    model: str,
+    provider: str,
+    node: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    cost_usd: Decimal,
+    shadow_cost_usd: Decimal,
+    latency_ms: int,
+    attempt: int = 1,
+    succeeded: bool = True,
+    error: str | None = None,
 ) -> int:
-    stmt = models.llm_calls.insert().values(
-        model=model, provider=provider, node=node, prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens, cost_usd=cost_usd,
-        shadow_cost_usd=shadow_cost_usd, latency_ms=latency_ms, attempt=attempt,
-        succeeded=succeeded, error=error,
-    ).returning(models.llm_calls.c.id)
+    stmt = (
+        models.llm_calls.insert()
+        .values(
+            model=model,
+            provider=provider,
+            node=node,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cost_usd=cost_usd,
+            shadow_cost_usd=shadow_cost_usd,
+            latency_ms=latency_ms,
+            attempt=attempt,
+            succeeded=succeeded,
+            error=error,
+        )
+        .returning(models.llm_calls.c.id)
+    )
     return int(conn.execute(stmt).scalar_one())

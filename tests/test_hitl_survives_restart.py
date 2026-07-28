@@ -145,15 +145,11 @@ def test_hitl_survives_restart(requires_postgres, run):
             child.kill()
             child.wait(timeout=5)
         with psycopg.connect(requires_postgres) as conn:
-            conn.execute(
-                "DELETE FROM app.spike_counter WHERE thread_id = %s", (thread_id,)
-            )
+            conn.execute("DELETE FROM app.spike_counter WHERE thread_id = %s", (thread_id,))
 
 
 def test_ci_runs_the_full_ten():
     """Chốt chặn: không có test này, một ngày nào đó ai đó sửa workflow, CI âm
     thầm chạy 3 lần, và gate "10/10" tự suy yếu mà không ai biết."""
     if os.getenv("CI", "").lower() in ("true", "1"):
-        assert HITL_RUNS >= 10, (
-            f"CI phải đặt HITL_RUNS>=10 để đóng gate M1, đang là {HITL_RUNS}"
-        )
+        assert HITL_RUNS >= 10, f"CI phải đặt HITL_RUNS>=10 để đóng gate M1, đang là {HITL_RUNS}"

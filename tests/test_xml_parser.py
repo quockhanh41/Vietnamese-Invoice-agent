@@ -165,10 +165,7 @@ BILLION_LAUGHS = (
     b'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY e0 "AAAA">'
     b'<!ENTITY e1 "&e0;&e0;"><!ENTITY e2 "&e1;&e1;">]><r>&e2;</r>'
 )
-XXE = (
-    b'<?xml version="1.0"?><!DOCTYPE r ['
-    b'<!ENTITY x SYSTEM "file:///etc/hostname">]><r>&x;</r>'
-)
+XXE = b'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/hostname">]><r>&x;</r>'
 
 
 @pytest.mark.parametrize("payload", [BILLION_LAUGHS, XXE], ids=["billion-laughs", "xxe"])

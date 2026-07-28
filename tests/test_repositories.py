@@ -31,8 +31,7 @@ def test_ensure_vendor_is_idempotent_and_does_not_clobber_the_profile(runtime_co
     sighting must not reset them."""
     tax_code = f"ZZ{uuid.uuid4().hex[:8]}"
     vendors.ensure_vendor(runtime_conn, tax_code, name="Lần đầu")
-    vendors.update_profile(runtime_conn, tax_code, invoice_count=7,
-                           total_amount=Decimal("1000000"))
+    vendors.update_profile(runtime_conn, tax_code, invoice_count=7, total_amount=Decimal("1000000"))
     vendors.ensure_vendor(runtime_conn, tax_code, name="Lần hai")
     row = vendors.get_vendor(runtime_conn, tax_code)
     assert row["invoice_count"] == 7, "second sighting wiped accumulated memory"
@@ -84,17 +83,15 @@ def test_insert_with_lines_round_trips_a_real_fixture(runtime_conn):
     assert [r["line_no"] for r in lines] == [1, 2, 3, 4, 5, 6, 7]
 
 
-
-
-
 def test_decimal_precision_survives_storage(runtime_conn):
     """Money columns are unconstrained NUMERIC. M1 measured 21618409.09000000
     (8 dp) and a unit price of 398181.33 where 3 x 398181.33 = 1194543.99 but
     ThTien = 1194544. NUMERIC(18,2) rounds, and the validation rule that holds
     8/8 is an EXACT comparison."""
+    from tests.test_schema_constraints import _invoice_values
+
     from invoice_agent.db.repositories import batches
     from invoice_agent.db.repositories import invoices as invoice_repo
-    from tests.test_schema_constraints import _invoice_values
 
     vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
     batch_id = batches.create_batch(runtime_conn, label="precision")
@@ -114,17 +111,22 @@ def test_approval_latency_is_computed_by_the_database(runtime_conn):
     drift from requested_at/decided_at."""
     import time
 
+    from tests.test_schema_constraints import _invoice_values
+
     from invoice_agent.db.repositories import approvals, vendors
     from invoice_agent.db.repositories import invoices as invoice_repo
-    from tests.test_schema_constraints import _invoice_values
 
     vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
     invoice_id = invoice_repo.insert_row(
         runtime_conn, _invoice_values(invoice_number=f"AP{uuid.uuid4().hex[:6]}")
     )
     approval_id = approvals.open_approval(
-        runtime_conn, invoice_id=invoice_id, thread_id=f"appr:{invoice_id}",
-        interrupt_payload={"q": "duyệt?"}, flags_snapshot={}, suggestions={},
+        runtime_conn,
+        invoice_id=invoice_id,
+        thread_id=f"appr:{invoice_id}",
+        interrupt_payload={"q": "duyệt?"},
+        flags_snapshot={},
+        suggestions={},
     )
     assert approvals.get_approval(runtime_conn, approval_id)["latency_seconds"] is None
     assert any(r["id"] == approval_id for r in approvals.list_pending(runtime_conn))
@@ -140,18 +142,22 @@ def test_approval_latency_is_computed_by_the_database(runtime_conn):
 
 def test_approval_decision_is_constrained(runtime_conn):
     from sqlalchemy.exc import IntegrityError
+    from tests.test_schema_constraints import _invoice_values
 
     from invoice_agent.db.repositories import approvals, vendors
     from invoice_agent.db.repositories import invoices as invoice_repo
-    from tests.test_schema_constraints import _invoice_values
 
     vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
     invoice_id = invoice_repo.insert_row(
         runtime_conn, _invoice_values(invoice_number=f"AD{uuid.uuid4().hex[:6]}")
     )
     approval_id = approvals.open_approval(
-        runtime_conn, invoice_id=invoice_id, thread_id="t", interrupt_payload={},
-        flags_snapshot={}, suggestions={},
+        runtime_conn,
+        invoice_id=invoice_id,
+        thread_id="t",
+        interrupt_payload={},
+        flags_snapshot={},
+        suggestions={},
     )
     with pytest.raises(IntegrityError):
         approvals.record_decision(
@@ -164,31 +170,39 @@ def test_budget_consumption_is_unique_per_budget_and_invoice(runtime_conn):
     invoice against a budget and `test_budget_serialization.py` (M4) becomes
     unprovable."""
     from sqlalchemy.exc import IntegrityError
-
-    from invoice_agent.db.repositories import (
-        budget_consumption, reference, vendors,
-    )
-    from invoice_agent.db.repositories import invoices as invoice_repo
     from tests.test_schema_constraints import _invoice_values
 
-    reference.upsert_department(runtime_conn, "MKT", "Phòng Marketing")
-    budget_id = reference.upsert_budget(
-        runtime_conn, "MKT", "2026-07", None, Decimal("50000000")
+    from invoice_agent.db.repositories import (
+        budget_consumption,
+        reference,
+        vendors,
     )
+    from invoice_agent.db.repositories import invoices as invoice_repo
+
+    reference.upsert_department(runtime_conn, "MKT", "Phòng Marketing")
+    budget_id = reference.upsert_budget(runtime_conn, "MKT", "2026-07", None, Decimal("50000000"))
     vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
     invoice_id = invoice_repo.insert_row(
         runtime_conn, _invoice_values(invoice_number=f"BC{uuid.uuid4().hex[:6]}")
     )
     budget_consumption.record_consumption(
-        runtime_conn, budget_id=budget_id, invoice_id=invoice_id,
-        amount=Decimal("1000"), balance_before=Decimal("50000000"),
-        balance_after=Decimal("49999000"), sequence_no=1,
+        runtime_conn,
+        budget_id=budget_id,
+        invoice_id=invoice_id,
+        amount=Decimal("1000"),
+        balance_before=Decimal("50000000"),
+        balance_after=Decimal("49999000"),
+        sequence_no=1,
     )
     with pytest.raises(IntegrityError):
         budget_consumption.record_consumption(
-            runtime_conn, budget_id=budget_id, invoice_id=invoice_id,
-            amount=Decimal("1000"), balance_before=Decimal("49999000"),
-            balance_after=Decimal("49998000"), sequence_no=2,
+            runtime_conn,
+            budget_id=budget_id,
+            invoice_id=invoice_id,
+            amount=Decimal("1000"),
+            balance_before=Decimal("49999000"),
+            balance_after=Decimal("49998000"),
+            sequence_no=2,
         )
 
 
@@ -198,10 +212,18 @@ def test_llm_calls_records_failures_too(runtime_conn):
     from invoice_agent.db.repositories import llm_calls
 
     row_id = llm_calls.record_call(
-        runtime_conn, model="groq/llama-3.3-70b-versatile", provider="groq",
-        node="classify", prompt_tokens=800, completion_tokens=0,
-        cost_usd=Decimal("0"), shadow_cost_usd=Decimal("0.00012"),
-        latency_ms=340, attempt=1, succeeded=False, error="429 rate limit",
+        runtime_conn,
+        model="groq/llama-3.3-70b-versatile",
+        provider="groq",
+        node="classify",
+        prompt_tokens=800,
+        completion_tokens=0,
+        cost_usd=Decimal("0"),
+        shadow_cost_usd=Decimal("0.00012"),
+        latency_ms=340,
+        attempt=1,
+        succeeded=False,
+        error="429 rate limit",
     )
     assert row_id is not None
 
@@ -210,24 +232,28 @@ def test_episodic_similar_uses_the_sql_channel(runtime_conn):
     """Design doc §7.1: episodic recall is SQL FIRST — same vendor OR same
     category, ordered by flag overlap and recency. pgvector is M7 and only if
     there is time, which is why there is no embedding column yet."""
+    from tests.test_schema_constraints import _invoice_values
+
     from invoice_agent.db.repositories import episodic, vendors
     from invoice_agent.db.repositories import invoices as invoice_repo
-    from tests.test_schema_constraints import _invoice_values
 
     vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
     invoice_id = invoice_repo.insert_row(
         runtime_conn, _invoice_values(invoice_number=f"EP{uuid.uuid4().hex[:6]}")
     )
     episodic.record_episode(
-        runtime_conn, approval_id=None, invoice_id=invoice_id,
-        vendor_tax_code="0100000003", category="MARKETING", department="MKT",
-        amount=Decimal("5000000"), flags={"BUDGET_EXCEEDED": True},
-        decision="approved", reason="Giám đốc đã duyệt ngoài hệ thống",
+        runtime_conn,
+        approval_id=None,
+        invoice_id=invoice_id,
+        vendor_tax_code="0100000003",
+        category="MARKETING",
+        department="MKT",
+        amount=Decimal("5000000"),
+        flags={"BUDGET_EXCEEDED": True},
+        decision="approved",
+        reason="Giám đốc đã duyệt ngoài hệ thống",
     )
     hits = episodic.similar_episodes(
         runtime_conn, vendor_tax_code="0100000003", category=None, limit=5
     )
     assert any(h["invoice_id"] == invoice_id for h in hits)
-
-
-

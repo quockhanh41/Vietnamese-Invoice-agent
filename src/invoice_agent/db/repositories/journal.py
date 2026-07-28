@@ -31,9 +31,14 @@ class JournalLine:
 
 
 def create_entry_with_lines(
-    conn: Connection, *, invoice_id: uuid.UUID, entry_date: date,
-    posting_authority: str, lines: list[JournalLine],
-    approval_id: uuid.UUID | None = None, posted_by: str | None = None,
+    conn: Connection,
+    *,
+    invoice_id: uuid.UUID,
+    entry_date: date,
+    posting_authority: str,
+    lines: list[JournalLine],
+    approval_id: uuid.UUID | None = None,
+    posted_by: str | None = None,
     status: str = "draft",
 ) -> uuid.UUID:
     """Totals are SUMMED HERE, never passed in.
@@ -43,28 +48,45 @@ def create_entry_with_lines(
     which would turn the balance guard into decoration.
     """
     entry_id = uuid.uuid4()
-    conn.execute(models.journal_entries.insert().values(
-        id=entry_id, invoice_id=invoice_id, entry_date=entry_date,
-        posting_authority=posting_authority, approval_id=approval_id,
-        posted_by=posted_by, status=status,
-        total_debit=sum((line.debit for line in lines), Decimal("0")),
-        total_credit=sum((line.credit for line in lines), Decimal("0")),
-    ))
-    conn.execute(models.journal_entry_lines.insert(), [
-        {
-            "journal_entry_id": entry_id, "line_no": position,
-            "account_code": line.account_code, "account_name": line.account_name,
-            "debit": line.debit, "credit": line.credit, "description": line.description,
-        }
-        for position, line in enumerate(lines, start=1)
-    ])
+    conn.execute(
+        models.journal_entries.insert().values(
+            id=entry_id,
+            invoice_id=invoice_id,
+            entry_date=entry_date,
+            posting_authority=posting_authority,
+            approval_id=approval_id,
+            posted_by=posted_by,
+            status=status,
+            total_debit=sum((line.debit for line in lines), Decimal("0")),
+            total_credit=sum((line.credit for line in lines), Decimal("0")),
+        )
+    )
+    conn.execute(
+        models.journal_entry_lines.insert(),
+        [
+            {
+                "journal_entry_id": entry_id,
+                "line_no": position,
+                "account_code": line.account_code,
+                "account_name": line.account_name,
+                "debit": line.debit,
+                "credit": line.credit,
+                "description": line.description,
+            }
+            for position, line in enumerate(lines, start=1)
+        ],
+    )
     return entry_id
 
 
 def get_for_invoice(conn: Connection, invoice_id: uuid.UUID) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.journal_entries).where(models.journal_entries.c.invoice_id == invoice_id)
-    ).mappings().first()
+    row = (
+        conn.execute(
+            select(models.journal_entries).where(models.journal_entries.c.invoice_id == invoice_id)
+        )
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 
 

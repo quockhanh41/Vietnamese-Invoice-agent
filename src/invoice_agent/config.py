@@ -155,7 +155,9 @@ class Settings(BaseSettings):
     @property
     def runtime_dsn(self) -> str:
         """Business connection with least privilege — see `app_dsn` for the options rules."""
-        return self._with_options(f"-csearch_path={APP_SCHEMA},public", base=self.runtime_database_url)
+        return self._with_options(
+            f"-csearch_path={APP_SCHEMA},public", base=self.runtime_database_url
+        )
 
     @property
     def runtime_sqlalchemy_url(self) -> str:
@@ -172,7 +174,6 @@ class Settings(BaseSettings):
         url = self.database_url if base is None else base
         separator = "&" if "?" in url else "?"
         return f"{url}{separator}options={quote(options, safe='')}"
-
 
 
 @lru_cache

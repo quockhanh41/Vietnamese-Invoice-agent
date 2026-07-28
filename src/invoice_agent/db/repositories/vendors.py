@@ -6,7 +6,6 @@ explicit that recomputing in the hot path is too slow, and that "memory growing
 over time" is the point being demonstrated.
 """
 
-from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import Connection, func, select
@@ -21,20 +20,18 @@ def ensure_vendor(conn: Connection, tax_code: str, name: str | None = None) -> N
     Never overwrite accumulated statistics here — a second invoice from a known
     vendor must not reset the memory built from the first hundred.
     """
-    stmt = insert(models.vendors).values(
-        tax_code=tax_code, name=name, last_seen_at=func.now()
-    )
+    stmt = insert(models.vendors).values(tax_code=tax_code, name=name, last_seen_at=func.now())
     conn.execute(
-        stmt.on_conflict_do_update(
-            index_elements=["tax_code"], set_={"last_seen_at": func.now()}
-        )
+        stmt.on_conflict_do_update(index_elements=["tax_code"], set_={"last_seen_at": func.now()})
     )
 
 
 def get_vendor(conn: Connection, tax_code: str) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.vendors).where(models.vendors.c.tax_code == tax_code)
-    ).mappings().first()
+    row = (
+        conn.execute(select(models.vendors).where(models.vendors.c.tax_code == tax_code))
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 
 

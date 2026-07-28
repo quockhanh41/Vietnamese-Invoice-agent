@@ -54,5 +54,3 @@ def runtime_conn(requires_postgres):
 
     with get_engine().begin() as conn:
         yield conn
-
-

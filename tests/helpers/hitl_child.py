@@ -23,9 +23,7 @@ def main(thread_id: str) -> None:
     with build_checkpointer() as saver:
         saver.setup()
         app = build_spike_graph().compile(checkpointer=saver)
-        result = app.invoke(
-            {"thread_id": thread_id, "trace": [], "decision": ""}, config
-        )
+        result = app.invoke({"thread_id": thread_id, "trace": [], "decision": ""}, config)
         if "__interrupt__" not in result:
             print("NO_INTERRUPT", flush=True)
             sys.exit(2)

@@ -20,8 +20,8 @@ class InvoiceState(TypedDict):
     validation_errors: list[str]
     category: str | None
     department: str | None
-    vendor_history: VendorProfile | None   # từ Memory
-    flags: list[str]                       # do Reconciliation agent gắn
+    vendor_history: VendorProfile | None  # từ Memory
+    flags: list[str]  # do Reconciliation agent gắn
     approval_status: Literal["pending", "approved", "rejected", "auto"]
     approval_reason: str | None
     journal_entry: JournalEntryDraft | None
@@ -47,23 +47,29 @@ class ParseInvoiceOutput(BaseModel):
     items: list[InvoiceItem]
     total_amount: float
 
+
 @tool
 def parse_einvoice_xml(file_path: str) -> ParseInvoiceOutput: ...
 
+
 @tool
-def extract_pdf_vision(file_path: str) -> ParseInvoiceOutput: ...   # fallback khi không có XML
+def extract_pdf_vision(file_path: str) -> ParseInvoiceOutput: ...  # fallback khi không có XML
+
 
 @tool
 def validate_tax_code(tax_code: str) -> TaxCodeValidation: ...
 
+
 @tool
 def check_duplicate(invoice_id: str, seller_tax_code: str) -> DuplicateCheckResult: ...
+
 
 @tool
 def get_department_budget(department: str, period: str) -> BudgetInfo: ...
 
+
 @tool
-def create_journal_entry(entry: JournalEntryDraft) -> JournalEntryResult: ...   # write action
+def create_journal_entry(entry: JournalEntryDraft) -> JournalEntryResult: ...  # write action
 ```
 
 **Error handling & retry:** nếu `extract_pdf_vision` trả JSON không parse được đúng
@@ -152,11 +158,13 @@ sai giảm dần theo thời gian nhờ vendor history).
 ```python
 def approval_gate_node(state: InvoiceState):
     if state["flags"]:
-        decision = interrupt({
-            "invoice_id": state["invoice_id"],
-            "flags": state["flags"],
-            "extracted": state["extracted"],
-        })
+        decision = interrupt(
+            {
+                "invoice_id": state["invoice_id"],
+                "flags": state["flags"],
+                "extracted": state["extracted"],
+            }
+        )
         state["approval_status"] = decision["status"]
         state["approval_reason"] = decision.get("reason")
     else:
@@ -183,11 +191,14 @@ Toàn bộ 6 tool ở mục 1 được expose qua **1 MCP server dùng chung**, 
 # mcp_server.py
 mcp = FastMCP("invoice-agent-tools")
 
+
 @mcp.tool()
 def get_department_budget(department: str, period: str) -> BudgetInfo: ...
 
+
 @mcp.tool()
 def create_journal_entry(entry: JournalEntryDraft) -> JournalEntryResult: ...
+
 
 @mcp.resource("invoices://{invoice_id}")
 def get_invoice(invoice_id: str) -> InvoiceData: ...

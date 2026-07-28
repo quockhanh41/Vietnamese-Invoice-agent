@@ -296,9 +296,9 @@ Hai điểm hầu hết người làm bỏ sót:
 
 ```python
 # connection của checkpointer
-options="-csearch_path=langgraph"
+options = "-csearch_path=langgraph"
 # connection nghiệp vụ
-search_path="app"
+search_path = "app"
 ```
 
 > ⚠️ **Bẫy:** `alembic revision --autogenerate` sẽ nhìn thấy bảng của LangGraph và sinh ra
@@ -319,11 +319,11 @@ class EnrichmentState(TypedDict):
     batch_id: str
     source_path: str
     source_type: Literal["xml", "pdf"]
-    strategy: Literal["xml", "vision", "manual"]     # replace — điều khiển vòng lặp
+    strategy: Literal["xml", "vision", "manual"]  # replace — điều khiển vòng lặp
     extracted: InvoiceData | None
     extraction_attempts: int
-    current_errors: list[ValidationError]            # replace — feed vào prompt retry
-    error_history: Annotated[list[ValidationError], operator.add]   # SHORT-TERM MEMORY
+    current_errors: list[ValidationError]  # replace — feed vào prompt retry
+    error_history: Annotated[list[ValidationError], operator.add]  # SHORT-TERM MEMORY
     vendor_profile: VendorProfile | None
     classification: ClassificationResult | None
     audit_verdict: AuditVerdict | None
@@ -468,14 +468,18 @@ record_rejection → learn → END
 
 ```python
 def approval_gate(state: ApprovalState) -> dict:
-    decision = interrupt({
-        "invoice": state["snapshot"],
-        "flags": state["flags"],              # đã dịch sang tiếng Việt cho người đọc
-        "suggestions": state["suggestions"],  # từ episodic memory
-    })
-    return {"decision": decision["decision"],
-            "reason": decision.get("reason"),
-            "corrections": decision.get("corrections")}
+    decision = interrupt(
+        {
+            "invoice": state["snapshot"],
+            "flags": state["flags"],  # đã dịch sang tiếng Việt cho người đọc
+            "suggestions": state["suggestions"],  # từ episodic memory
+        }
+    )
+    return {
+        "decision": decision["decision"],
+        "reason": decision.get("reason"),
+        "corrections": decision.get("corrections"),
+    }
 ```
 
 Khi `interrupt()` được gọi: **execution dừng, toàn bộ state checkpoint xuống Postgres**. Process có
@@ -563,9 +567,8 @@ May mắn là `gateway.py` của Project A **đã có sẵn** đúng cơ chế c
 model nào khỏi việc tự chấm điểm mình:
 
 ```python
-result, model_used = classifier.run(invoice)          # ai trả lời?
-verdict = auditor.run(invoice, result,
-                      exclude_model=model_used)        # ai KHÔNG được chấm
+result, model_used = classifier.run(invoice)  # ai trả lời?
+verdict = auditor.run(invoice, result, exclude_model=model_used)  # ai KHÔNG được chấm
 ```
 
 Đây là tái dùng thật, không phải copy khiên cưỡng — và là một câu chuyện hay: *"tôi tái dùng cơ chế
@@ -620,9 +623,9 @@ Cả LangGraph executor lẫn MCP server đều sinh từ `tools/registry.py`:
 ```python
 ToolSpec(
     name="get_department_budget",
-    args_model=BudgetQuery,        # Pydantic
-    return_model=BudgetInfo,       # Pydantic
-    side_effect="read",            # read | write
+    args_model=BudgetQuery,  # Pydantic
+    return_model=BudgetInfo,  # Pydantic
+    side_effect="read",  # read | write
     mcp_exposed=True,
 )
 ```

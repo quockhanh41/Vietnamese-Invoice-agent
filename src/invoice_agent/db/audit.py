@@ -20,12 +20,27 @@ from invoice_agent.db import models
 
 
 def record(
-    conn: Connection, *, actor: str, action: str, allowed: bool,
-    target_table: str | None = None, target_id: str | None = None,
-    reason: str | None = None, detail: dict[str, Any] | None = None,
+    conn: Connection,
+    *,
+    actor: str,
+    action: str,
+    allowed: bool,
+    target_table: str | None = None,
+    target_id: str | None = None,
+    reason: str | None = None,
+    detail: dict[str, Any] | None = None,
 ) -> int:
-    stmt = models.audit_log.insert().values(
-        actor=actor, action=action, allowed=allowed, target_table=target_table,
-        target_id=target_id, reason=reason, detail=detail or {},
-    ).returning(models.audit_log.c.id)
+    stmt = (
+        models.audit_log.insert()
+        .values(
+            actor=actor,
+            action=action,
+            allowed=allowed,
+            target_table=target_table,
+            target_id=target_id,
+            reason=reason,
+            detail=detail or {},
+        )
+        .returning(models.audit_log.c.id)
+    )
     return int(conn.execute(stmt).scalar_one())

@@ -23,8 +23,7 @@ class TestCheckpointerSchemaIsolation:
 
         with psycopg.connect(requires_postgres) as conn:
             rows = conn.execute(
-                "SELECT schemaname, tablename FROM pg_tables "
-                "WHERE tablename = ANY(%s)",
+                "SELECT schemaname, tablename FROM pg_tables WHERE tablename = ANY(%s)",
                 (list(EXPECTED_TABLES),),
             ).fetchall()
 

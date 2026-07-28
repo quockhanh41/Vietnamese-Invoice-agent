@@ -111,25 +111,28 @@ Expected: FAIL — `AttributeError: 'Settings' object has no attribute 'runtime_
 In `config.py`, generalise `_with_options` and add the three members:
 
 ```python
-    # Runtime role. NOT the owner: measured 2026-07-28 (spec §2.1), `invoice`
-    # is a SUPERUSER, so REVOKE against it lands in the ACL and is then
-    # bypassed. Repositories connect as this role; Alembic and the seed script
-    # keep using `database_url` because both are administrative.
-    runtime_database_url: str = "postgresql://invoice_app:invoice_app@localhost:5433/invoice_agent"
+# Runtime role. NOT the owner: measured 2026-07-28 (spec §2.1), `invoice`
+# is a SUPERUSER, so REVOKE against it lands in the ACL and is then
+# bypassed. Repositories connect as this role; Alembic and the seed script
+# keep using `database_url` because both are administrative.
+runtime_database_url: str = "postgresql://invoice_app:invoice_app@localhost:5433/invoice_agent"
 
-    @property
-    def runtime_dsn(self) -> str:
-        """Business connection with least privilege — see `app_dsn` for the options rules."""
-        return self._with_options(f"-csearch_path={APP_SCHEMA},public", base=self.runtime_database_url)
 
-    @property
-    def runtime_sqlalchemy_url(self) -> str:
-        return self.runtime_dsn.replace("postgresql://", "postgresql+psycopg://", 1)
+@property
+def runtime_dsn(self) -> str:
+    """Business connection with least privilege — see `app_dsn` for the options rules."""
+    return self._with_options(f"-csearch_path={APP_SCHEMA},public", base=self.runtime_database_url)
 
-    def _with_options(self, options: str, base: str | None = None) -> str:
-        url = self.database_url if base is None else base
-        separator = "&" if "?" in url else "?"
-        return f"{url}{separator}options={quote(options, safe='')}"
+
+@property
+def runtime_sqlalchemy_url(self) -> str:
+    return self.runtime_dsn.replace("postgresql://", "postgresql+psycopg://", 1)
+
+
+def _with_options(self, options: str, base: str | None = None) -> str:
+    url = self.database_url if base is None else base
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}options={quote(options, safe='')}"
 ```
 
 Create the migration with `.venv/bin/alembic revision -m "m2a_01_runtime_role"`, then:
@@ -293,10 +296,20 @@ def test_two_department_wide_budgets_rejected(seeded):
             conn.execute(
                 models.budgets.insert(),
                 [
-                    {"department_code": "ZZTEST", "period": "2026-07", "category": None,
-                     "amount_limit": 1000, "warn_threshold_pct": Decimal("0.8")},
-                    {"department_code": "ZZTEST", "period": "2026-07", "category": None,
-                     "amount_limit": 2000, "warn_threshold_pct": Decimal("0.8")},
+                    {
+                        "department_code": "ZZTEST",
+                        "period": "2026-07",
+                        "category": None,
+                        "amount_limit": 1000,
+                        "warn_threshold_pct": Decimal("0.8"),
+                    },
+                    {
+                        "department_code": "ZZTEST",
+                        "period": "2026-07",
+                        "category": None,
+                        "amount_limit": 2000,
+                        "warn_threshold_pct": Decimal("0.8"),
+                    },
                 ],
             )
 ```
@@ -405,7 +418,9 @@ budgets = Table(
     # NULL in a key is meaningful — `invoices` solves the same problem by
     # making seller_tax_code NOT NULL instead.
     sa.UniqueConstraint(
-        "department_code", "period", "category",
+        "department_code",
+        "period",
+        "category",
         name="uq_budgets_department_period_category",
         postgresql_nulls_not_distinct=True,
     ),
@@ -431,9 +446,13 @@ def list_departments(conn: Connection) -> list[dict[str, Any]]:
 
 
 def get_category(conn: Connection, code: str) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.expense_categories).where(models.expense_categories.c.code == code)
-    ).mappings().first()
+    row = (
+        conn.execute(
+            select(models.expense_categories).where(models.expense_categories.c.code == code)
+        )
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 
 
@@ -460,8 +479,11 @@ def upsert_category(
     keywords_vi: list[str],
 ) -> None:
     values = {
-        "code": code, "name_vi": name_vi, "debit_account": debit_account,
-        "vat_account": vat_account, "credit_account": credit_account,
+        "code": code,
+        "name_vi": name_vi,
+        "debit_account": debit_account,
+        "vat_account": vat_account,
+        "credit_account": credit_account,
         "keywords_vi": keywords_vi,
     }
     stmt = insert(models.expense_categories).values(**values)
@@ -481,8 +503,11 @@ def upsert_budget(
     warn_threshold_pct: Decimal = Decimal("0.8"),
 ) -> int:
     values = {
-        "department_code": department_code, "period": period, "category": category,
-        "amount_limit": amount_limit, "warn_threshold_pct": warn_threshold_pct,
+        "department_code": department_code,
+        "period": period,
+        "category": category,
+        "amount_limit": amount_limit,
+        "warn_threshold_pct": warn_threshold_pct,
     }
     stmt = insert(models.budgets).values(**values)
     stmt = stmt.on_conflict_do_update(
@@ -528,20 +553,62 @@ DEPARTMENTS: list[tuple[str, str]] = [
 # `1331` = thuế GTGT được khấu trừ, `331` = phải trả cho người bán.
 # `6421` = chi phí bán hàng, `6422` = chi phí quản lý doanh nghiệp.
 CATEGORIES: list[tuple[str, str, str, str | None, str, list[str]]] = [
-    ("OFFICE_SUPPLIES", "Văn phòng phẩm", "6422", "1331", "331",
-     ["văn phòng phẩm", "giấy a4", "bút", "mực in", "sổ", "ghim", "kẹp"]),
-    ("MARKETING", "Chi phí marketing", "6421", "1331", "331",
-     ["quảng cáo", "marketing", "truyền thông", "sự kiện", "in ấn", "banner", "facebook ads"]),
-    ("IT_SERVICES", "Dịch vụ công nghệ thông tin", "6422", "1331", "331",
-     ["phần mềm", "hosting", "tên miền", "máy chủ", "cloud", "bản quyền", "license"]),
-    ("LOGISTICS", "Chi phí vận chuyển", "6421", "1331", "331",
-     ["vận chuyển", "giao hàng", "cước", "bưu điện", "chuyển phát", "logistics"]),
-    ("UTILITIES", "Điện nước, viễn thông", "6422", "1331", "331",
-     ["tiền điện", "tiền nước", "cước viễn thông", "internet", "điện thoại"]),
-    ("GOODS", "Hàng hóa mua vào", "156", "1331", "331",
-     ["hàng hóa", "nhập kho", "mua hàng", "sản phẩm"]),
-    ("TOOLS", "Công cụ, dụng cụ", "153", "1331", "331",
-     ["công cụ", "dụng cụ", "thiết bị", "máy móc nhỏ"]),
+    (
+        "OFFICE_SUPPLIES",
+        "Văn phòng phẩm",
+        "6422",
+        "1331",
+        "331",
+        ["văn phòng phẩm", "giấy a4", "bút", "mực in", "sổ", "ghim", "kẹp"],
+    ),
+    (
+        "MARKETING",
+        "Chi phí marketing",
+        "6421",
+        "1331",
+        "331",
+        ["quảng cáo", "marketing", "truyền thông", "sự kiện", "in ấn", "banner", "facebook ads"],
+    ),
+    (
+        "IT_SERVICES",
+        "Dịch vụ công nghệ thông tin",
+        "6422",
+        "1331",
+        "331",
+        ["phần mềm", "hosting", "tên miền", "máy chủ", "cloud", "bản quyền", "license"],
+    ),
+    (
+        "LOGISTICS",
+        "Chi phí vận chuyển",
+        "6421",
+        "1331",
+        "331",
+        ["vận chuyển", "giao hàng", "cước", "bưu điện", "chuyển phát", "logistics"],
+    ),
+    (
+        "UTILITIES",
+        "Điện nước, viễn thông",
+        "6422",
+        "1331",
+        "331",
+        ["tiền điện", "tiền nước", "cước viễn thông", "internet", "điện thoại"],
+    ),
+    (
+        "GOODS",
+        "Hàng hóa mua vào",
+        "156",
+        "1331",
+        "331",
+        ["hàng hóa", "nhập kho", "mua hàng", "sản phẩm"],
+    ),
+    (
+        "TOOLS",
+        "Công cụ, dụng cụ",
+        "153",
+        "1331",
+        "331",
+        ["công cụ", "dụng cụ", "thiết bị", "máy móc nhỏ"],
+    ),
 ]
 
 # (department_code, period, category, amount_limit)
@@ -581,8 +648,10 @@ if __name__ == "__main__":
 Generate the migration with `.venv/bin/alembic revision --autogenerate -m "m2a_02_reference"`, review it, then append the grants to `upgrade()`:
 
 ```python
-    op.execute("GRANT SELECT, INSERT, UPDATE ON app.departments, app.expense_categories, app.budgets TO invoice_app")
-    op.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA app TO invoice_app")
+op.execute(
+    "GRANT SELECT, INSERT, UPDATE ON app.departments, app.expense_categories, app.budgets TO invoice_app"
+)
+op.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA app TO invoice_app")
 ```
 
 Add to `Makefile` (and append `$(MAKE) seed` to the `dev` target after `$(MAKE) migrate`):
@@ -662,8 +731,7 @@ def test_ensure_vendor_is_idempotent_and_does_not_clobber_the_profile(runtime_co
     sighting must not reset them."""
     tax_code = f"ZZ{uuid.uuid4().hex[:8]}"
     vendors.ensure_vendor(runtime_conn, tax_code, name="Lần đầu")
-    vendors.update_profile(runtime_conn, tax_code, invoice_count=7,
-                           total_amount=Decimal("1000000"))
+    vendors.update_profile(runtime_conn, tax_code, invoice_count=7, total_amount=Decimal("1000000"))
     vendors.ensure_vendor(runtime_conn, tax_code, name="Lần hai")
     row = vendors.get_vendor(runtime_conn, tax_code)
     assert row["invoice_count"] == 7, "second sighting wiped accumulated memory"
@@ -732,9 +800,7 @@ batches = Table(
     Column("invoice_count", sa.Integer, nullable=False, server_default="0"),
     Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("completed_at", sa.DateTime(timezone=True)),
-    sa.CheckConstraint(
-        "status IN ('running', 'completed', 'failed')", name="ck_batches_status"
-    ),
+    sa.CheckConstraint("status IN ('running', 'completed', 'failed')", name="ck_batches_status"),
 )
 ```
 
@@ -764,20 +830,18 @@ def ensure_vendor(conn: Connection, tax_code: str, name: str | None = None) -> N
     Never overwrite accumulated statistics here — a second invoice from a known
     vendor must not reset the memory built from the first hundred.
     """
-    stmt = insert(models.vendors).values(
-        tax_code=tax_code, name=name, last_seen_at=func.now()
-    )
+    stmt = insert(models.vendors).values(tax_code=tax_code, name=name, last_seen_at=func.now())
     conn.execute(
-        stmt.on_conflict_do_update(
-            index_elements=["tax_code"], set_={"last_seen_at": func.now()}
-        )
+        stmt.on_conflict_do_update(index_elements=["tax_code"], set_={"last_seen_at": func.now()})
     )
 
 
 def get_vendor(conn: Connection, tax_code: str) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.vendors).where(models.vendors.c.tax_code == tax_code)
-    ).mappings().first()
+    row = (
+        conn.execute(select(models.vendors).where(models.vendors.c.tax_code == tax_code))
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 
 
@@ -816,7 +880,9 @@ def create_batch(conn: Connection, label: str | None = None) -> uuid.UUID:
     return batch_id
 
 
-def complete_batch(conn: Connection, batch_id: uuid.UUID, *, status: str, invoice_count: int) -> None:
+def complete_batch(
+    conn: Connection, batch_id: uuid.UUID, *, status: str, invoice_count: int
+) -> None:
     conn.execute(
         models.batches.update()
         .where(models.batches.c.id == batch_id)
@@ -825,9 +891,11 @@ def complete_batch(conn: Connection, batch_id: uuid.UUID, *, status: str, invoic
 
 
 def get_batch(conn: Connection, batch_id: uuid.UUID) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.batches).where(models.batches.c.id == batch_id)
-    ).mappings().first()
+    row = (
+        conn.execute(select(models.batches).where(models.batches.c.id == batch_id))
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 ```
 
@@ -912,9 +980,7 @@ def test_invoice_requires_seller_tax_code(runtime_conn):
     and the SAME invoice inserts twice, defeating the UNIQUE that design doc
     §2.3 calls an e-invoice's identity."""
     with pytest.raises(IntegrityError):
-        runtime_conn.execute(
-            models.invoices.insert(), _invoice_values(seller_tax_code=None)
-        )
+        runtime_conn.execute(models.invoices.insert(), _invoice_values(seller_tax_code=None))
 
 
 def test_duplicate_invoice_is_idempotent(runtime_conn):
@@ -1003,8 +1069,17 @@ Add to `db/models.py`:
 # cheap: measured 2026-07-28, a native enum cannot add a value and backfill
 # rows to it in one migration ("unsafe use of new value").
 INVOICE_STATUSES = (
-    "received", "extracted", "validated", "classified", "flagged",
-    "pending_approval", "approved", "rejected", "posted", "manual_queue", "failed",
+    "received",
+    "extracted",
+    "validated",
+    "classified",
+    "flagged",
+    "pending_approval",
+    "approved",
+    "rejected",
+    "posted",
+    "manual_queue",
+    "failed",
 )
 SOURCE_TYPES = ("xml", "pdf_vision", "manual")
 
@@ -1013,9 +1088,9 @@ invoices = Table(
     metadata,
     Column("id", sa.Uuid(as_uuid=True), primary_key=True),
     Column("batch_id", sa.Uuid(as_uuid=True), sa.ForeignKey("batches.id")),
-    Column("template_no", sa.Text, nullable=False),      # KHMSHDon
-    Column("invoice_series", sa.Text, nullable=False),   # KHHDon
-    Column("invoice_number", sa.Text, nullable=False),   # SHDon
+    Column("template_no", sa.Text, nullable=False),  # KHMSHDon
+    Column("invoice_series", sa.Text, nullable=False),  # KHHDon
+    Column("invoice_number", sa.Text, nullable=False),  # SHDon
     # NOT NULL although InvoiceData types it `str | None`. Measured 2026-07-28:
     # seller MST is present in 8/8 real fixtures. An invoice without one cannot
     # be given an identity, so ingestion routes it to manual_queue rather than
@@ -1053,23 +1128,26 @@ invoices = Table(
     # THE identity of a Vietnamese e-invoice (design doc §2.3). invoice_number
     # alone is NOT unique across sellers — two vendors both issue no. 00001234.
     sa.UniqueConstraint(
-        "seller_tax_code", "template_no", "invoice_series", "invoice_number",
+        "seller_tax_code",
+        "template_no",
+        "invoice_series",
+        "invoice_number",
         name="uq_invoices_natural_key",
     ),
-    sa.CheckConstraint(
-        "status IN " + str(INVOICE_STATUSES), name="ck_invoices_status"
-    ),
-    sa.CheckConstraint(
-        "source_type IN " + str(SOURCE_TYPES), name="ck_invoices_source_type"
-    ),
+    sa.CheckConstraint("status IN " + str(INVOICE_STATUSES), name="ck_invoices_status"),
+    sa.CheckConstraint("source_type IN " + str(SOURCE_TYPES), name="ck_invoices_source_type"),
 )
 
 invoice_line_items = Table(
     "invoice_line_items",
     metadata,
     Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-    Column("invoice_id", sa.Uuid(as_uuid=True),
-           sa.ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "invoice_id",
+        sa.Uuid(as_uuid=True),
+        sa.ForeignKey("invoices.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     # NOT NULL although InvoiceLine.line_no is `int | None`. STT was present on
     # 15/15 lines across 8/8 fixtures (2026-07-28); where absent the repository
     # substitutes 1-based document position. One column, not two: a line index
@@ -1154,70 +1232,85 @@ def insert_with_lines(
 
     vendors.ensure_vendor(conn, data.seller_tax_code, name=data.seller_name)
 
-    invoice_id = insert_row(conn, {
-        "id": uuid.uuid4(),
-        "batch_id": batch_id,
-        "template_no": data.template_no,
-        "invoice_series": data.invoice_series,
-        "invoice_number": data.invoice_number,
-        "seller_tax_code": data.seller_tax_code,
-        "buyer_tax_code": data.buyer_tax_code,
-        "issue_date": data.issue_date,
-        "currency": data.currency,
-        "exchange_rate": data.exchange_rate,
-        "subtotal": data.subtotal,
-        "vat_amount": data.vat_amount,
-        "total_amount": data.total_amount,
-        "total_in_words": data.total_in_words,
-        "ext": data.ext,
-        "source_type": source_type,
-        "source_path": source_path,
-        "raw_xml": raw_xml,
-        "status": "extracted",
-    })
+    invoice_id = insert_row(
+        conn,
+        {
+            "id": uuid.uuid4(),
+            "batch_id": batch_id,
+            "template_no": data.template_no,
+            "invoice_series": data.invoice_series,
+            "invoice_number": data.invoice_number,
+            "seller_tax_code": data.seller_tax_code,
+            "buyer_tax_code": data.buyer_tax_code,
+            "issue_date": data.issue_date,
+            "currency": data.currency,
+            "exchange_rate": data.exchange_rate,
+            "subtotal": data.subtotal,
+            "vat_amount": data.vat_amount,
+            "total_amount": data.total_amount,
+            "total_in_words": data.total_in_words,
+            "ext": data.ext,
+            "source_type": source_type,
+            "source_path": source_path,
+            "raw_xml": raw_xml,
+            "status": "extracted",
+        },
+    )
     if invoice_id is None:
         return None
 
     if data.lines:
-        conn.execute(models.invoice_line_items.insert(), [
-            {
-                "invoice_id": invoice_id,
-                # Document position when STT is absent — see the column comment.
-                "line_no": line.line_no if line.line_no is not None else position,
-                "description": line.description,
-                "unit": line.unit,
-                "quantity": line.quantity,
-                "unit_price": line.unit_price,
-                "amount": line.amount,
-                "vat_rate": line.vat_rate,
-                "vat_amount": line.vat_amount,
-                "item_kind": line.item_kind,
-                "ext": line.ext,
-            }
-            for position, line in enumerate(data.lines, start=1)
-        ])
+        conn.execute(
+            models.invoice_line_items.insert(),
+            [
+                {
+                    "invoice_id": invoice_id,
+                    # Document position when STT is absent — see the column comment.
+                    "line_no": line.line_no if line.line_no is not None else position,
+                    "description": line.description,
+                    "unit": line.unit,
+                    "quantity": line.quantity,
+                    "unit_price": line.unit_price,
+                    "amount": line.amount,
+                    "vat_rate": line.vat_rate,
+                    "vat_amount": line.vat_amount,
+                    "item_kind": line.item_kind,
+                    "ext": line.ext,
+                }
+                for position, line in enumerate(data.lines, start=1)
+            ],
+        )
     return invoice_id
 
 
 def get_by_id(conn: Connection, invoice_id: uuid.UUID) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.invoices).where(models.invoices.c.id == invoice_id)
-    ).mappings().first()
+    row = (
+        conn.execute(select(models.invoices).where(models.invoices.c.id == invoice_id))
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 
 
 def get_by_natural_key(
-    conn: Connection, seller_tax_code: str, template_no: str,
-    invoice_series: str, invoice_number: str,
+    conn: Connection,
+    seller_tax_code: str,
+    template_no: str,
+    invoice_series: str,
+    invoice_number: str,
 ) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.invoices).where(
-            models.invoices.c.seller_tax_code == seller_tax_code,
-            models.invoices.c.template_no == template_no,
-            models.invoices.c.invoice_series == invoice_series,
-            models.invoices.c.invoice_number == invoice_number,
+    row = (
+        conn.execute(
+            select(models.invoices).where(
+                models.invoices.c.seller_tax_code == seller_tax_code,
+                models.invoices.c.template_no == template_no,
+                models.invoices.c.invoice_series == invoice_series,
+                models.invoices.c.invoice_number == invoice_number,
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 
 
@@ -1302,7 +1395,10 @@ def test_flag_source_must_be_deterministic(runtime_conn):
     )
     with pytest.raises(IntegrityError):
         flags.raise_flag(
-            runtime_conn, invoice_id, code="ANYTHING", severity="warn",
+            runtime_conn,
+            invoice_id,
+            code="ANYTHING",
+            severity="warn",
             raised_by="classifier_agent",
         )
 ```
@@ -1327,8 +1423,12 @@ invoice_flags = Table(
     "invoice_flags",
     metadata,
     Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-    Column("invoice_id", sa.Uuid(as_uuid=True),
-           sa.ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "invoice_id",
+        sa.Uuid(as_uuid=True),
+        sa.ForeignKey("invoices.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("code", sa.Text, nullable=False),
     Column("severity", sa.Text, nullable=False),
     Column("detail", postgresql.JSONB, nullable=False, server_default="{}"),
@@ -1339,7 +1439,8 @@ invoice_flags = Table(
     sa.CheckConstraint("severity IN " + str(FLAG_SEVERITIES), name="ck_flags_severity"),
     sa.CheckConstraint("raised_by IN " + str(FLAG_SOURCES), name="ck_flags_raised_by"),
     sa.Index(
-        "ix_flags_open_by_invoice", "invoice_id",
+        "ix_flags_open_by_invoice",
+        "invoice_id",
         postgresql_where=sa.text("resolved_at IS NULL"),
     ),
 )
@@ -1364,13 +1465,25 @@ from invoice_agent.db import models
 
 
 def raise_flag(
-    conn: Connection, invoice_id: uuid.UUID, *, code: str, severity: str,
-    raised_by: str, detail: dict[str, Any] | None = None,
+    conn: Connection,
+    invoice_id: uuid.UUID,
+    *,
+    code: str,
+    severity: str,
+    raised_by: str,
+    detail: dict[str, Any] | None = None,
 ) -> int:
-    stmt = models.invoice_flags.insert().values(
-        invoice_id=invoice_id, code=code, severity=severity,
-        raised_by=raised_by, detail=detail or {},
-    ).returning(models.invoice_flags.c.id)
+    stmt = (
+        models.invoice_flags.insert()
+        .values(
+            invoice_id=invoice_id,
+            code=code,
+            severity=severity,
+            raised_by=raised_by,
+            detail=detail or {},
+        )
+        .returning(models.invoice_flags.c.id)
+    )
     return int(conn.execute(stmt).scalar_one())
 
 
@@ -1446,8 +1559,12 @@ def test_approval_latency_is_computed_by_the_database(runtime_conn):
         runtime_conn, _invoice_values(invoice_number=f"AP{uuid.uuid4().hex[:6]}")
     )
     approval_id = approvals.open_approval(
-        runtime_conn, invoice_id=invoice_id, thread_id=f"appr:{invoice_id}",
-        interrupt_payload={"q": "duyệt?"}, flags_snapshot={}, suggestions={},
+        runtime_conn,
+        invoice_id=invoice_id,
+        thread_id=f"appr:{invoice_id}",
+        interrupt_payload={"q": "duyệt?"},
+        flags_snapshot={},
+        suggestions={},
     )
     assert approvals.get_approval(runtime_conn, approval_id)["latency_seconds"] is None
     assert any(r["id"] == approval_id for r in approvals.list_pending(runtime_conn))
@@ -1471,8 +1588,12 @@ def test_approval_decision_is_constrained(runtime_conn):
         runtime_conn, _invoice_values(invoice_number=f"AD{uuid.uuid4().hex[:6]}")
     )
     approval_id = approvals.open_approval(
-        runtime_conn, invoice_id=invoice_id, thread_id="t", interrupt_payload={},
-        flags_snapshot={}, suggestions={},
+        runtime_conn,
+        invoice_id=invoice_id,
+        thread_id="t",
+        interrupt_payload={},
+        flags_snapshot={},
+        suggestions={},
     )
     with pytest.raises(IntegrityError):
         approvals.record_decision(
@@ -1511,7 +1632,8 @@ approvals = Table(
     # Time-to-approve, computed by Postgres. Verified 2026-07-28: a row 90s
     # apart yields 90. Application code never computes it, so it cannot drift.
     Column(
-        "latency_seconds", sa.Numeric,
+        "latency_seconds",
+        sa.Numeric,
         sa.Computed("EXTRACT(EPOCH FROM (decided_at - requested_at))", persisted=True),
     ),
     sa.CheckConstraint(
@@ -1521,7 +1643,8 @@ approvals = Table(
     sa.Index("ix_approvals_thread_id", "thread_id"),
     # Exactly the query scripts/recover_pending.py runs at M5.5.
     sa.Index(
-        "ix_approvals_pending", "invoice_id",
+        "ix_approvals_pending",
+        "invoice_id",
         postgresql_where=sa.text("decision IS NULL"),
     ),
 )
@@ -1545,29 +1668,46 @@ from invoice_agent.db import models
 
 
 def open_approval(
-    conn: Connection, *, invoice_id: uuid.UUID, thread_id: str,
-    interrupt_payload: dict[str, Any], flags_snapshot: dict[str, Any],
+    conn: Connection,
+    *,
+    invoice_id: uuid.UUID,
+    thread_id: str,
+    interrupt_payload: dict[str, Any],
+    flags_snapshot: dict[str, Any],
     suggestions: dict[str, Any],
 ) -> uuid.UUID:
     approval_id = uuid.uuid4()
-    conn.execute(models.approvals.insert().values(
-        id=approval_id, invoice_id=invoice_id, thread_id=thread_id,
-        interrupt_payload=interrupt_payload, flags_snapshot=flags_snapshot,
-        suggestions=suggestions,
-    ))
+    conn.execute(
+        models.approvals.insert().values(
+            id=approval_id,
+            invoice_id=invoice_id,
+            thread_id=thread_id,
+            interrupt_payload=interrupt_payload,
+            flags_snapshot=flags_snapshot,
+            suggestions=suggestions,
+        )
+    )
     return approval_id
 
 
 def record_decision(
-    conn: Connection, approval_id: uuid.UUID, *, decision: str, decided_by: str,
-    reason: str | None = None, field_corrections: dict[str, Any] | None = None,
+    conn: Connection,
+    approval_id: uuid.UUID,
+    *,
+    decision: str,
+    decided_by: str,
+    reason: str | None = None,
+    field_corrections: dict[str, Any] | None = None,
 ) -> None:
     conn.execute(
         models.approvals.update()
         .where(models.approvals.c.id == approval_id)
         .values(
-            decision=decision, decided_by=decided_by, reason=reason,
-            field_corrections=field_corrections, decided_at=func.now(),
+            decision=decision,
+            decided_by=decided_by,
+            reason=reason,
+            field_corrections=field_corrections,
+            decided_at=func.now(),
         )
     )
 
@@ -1578,9 +1718,11 @@ def list_pending(conn: Connection) -> list[dict[str, Any]]:
 
 
 def get_approval(conn: Connection, approval_id: uuid.UUID) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.approvals).where(models.approvals.c.id == approval_id)
-    ).mappings().first()
+    row = (
+        conn.execute(select(models.approvals).where(models.approvals.c.id == approval_id))
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 ```
 
@@ -1646,7 +1788,9 @@ def test_unbalanced_journal_entry_rejected(runtime_conn):
     invoice_id = _clean_invoice(runtime_conn, f"JB{uuid.uuid4().hex[:6]}")
     with pytest.raises(IntegrityError):
         journal.create_entry_with_lines(
-            runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
+            runtime_conn,
+            invoice_id=invoice_id,
+            entry_date=date(2026, 7, 1),
             posting_authority="auto_clean",
             lines=[
                 JournalLine("6422", "Chi phí QLDN", Decimal("3250000"), Decimal("0"), None),
@@ -1662,8 +1806,12 @@ def test_human_approved_requires_an_approval_row(runtime_conn):
     invoice_id = _clean_invoice(runtime_conn, f"JH{uuid.uuid4().hex[:6]}")
     with pytest.raises(IntegrityError):
         journal.create_entry_with_lines(
-            runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
-            posting_authority="human_approved", approval_id=None, lines=BALANCED,
+            runtime_conn,
+            invoice_id=invoice_id,
+            entry_date=date(2026, 7, 1),
+            posting_authority="human_approved",
+            approval_id=None,
+            lines=BALANCED,
         )
 
 
@@ -1671,12 +1819,20 @@ def test_auto_clean_blocked_while_flags_open(runtime_conn):
     """MUTATION GUARD (drop the trigger). An invoice carrying an unresolved
     flag must never be auto-posted; only a human decision can clear it."""
     invoice_id = _clean_invoice(runtime_conn, f"JF{uuid.uuid4().hex[:6]}")
-    flags.raise_flag(runtime_conn, invoice_id, code="ARITHMETIC_MISMATCH",
-                     severity="critical", raised_by="validation")
+    flags.raise_flag(
+        runtime_conn,
+        invoice_id,
+        code="ARITHMETIC_MISMATCH",
+        severity="critical",
+        raised_by="validation",
+    )
     with pytest.raises((IntegrityError, DBAPIError), match="open flag"):
         journal.create_entry_with_lines(
-            runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
-            posting_authority="auto_clean", lines=BALANCED,
+            runtime_conn,
+            invoice_id=invoice_id,
+            entry_date=date(2026, 7, 1),
+            posting_authority="auto_clean",
+            lines=BALANCED,
         )
 
 
@@ -1684,12 +1840,16 @@ def test_auto_clean_allowed_once_every_flag_is_resolved(runtime_conn):
     """The trigger must not be a blanket ban — otherwise it would pass the test
     above while breaking the 85% straight-through-processing target."""
     invoice_id = _clean_invoice(runtime_conn, f"JR{uuid.uuid4().hex[:6]}")
-    flag_id = flags.raise_flag(runtime_conn, invoice_id, code="X", severity="info",
-                               raised_by="validation")
+    flag_id = flags.raise_flag(
+        runtime_conn, invoice_id, code="X", severity="info", raised_by="validation"
+    )
     flags.resolve_flag(runtime_conn, flag_id)
     entry_id = journal.create_entry_with_lines(
-        runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
-        posting_authority="auto_clean", lines=BALANCED,
+        runtime_conn,
+        invoice_id=invoice_id,
+        entry_date=date(2026, 7, 1),
+        posting_authority="auto_clean",
+        lines=BALANCED,
     )
     assert journal.get_for_invoice(runtime_conn, invoice_id)["id"] == entry_id
 
@@ -1699,7 +1859,9 @@ def test_line_cannot_be_both_debit_and_credit(runtime_conn):
     invoice_id = _clean_invoice(runtime_conn, f"JD{uuid.uuid4().hex[:6]}")
     with pytest.raises(IntegrityError):
         journal.create_entry_with_lines(
-            runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
+            runtime_conn,
+            invoice_id=invoice_id,
+            entry_date=date(2026, 7, 1),
             posting_authority="auto_clean",
             lines=[
                 JournalLine("6422", "Chi phí QLDN", Decimal("100"), Decimal("100"), None),
@@ -1716,7 +1878,9 @@ def test_negative_amounts_rejected(runtime_conn):
     invoice_id = _clean_invoice(runtime_conn, f"JN{uuid.uuid4().hex[:6]}")
     with pytest.raises(IntegrityError):
         journal.create_entry_with_lines(
-            runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
+            runtime_conn,
+            invoice_id=invoice_id,
+            entry_date=date(2026, 7, 1),
             posting_authority="auto_clean",
             lines=[
                 JournalLine("6422", "Chi phí QLDN", Decimal("-100"), Decimal("0"), None),
@@ -1732,13 +1896,19 @@ def test_one_invoice_cannot_be_posted_twice(runtime_conn):
     constraint does."""
     invoice_id = _clean_invoice(runtime_conn, f"JT{uuid.uuid4().hex[:6]}")
     journal.create_entry_with_lines(
-        runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
-        posting_authority="auto_clean", lines=BALANCED,
+        runtime_conn,
+        invoice_id=invoice_id,
+        entry_date=date(2026, 7, 1),
+        posting_authority="auto_clean",
+        lines=BALANCED,
     )
     with pytest.raises(IntegrityError):
         journal.create_entry_with_lines(
-            runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
-            posting_authority="auto_clean", lines=BALANCED,
+            runtime_conn,
+            invoice_id=invoice_id,
+            entry_date=date(2026, 7, 1),
+            posting_authority="auto_clean",
+            lines=BALANCED,
         )
 ```
 
@@ -1760,7 +1930,8 @@ def test_no_production_caller_of_journal_repository():
 
     src = pathlib.Path("src/invoice_agent")
     offenders = [
-        p for p in src.rglob("*.py")
+        p
+        for p in src.rglob("*.py")
         if "repositories.journal" in p.read_text(encoding="utf-8")
         or "repositories import journal" in p.read_text(encoding="utf-8")
     ]
@@ -1790,8 +1961,13 @@ journal_entries = Table(
     # UNIQUE: one invoice can never be posted twice. Measured at M1.5 that a
     # `kill -9` inside a post-gate node makes it run again on resume and write
     # a SECOND row — graph shape does not prevent that, this constraint does.
-    Column("invoice_id", sa.Uuid(as_uuid=True), sa.ForeignKey("invoices.id"),
-           nullable=False, unique=True),
+    Column(
+        "invoice_id",
+        sa.Uuid(as_uuid=True),
+        sa.ForeignKey("invoices.id"),
+        nullable=False,
+        unique=True,
+    ),
     Column("entry_date", sa.Date, nullable=False),
     Column("status", sa.Text, nullable=False, server_default="draft"),
     Column("posting_authority", sa.Text, nullable=False),
@@ -1817,8 +1993,12 @@ journal_entry_lines = Table(
     "journal_entry_lines",
     metadata,
     Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-    Column("journal_entry_id", sa.Uuid(as_uuid=True),
-           sa.ForeignKey("journal_entries.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "journal_entry_id",
+        sa.Uuid(as_uuid=True),
+        sa.ForeignKey("journal_entries.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("line_no", sa.Integer, nullable=False),
     Column("account_code", sa.Text, nullable=False),
     Column("account_name", sa.Text, nullable=False),
@@ -1870,9 +2050,14 @@ class JournalLine:
 
 
 def create_entry_with_lines(
-    conn: Connection, *, invoice_id: uuid.UUID, entry_date: date,
-    posting_authority: str, lines: list[JournalLine],
-    approval_id: uuid.UUID | None = None, posted_by: str | None = None,
+    conn: Connection,
+    *,
+    invoice_id: uuid.UUID,
+    entry_date: date,
+    posting_authority: str,
+    lines: list[JournalLine],
+    approval_id: uuid.UUID | None = None,
+    posted_by: str | None = None,
     status: str = "draft",
 ) -> uuid.UUID:
     """Totals are SUMMED HERE, never passed in.
@@ -1882,28 +2067,45 @@ def create_entry_with_lines(
     which would turn the balance guard into decoration.
     """
     entry_id = uuid.uuid4()
-    conn.execute(models.journal_entries.insert().values(
-        id=entry_id, invoice_id=invoice_id, entry_date=entry_date,
-        posting_authority=posting_authority, approval_id=approval_id,
-        posted_by=posted_by, status=status,
-        total_debit=sum((line.debit for line in lines), Decimal("0")),
-        total_credit=sum((line.credit for line in lines), Decimal("0")),
-    ))
-    conn.execute(models.journal_entry_lines.insert(), [
-        {
-            "journal_entry_id": entry_id, "line_no": position,
-            "account_code": line.account_code, "account_name": line.account_name,
-            "debit": line.debit, "credit": line.credit, "description": line.description,
-        }
-        for position, line in enumerate(lines, start=1)
-    ])
+    conn.execute(
+        models.journal_entries.insert().values(
+            id=entry_id,
+            invoice_id=invoice_id,
+            entry_date=entry_date,
+            posting_authority=posting_authority,
+            approval_id=approval_id,
+            posted_by=posted_by,
+            status=status,
+            total_debit=sum((line.debit for line in lines), Decimal("0")),
+            total_credit=sum((line.credit for line in lines), Decimal("0")),
+        )
+    )
+    conn.execute(
+        models.journal_entry_lines.insert(),
+        [
+            {
+                "journal_entry_id": entry_id,
+                "line_no": position,
+                "account_code": line.account_code,
+                "account_name": line.account_name,
+                "debit": line.debit,
+                "credit": line.credit,
+                "description": line.description,
+            }
+            for position, line in enumerate(lines, start=1)
+        ],
+    )
     return entry_id
 
 
 def get_for_invoice(conn: Connection, invoice_id: uuid.UUID) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.journal_entries).where(models.journal_entries.c.invoice_id == invoice_id)
-    ).mappings().first()
+    row = (
+        conn.execute(
+            select(models.journal_entries).where(models.journal_entries.c.invoice_id == invoice_id)
+        )
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 
 
@@ -1919,28 +2121,30 @@ def get_lines(conn: Connection, entry_id: uuid.UUID) -> list[dict[str, Any]]:
 Generate the migration (`--autogenerate -m "m2a_07_journal"`), then **hand-add the trigger** (autogenerate never emits triggers):
 
 ```python
-    op.execute("""
-        CREATE OR REPLACE FUNCTION app.forbid_auto_clean_with_open_flags()
-        RETURNS trigger LANGUAGE plpgsql AS $$
-        BEGIN
-            IF NEW.posting_authority = 'auto_clean' AND EXISTS (
-                SELECT 1 FROM app.invoice_flags
-                WHERE invoice_id = NEW.invoice_id AND resolved_at IS NULL
-            ) THEN
-                RAISE EXCEPTION
-                    'invoice % has an open flag; auto_clean posting is forbidden',
-                    NEW.invoice_id;
-            END IF;
-            RETURN NEW;
-        END $$;
-    """)
-    op.execute("""
-        CREATE TRIGGER trg_forbid_auto_clean_with_open_flags
-        BEFORE INSERT OR UPDATE ON app.journal_entries
-        FOR EACH ROW EXECUTE FUNCTION app.forbid_auto_clean_with_open_flags();
-    """)
-    op.execute("GRANT SELECT, INSERT, UPDATE ON app.journal_entries, app.journal_entry_lines TO invoice_app")
-    op.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA app TO invoice_app")
+op.execute("""
+    CREATE OR REPLACE FUNCTION app.forbid_auto_clean_with_open_flags()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+        IF NEW.posting_authority = 'auto_clean' AND EXISTS (
+            SELECT 1 FROM app.invoice_flags
+            WHERE invoice_id = NEW.invoice_id AND resolved_at IS NULL
+        ) THEN
+            RAISE EXCEPTION
+                'invoice % has an open flag; auto_clean posting is forbidden',
+                NEW.invoice_id;
+        END IF;
+        RETURN NEW;
+    END $$;
+""")
+op.execute("""
+    CREATE TRIGGER trg_forbid_auto_clean_with_open_flags
+    BEFORE INSERT OR UPDATE ON app.journal_entries
+    FOR EACH ROW EXECUTE FUNCTION app.forbid_auto_clean_with_open_flags();
+""")
+op.execute(
+    "GRANT SELECT, INSERT, UPDATE ON app.journal_entries, app.journal_entry_lines TO invoice_app"
+)
+op.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA app TO invoice_app")
 ```
 
 `downgrade()` must drop the trigger then the function, before dropping the tables.
@@ -2034,8 +2238,12 @@ def test_audit_log_records_grants_not_only_refusals(runtime_conn):
     from invoice_agent.db import audit
 
     row_id = audit.record(
-        runtime_conn, actor="mcp:claude-desktop", action="create_journal_entry",
-        target_table="journal_entries", target_id="abc", allowed=False,
+        runtime_conn,
+        actor="mcp:claude-desktop",
+        action="create_journal_entry",
+        target_table="journal_entries",
+        target_id="abc",
+        allowed=False,
         reason="invoice not approved",
     )
     assert row_id is not None
@@ -2094,14 +2302,29 @@ from invoice_agent.db import models
 
 
 def record(
-    conn: Connection, *, actor: str, action: str, allowed: bool,
-    target_table: str | None = None, target_id: str | None = None,
-    reason: str | None = None, detail: dict[str, Any] | None = None,
+    conn: Connection,
+    *,
+    actor: str,
+    action: str,
+    allowed: bool,
+    target_table: str | None = None,
+    target_id: str | None = None,
+    reason: str | None = None,
+    detail: dict[str, Any] | None = None,
 ) -> int:
-    stmt = models.audit_log.insert().values(
-        actor=actor, action=action, allowed=allowed, target_table=target_table,
-        target_id=target_id, reason=reason, detail=detail or {},
-    ).returning(models.audit_log.c.id)
+    stmt = (
+        models.audit_log.insert()
+        .values(
+            actor=actor,
+            action=action,
+            allowed=allowed,
+            target_table=target_table,
+            target_id=target_id,
+            reason=reason,
+            detail=detail or {},
+        )
+        .returning(models.audit_log.c.id)
+    )
     return int(conn.execute(stmt).scalar_one())
 ```
 
@@ -2174,27 +2397,35 @@ def test_budget_consumption_is_unique_per_budget_and_invoice(runtime_conn):
     from sqlalchemy.exc import IntegrityError
 
     from invoice_agent.db.repositories import (
-        budget_consumption, reference, vendors,
+        budget_consumption,
+        reference,
+        vendors,
     )
 
     reference.upsert_department(runtime_conn, "MKT", "Phòng Marketing")
-    budget_id = reference.upsert_budget(
-        runtime_conn, "MKT", "2026-07", None, Decimal("50000000")
-    )
+    budget_id = reference.upsert_budget(runtime_conn, "MKT", "2026-07", None, Decimal("50000000"))
     vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
     invoice_id = invoice_repo.insert_row(
         runtime_conn, _invoice_values(invoice_number=f"BC{uuid.uuid4().hex[:6]}")
     )
     budget_consumption.record_consumption(
-        runtime_conn, budget_id=budget_id, invoice_id=invoice_id,
-        amount=Decimal("1000"), balance_before=Decimal("50000000"),
-        balance_after=Decimal("49999000"), sequence_no=1,
+        runtime_conn,
+        budget_id=budget_id,
+        invoice_id=invoice_id,
+        amount=Decimal("1000"),
+        balance_before=Decimal("50000000"),
+        balance_after=Decimal("49999000"),
+        sequence_no=1,
     )
     with pytest.raises(IntegrityError):
         budget_consumption.record_consumption(
-            runtime_conn, budget_id=budget_id, invoice_id=invoice_id,
-            amount=Decimal("1000"), balance_before=Decimal("49999000"),
-            balance_after=Decimal("49998000"), sequence_no=2,
+            runtime_conn,
+            budget_id=budget_id,
+            invoice_id=invoice_id,
+            amount=Decimal("1000"),
+            balance_before=Decimal("49999000"),
+            balance_after=Decimal("49998000"),
+            sequence_no=2,
         )
 
 
@@ -2204,10 +2435,18 @@ def test_llm_calls_records_failures_too(runtime_conn):
     from invoice_agent.db.repositories import llm_calls
 
     row_id = llm_calls.record_call(
-        runtime_conn, model="groq/llama-3.3-70b-versatile", provider="groq",
-        node="classify", prompt_tokens=800, completion_tokens=0,
-        cost_usd=Decimal("0"), shadow_cost_usd=Decimal("0.00012"),
-        latency_ms=340, attempt=1, succeeded=False, error="429 rate limit",
+        runtime_conn,
+        model="groq/llama-3.3-70b-versatile",
+        provider="groq",
+        node="classify",
+        prompt_tokens=800,
+        completion_tokens=0,
+        cost_usd=Decimal("0"),
+        shadow_cost_usd=Decimal("0.00012"),
+        latency_ms=340,
+        attempt=1,
+        succeeded=False,
+        error="429 rate limit",
     )
     assert row_id is not None
 
@@ -2223,10 +2462,16 @@ def test_episodic_similar_uses_the_sql_channel(runtime_conn):
         runtime_conn, _invoice_values(invoice_number=f"EP{uuid.uuid4().hex[:6]}")
     )
     episodic.record_episode(
-        runtime_conn, approval_id=None, invoice_id=invoice_id,
-        vendor_tax_code="0100000003", category="MARKETING", department="MKT",
-        amount=Decimal("5000000"), flags={"BUDGET_EXCEEDED": True},
-        decision="approved", reason="Giám đốc đã duyệt ngoài hệ thống",
+        runtime_conn,
+        approval_id=None,
+        invoice_id=invoice_id,
+        vendor_tax_code="0100000003",
+        category="MARKETING",
+        department="MKT",
+        amount=Decimal("5000000"),
+        flags={"BUDGET_EXCEEDED": True},
+        decision="approved",
+        reason="Giám đốc đã duyệt ngoài hệ thống",
     )
     hits = episodic.similar_episodes(
         runtime_conn, vendor_tax_code="0100000003", category=None, limit=5
@@ -2331,14 +2576,27 @@ from invoice_agent.db import models
 
 
 def record_consumption(
-    conn: Connection, *, budget_id: int, invoice_id: uuid.UUID, amount: Decimal,
-    balance_before: Decimal, balance_after: Decimal, sequence_no: int,
+    conn: Connection,
+    *,
+    budget_id: int,
+    invoice_id: uuid.UUID,
+    amount: Decimal,
+    balance_before: Decimal,
+    balance_after: Decimal,
+    sequence_no: int,
 ) -> int:
-    stmt = models.budget_consumption.insert().values(
-        budget_id=budget_id, invoice_id=invoice_id, amount=amount,
-        balance_before=balance_before, balance_after=balance_after,
-        sequence_no=sequence_no,
-    ).returning(models.budget_consumption.c.id)
+    stmt = (
+        models.budget_consumption.insert()
+        .values(
+            budget_id=budget_id,
+            invoice_id=invoice_id,
+            amount=amount,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            sequence_no=sequence_no,
+        )
+        .returning(models.budget_consumption.c.id)
+    )
     return int(conn.execute(stmt).scalar_one())
 
 
@@ -2372,23 +2630,42 @@ from invoice_agent.db import models
 
 
 def record_episode(
-    conn: Connection, *, invoice_id: uuid.UUID, decision: str,
-    approval_id: uuid.UUID | None = None, vendor_tax_code: str | None = None,
-    category: str | None = None, department: str | None = None,
-    amount: Decimal | None = None, flags: dict[str, Any] | None = None,
+    conn: Connection,
+    *,
+    invoice_id: uuid.UUID,
+    decision: str,
+    approval_id: uuid.UUID | None = None,
+    vendor_tax_code: str | None = None,
+    category: str | None = None,
+    department: str | None = None,
+    amount: Decimal | None = None,
+    flags: dict[str, Any] | None = None,
     reason: str | None = None,
 ) -> int:
-    stmt = models.episodic_decisions.insert().values(
-        approval_id=approval_id, invoice_id=invoice_id, vendor_tax_code=vendor_tax_code,
-        category=category, department=department, amount=amount,
-        flags=flags or {}, decision=decision, reason=reason,
-    ).returning(models.episodic_decisions.c.id)
+    stmt = (
+        models.episodic_decisions.insert()
+        .values(
+            approval_id=approval_id,
+            invoice_id=invoice_id,
+            vendor_tax_code=vendor_tax_code,
+            category=category,
+            department=department,
+            amount=amount,
+            flags=flags or {},
+            decision=decision,
+            reason=reason,
+        )
+        .returning(models.episodic_decisions.c.id)
+    )
     return int(conn.execute(stmt).scalar_one())
 
 
 def similar_episodes(
-    conn: Connection, *, vendor_tax_code: str | None = None,
-    category: str | None = None, limit: int = 5,
+    conn: Connection,
+    *,
+    vendor_tax_code: str | None = None,
+    category: str | None = None,
+    limit: int = 5,
 ) -> list[dict[str, Any]]:
     predicates = []
     if vendor_tax_code is not None:
@@ -2427,21 +2704,42 @@ from invoice_agent.db import models
 
 
 def record_call(
-    conn: Connection, *, model: str, succeeded: bool,
-    invoice_id: uuid.UUID | None = None, batch_id: uuid.UUID | None = None,
-    thread_id: str | None = None, node: str | None = None, agent: str | None = None,
-    provider: str | None = None, prompt_tokens: int | None = None,
-    completion_tokens: int | None = None, cost_usd: Decimal | None = None,
-    shadow_cost_usd: Decimal | None = None, latency_ms: int | None = None,
-    attempt: int = 1, error: str | None = None, trace_id: str | None = None,
+    conn: Connection,
+    *,
+    model: str,
+    succeeded: bool,
+    invoice_id: uuid.UUID | None = None,
+    batch_id: uuid.UUID | None = None,
+    thread_id: str | None = None,
+    node: str | None = None,
+    agent: str | None = None,
+    provider: str | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
+    cost_usd: Decimal | None = None,
+    shadow_cost_usd: Decimal | None = None,
+    latency_ms: int | None = None,
+    attempt: int = 1,
+    error: str | None = None,
+    trace_id: str | None = None,
 ) -> int:
     values: dict[str, Any] = {
-        "model": model, "succeeded": succeeded, "invoice_id": invoice_id,
-        "batch_id": batch_id, "thread_id": thread_id, "node": node, "agent": agent,
-        "provider": provider, "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens, "cost_usd": cost_usd,
-        "shadow_cost_usd": shadow_cost_usd, "latency_ms": latency_ms,
-        "attempt": attempt, "error": error, "trace_id": trace_id,
+        "model": model,
+        "succeeded": succeeded,
+        "invoice_id": invoice_id,
+        "batch_id": batch_id,
+        "thread_id": thread_id,
+        "node": node,
+        "agent": agent,
+        "provider": provider,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "cost_usd": cost_usd,
+        "shadow_cost_usd": shadow_cost_usd,
+        "latency_ms": latency_ms,
+        "attempt": attempt,
+        "error": error,
+        "trace_id": trace_id,
     }
     stmt = models.llm_calls.insert().values(**values).returning(models.llm_calls.c.id)
     return int(conn.execute(stmt).scalar_one())
@@ -2450,8 +2748,10 @@ def record_call(
 Generate the migration (`--autogenerate -m "m2a_09_consumption_episodic_llm"`) and append:
 
 ```python
-    op.execute("GRANT SELECT, INSERT, UPDATE ON app.budget_consumption, app.episodic_decisions, app.llm_calls TO invoice_app")
-    op.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA app TO invoice_app")
+op.execute(
+    "GRANT SELECT, INSERT, UPDATE ON app.budget_consumption, app.episodic_decisions, app.llm_calls TO invoice_app"
+)
+op.execute("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA app TO invoice_app")
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**

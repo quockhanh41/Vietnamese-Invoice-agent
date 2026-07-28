@@ -34,8 +34,7 @@ class TestKeysFor:
         assert gateway._keys_for("gemini/gemini-3.5-flash") == ["gem1"]
 
     def test_openrouter_model_uses_openrouter_key(self, gateway):
-        assert gateway._keys_for(
-            "openrouter/qwen/qwen3-next-80b-a3b-instruct:free") == ["or1"]
+        assert gateway._keys_for("openrouter/qwen/qwen3-next-80b-a3b-instruct:free") == ["or1"]
 
     def test_openai_model_uses_openai_key(self):
         gw = make_gateway(openai_api_key="oa1")
@@ -60,9 +59,7 @@ class TestUsableModels:
 
     def test_all_providers_keyed_keeps_full_chain(self, gateway):
         chain = list(gateway.model_chain)
-        assert gateway._usable_models(chain) == [
-            m for m in chain if not m.startswith("openai/")
-        ]
+        assert gateway._usable_models(chain) == [m for m in chain if not m.startswith("openai/")]
 
 
 class TestResolveChain:
@@ -72,9 +69,7 @@ class TestResolveChain:
         assert chain.count("gemini/gemini-3.5-flash") == 1
 
     def test_explicit_list_is_used_verbatim(self, gateway):
-        assert gateway._resolve_chain(["gemini/gemini-3.5-flash"]) == [
-            "gemini/gemini-3.5-flash"
-        ]
+        assert gateway._resolve_chain(["gemini/gemini-3.5-flash"]) == ["gemini/gemini-3.5-flash"]
 
     def test_chain_comes_from_settings_not_a_hardcoded_constant(self):
         # Điểm khác Project A: chain là cấu hình, không phải hằng số trong class.
@@ -98,8 +93,9 @@ class TestThinkingModels:
     def test_openrouter_qwen3_instruct_is_not_thinking(self, gateway):
         # Bản instruct không có thinking mode; gửi reasoning_effort sẽ 400
         # mọi request fallback.
-        assert gateway._is_thinking_model(
-            "openrouter/qwen/qwen3-next-80b-a3b-instruct:free") is False
+        assert (
+            gateway._is_thinking_model("openrouter/qwen/qwen3-next-80b-a3b-instruct:free") is False
+        )
 
     def test_gpt_oss_rejects_none_effort(self, gateway):
         # Groq gpt-oss chỉ nhận low/medium/high.

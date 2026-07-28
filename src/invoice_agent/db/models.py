@@ -12,8 +12,8 @@ thừa và đề nghị DROP — kể cả bảng ở `app`. Lúc đó test cô 
 nghĩa phép thử.
 """
 
-from sqlalchemy import BigInteger, Column, DateTime, MetaData, String, Table, func
 import sqlalchemy as sa
+from sqlalchemy import BigInteger, Column, DateTime, MetaData, String, Table, func
 from sqlalchemy.dialects import postgresql
 
 from invoice_agent.config import APP_SCHEMA
@@ -79,7 +79,9 @@ budgets = Table(
     # NULL in a key is meaningful — `invoices` solves the same problem by
     # making seller_tax_code NOT NULL instead.
     sa.UniqueConstraint(
-        "department_code", "period", "category",
+        "department_code",
+        "period",
+        "category",
         name="uq_budgets_department_period_category",
         postgresql_nulls_not_distinct=True,
     ),
@@ -119,9 +121,7 @@ batches = Table(
     Column("invoice_count", sa.Integer, nullable=False, server_default="0"),
     Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("completed_at", sa.DateTime(timezone=True)),
-    sa.CheckConstraint(
-        "status IN ('running', 'completed', 'failed')", name="ck_batches_status"
-    ),
+    sa.CheckConstraint("status IN ('running', 'completed', 'failed')", name="ck_batches_status"),
 )
 
 # Predicted from design doc §3.3's routing, NOT measured — M3-M5 will amend it.
@@ -129,8 +129,17 @@ batches = Table(
 # cheap: measured 2026-07-28, a native enum cannot add a value and backfill
 # rows to it in one migration ("unsafe use of new value").
 INVOICE_STATUSES = (
-    "received", "extracted", "validated", "classified", "flagged",
-    "pending_approval", "approved", "rejected", "posted", "manual_queue", "failed",
+    "received",
+    "extracted",
+    "validated",
+    "classified",
+    "flagged",
+    "pending_approval",
+    "approved",
+    "rejected",
+    "posted",
+    "manual_queue",
+    "failed",
 )
 SOURCE_TYPES = ("xml", "pdf_vision", "manual")
 
@@ -139,9 +148,9 @@ invoices = Table(
     metadata,
     Column("id", sa.Uuid(as_uuid=True), primary_key=True),
     Column("batch_id", sa.Uuid(as_uuid=True), sa.ForeignKey("batches.id")),
-    Column("template_no", sa.Text, nullable=False),      # KHMSHDon
-    Column("invoice_series", sa.Text, nullable=False),   # KHHDon
-    Column("invoice_number", sa.Text, nullable=False),   # SHDon
+    Column("template_no", sa.Text, nullable=False),  # KHMSHDon
+    Column("invoice_series", sa.Text, nullable=False),  # KHHDon
+    Column("invoice_number", sa.Text, nullable=False),  # SHDon
     # NOT NULL although InvoiceData types it `str | None`. Measured 2026-07-28:
     # seller MST is present in 8/8 real fixtures. An invoice without one cannot
     # be given an identity, so ingestion routes it to manual_queue rather than
@@ -179,23 +188,26 @@ invoices = Table(
     # THE identity of a Vietnamese e-invoice (design doc §2.3). invoice_number
     # alone is NOT unique across sellers — two vendors both issue no. 00001234.
     sa.UniqueConstraint(
-        "seller_tax_code", "template_no", "invoice_series", "invoice_number",
+        "seller_tax_code",
+        "template_no",
+        "invoice_series",
+        "invoice_number",
         name="uq_invoices_natural_key",
     ),
-    sa.CheckConstraint(
-        "status IN " + str(INVOICE_STATUSES), name="ck_invoices_status"
-    ),
-    sa.CheckConstraint(
-        "source_type IN " + str(SOURCE_TYPES), name="ck_invoices_source_type"
-    ),
+    sa.CheckConstraint("status IN " + str(INVOICE_STATUSES), name="ck_invoices_status"),
+    sa.CheckConstraint("source_type IN " + str(SOURCE_TYPES), name="ck_invoices_source_type"),
 )
 
 invoice_line_items = Table(
     "invoice_line_items",
     metadata,
     Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-    Column("invoice_id", sa.Uuid(as_uuid=True),
-           sa.ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "invoice_id",
+        sa.Uuid(as_uuid=True),
+        sa.ForeignKey("invoices.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     # NOT NULL although InvoiceLine.line_no is `int | None`. STT was present on
     # 15/15 lines across 8/8 fixtures (2026-07-28); where absent the repository
     # substitutes 1-based document position. One column, not two: a line index
@@ -229,8 +241,12 @@ invoice_flags = Table(
     "invoice_flags",
     metadata,
     Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-    Column("invoice_id", sa.Uuid(as_uuid=True),
-           sa.ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "invoice_id",
+        sa.Uuid(as_uuid=True),
+        sa.ForeignKey("invoices.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("code", sa.Text, nullable=False),
     Column("severity", sa.Text, nullable=False),
     Column("detail", postgresql.JSONB, nullable=False, server_default="{}"),
@@ -241,7 +257,8 @@ invoice_flags = Table(
     sa.CheckConstraint("severity IN " + str(FLAG_SEVERITIES), name="ck_flags_severity"),
     sa.CheckConstraint("raised_by IN " + str(FLAG_SOURCES), name="ck_flags_raised_by"),
     sa.Index(
-        "ix_flags_open_by_invoice", "invoice_id",
+        "ix_flags_open_by_invoice",
+        "invoice_id",
         postgresql_where=sa.text("resolved_at IS NULL"),
     ),
 )
@@ -267,7 +284,8 @@ approvals = Table(
     # Time-to-approve, computed by Postgres. Verified 2026-07-28: a row 90s
     # apart yields 90. Application code never computes it, so it cannot drift.
     Column(
-        "latency_seconds", sa.Numeric,
+        "latency_seconds",
+        sa.Numeric,
         sa.Computed("EXTRACT(EPOCH FROM (decided_at - requested_at))", persisted=True),
     ),
     sa.CheckConstraint(
@@ -277,7 +295,8 @@ approvals = Table(
     sa.Index("ix_approvals_thread_id", "thread_id"),
     # Exactly the query scripts/recover_pending.py runs at M5.5.
     sa.Index(
-        "ix_approvals_pending", "invoice_id",
+        "ix_approvals_pending",
+        "invoice_id",
         postgresql_where=sa.text("decision IS NULL"),
     ),
 )
@@ -292,8 +311,13 @@ journal_entries = Table(
     # UNIQUE: one invoice can never be posted twice. Measured at M1.5 that a
     # `kill -9` inside a post-gate node makes it run again on resume and write
     # a SECOND row — graph shape does not prevent that, this constraint does.
-    Column("invoice_id", sa.Uuid(as_uuid=True), sa.ForeignKey("invoices.id"),
-           nullable=False, unique=True),
+    Column(
+        "invoice_id",
+        sa.Uuid(as_uuid=True),
+        sa.ForeignKey("invoices.id"),
+        nullable=False,
+        unique=True,
+    ),
     Column("entry_date", sa.Date, nullable=False),
     Column("status", sa.Text, nullable=False, server_default="draft"),
     Column("posting_authority", sa.Text, nullable=False),
@@ -319,8 +343,12 @@ journal_entry_lines = Table(
     "journal_entry_lines",
     metadata,
     Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-    Column("journal_entry_id", sa.Uuid(as_uuid=True),
-           sa.ForeignKey("journal_entries.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "journal_entry_id",
+        sa.Uuid(as_uuid=True),
+        sa.ForeignKey("journal_entries.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
     Column("line_no", sa.Integer, nullable=False),
     Column("account_code", sa.Text, nullable=False),
     Column("account_name", sa.Text, nullable=False),
@@ -403,9 +431,3 @@ llm_calls = Table(
     Column("succeeded", sa.Boolean, nullable=False, server_default="true"),
     Column("error", sa.Text),
 )
-
-
-
-
-
-

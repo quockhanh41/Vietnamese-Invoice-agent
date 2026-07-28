@@ -8,11 +8,11 @@ classification metric must be reported against (principle 3, design doc
 from decimal import Decimal
 
 import pytest
+from scripts.seed_reference import seed
 from sqlalchemy import select
 
 from invoice_agent.db import models
 from invoice_agent.db.engine import get_owner_engine
-from scripts.seed_reference import seed
 
 # TT133/2016/TT-BTC, not TT200: the scenario is a 40-person trading company,
 # i.e. an SME (design doc §2.1).
@@ -53,13 +53,15 @@ def test_every_category_has_a_non_empty_keywords_baseline(seeded):
 
 def test_seed_is_idempotent(seeded):
     """`make seed` must be safe to re-run — it is wired into `make dev`."""
+    stmt = select(models.expense_categories).order_by(models.expense_categories.c.code)
     with seeded.connect() as conn:
-        before = conn.execute(select(models.expense_categories)).all()
+        before = conn.execute(stmt).all()
     with seeded.begin() as conn:
         seed(conn)
     with seeded.connect() as conn:
-        after = conn.execute(select(models.expense_categories)).all()
+        after = conn.execute(stmt).all()
     assert before == after
+
 
 
 def test_two_department_wide_budgets_rejected(seeded):
@@ -76,14 +78,23 @@ def test_two_department_wide_budgets_rejected(seeded):
 
     with seeded.begin() as conn:
         reference.upsert_department(conn, "ZZTEST", "Phòng thử nghiệm")
-    with pytest.raises(IntegrityError):
-        with seeded.begin() as conn:
-            conn.execute(
-                models.budgets.insert(),
-                [
-                    {"department_code": "ZZTEST", "period": "2026-07", "category": None,
-                     "amount_limit": 1000, "warn_threshold_pct": Decimal("0.8")},
-                    {"department_code": "ZZTEST", "period": "2026-07", "category": None,
-                     "amount_limit": 2000, "warn_threshold_pct": Decimal("0.8")},
-                ],
-            )
+    with pytest.raises(IntegrityError), seeded.begin() as conn:
+        conn.execute(
+            models.budgets.insert(),
+            [
+                {
+                    "department_code": "ZZTEST",
+                    "period": "2026-07",
+                    "category": None,
+                    "amount_limit": 1000,
+                    "warn_threshold_pct": Decimal("0.8"),
+                },
+                {
+                    "department_code": "ZZTEST",
+                    "period": "2026-07",
+                    "category": None,
+                    "amount_limit": 2000,
+                    "warn_threshold_pct": Decimal("0.8"),
+                },
+            ],
+        )

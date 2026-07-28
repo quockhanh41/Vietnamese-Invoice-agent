@@ -32,9 +32,7 @@ class TestSpikeGraphInProcess:
             with build_checkpointer() as saver:
                 saver.setup()
                 app = build_spike_graph().compile(checkpointer=saver)
-                result = app.invoke(
-                    {"thread_id": thread_id, "trace": [], "decision": ""}, config
-                )
+                result = app.invoke({"thread_id": thread_id, "trace": [], "decision": ""}, config)
 
             assert "__interrupt__" in result, "graph phải dừng ở interrupt()"
             assert result["trace"] == ["n1_record"], "chỉ node trước cổng được commit"

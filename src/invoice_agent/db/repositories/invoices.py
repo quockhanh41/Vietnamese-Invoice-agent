@@ -55,70 +55,85 @@ def insert_with_lines(
 
     vendors.ensure_vendor(conn, data.seller_tax_code, name=data.seller_name)
 
-    invoice_id = insert_row(conn, {
-        "id": uuid.uuid4(),
-        "batch_id": batch_id,
-        "template_no": data.template_no,
-        "invoice_series": data.invoice_series,
-        "invoice_number": data.invoice_number,
-        "seller_tax_code": data.seller_tax_code,
-        "buyer_tax_code": data.buyer_tax_code,
-        "issue_date": data.issue_date,
-        "currency": data.currency,
-        "exchange_rate": data.exchange_rate,
-        "subtotal": data.subtotal,
-        "vat_amount": data.vat_amount,
-        "total_amount": data.total_amount,
-        "total_in_words": data.total_in_words,
-        "ext": data.ext,
-        "source_type": source_type,
-        "source_path": source_path,
-        "raw_xml": raw_xml,
-        "status": "extracted",
-    })
+    invoice_id = insert_row(
+        conn,
+        {
+            "id": uuid.uuid4(),
+            "batch_id": batch_id,
+            "template_no": data.template_no,
+            "invoice_series": data.invoice_series,
+            "invoice_number": data.invoice_number,
+            "seller_tax_code": data.seller_tax_code,
+            "buyer_tax_code": data.buyer_tax_code,
+            "issue_date": data.issue_date,
+            "currency": data.currency,
+            "exchange_rate": data.exchange_rate,
+            "subtotal": data.subtotal,
+            "vat_amount": data.vat_amount,
+            "total_amount": data.total_amount,
+            "total_in_words": data.total_in_words,
+            "ext": data.ext,
+            "source_type": source_type,
+            "source_path": source_path,
+            "raw_xml": raw_xml,
+            "status": "extracted",
+        },
+    )
     if invoice_id is None:
         return None
 
     if data.lines:
-        conn.execute(models.invoice_line_items.insert(), [
-            {
-                "invoice_id": invoice_id,
-                # Document position when STT is absent — see the column comment.
-                "line_no": line.line_no if line.line_no is not None else position,
-                "description": line.description,
-                "unit": line.unit,
-                "quantity": line.quantity,
-                "unit_price": line.unit_price,
-                "amount": line.amount,
-                "vat_rate": line.vat_rate,
-                "vat_amount": line.vat_amount,
-                "item_kind": line.item_kind,
-                "ext": line.ext,
-            }
-            for position, line in enumerate(data.lines, start=1)
-        ])
+        conn.execute(
+            models.invoice_line_items.insert(),
+            [
+                {
+                    "invoice_id": invoice_id,
+                    # Document position when STT is absent — see the column comment.
+                    "line_no": line.line_no if line.line_no is not None else position,
+                    "description": line.description,
+                    "unit": line.unit,
+                    "quantity": line.quantity,
+                    "unit_price": line.unit_price,
+                    "amount": line.amount,
+                    "vat_rate": line.vat_rate,
+                    "vat_amount": line.vat_amount,
+                    "item_kind": line.item_kind,
+                    "ext": line.ext,
+                }
+                for position, line in enumerate(data.lines, start=1)
+            ],
+        )
     return invoice_id
 
 
 def get_by_id(conn: Connection, invoice_id: uuid.UUID) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.invoices).where(models.invoices.c.id == invoice_id)
-    ).mappings().first()
+    row = (
+        conn.execute(select(models.invoices).where(models.invoices.c.id == invoice_id))
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 
 
 def get_by_natural_key(
-    conn: Connection, seller_tax_code: str, template_no: str,
-    invoice_series: str, invoice_number: str,
+    conn: Connection,
+    seller_tax_code: str,
+    template_no: str,
+    invoice_series: str,
+    invoice_number: str,
 ) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.invoices).where(
-            models.invoices.c.seller_tax_code == seller_tax_code,
-            models.invoices.c.template_no == template_no,
-            models.invoices.c.invoice_series == invoice_series,
-            models.invoices.c.invoice_number == invoice_number,
+    row = (
+        conn.execute(
+            select(models.invoices).where(
+                models.invoices.c.seller_tax_code == seller_tax_code,
+                models.invoices.c.template_no == template_no,
+                models.invoices.c.invoice_series == invoice_series,
+                models.invoices.c.invoice_number == invoice_number,
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 
 

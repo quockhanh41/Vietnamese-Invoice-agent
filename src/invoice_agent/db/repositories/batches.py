@@ -16,7 +16,9 @@ def create_batch(conn: Connection, label: str | None = None) -> uuid.UUID:
     return batch_id
 
 
-def complete_batch(conn: Connection, batch_id: uuid.UUID, *, status: str, invoice_count: int) -> None:
+def complete_batch(
+    conn: Connection, batch_id: uuid.UUID, *, status: str, invoice_count: int
+) -> None:
     conn.execute(
         models.batches.update()
         .where(models.batches.c.id == batch_id)
@@ -25,7 +27,9 @@ def complete_batch(conn: Connection, batch_id: uuid.UUID, *, status: str, invoic
 
 
 def get_batch(conn: Connection, batch_id: uuid.UUID) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.batches).where(models.batches.c.id == batch_id)
-    ).mappings().first()
+    row = (
+        conn.execute(select(models.batches).where(models.batches.c.id == batch_id))
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None

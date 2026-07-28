@@ -22,7 +22,9 @@ class TestNoDecodeCsv:
     """
 
     def test_csv_model_chain_parses(self, monkeypatch):
-        monkeypatch.setenv("LLM_MODEL_CHAIN", "groq/llama-3.3-70b-versatile,gemini/gemini-3.5-flash")
+        monkeypatch.setenv(
+            "LLM_MODEL_CHAIN", "groq/llama-3.3-70b-versatile,gemini/gemini-3.5-flash"
+        )
         assert make_settings().llm_model_chain == [
             "groq/llama-3.3-70b-versatile",
             "gemini/gemini-3.5-flash",
@@ -145,8 +147,6 @@ class TestSchemaIsolationDsn:
         assert make_settings().runtime_sqlalchemy_url.startswith("postgresql+psycopg://")
 
 
-
-
 class TestLlmMode:
     def test_default_is_live(self, monkeypatch):
         monkeypatch.delenv("LLM_MODE", raising=False)
@@ -178,13 +178,10 @@ class TestDsnActuallyConnects:
             search_path = conn.execute("SHOW search_path").fetchone()[0]
         assert search_path == "app,public"
 
-    def test_checkpointer_dsn_connects_and_sets_search_path(
-        self, requires_postgres, monkeypatch
-    ):
+    def test_checkpointer_dsn_connects_and_sets_search_path(self, requires_postgres, monkeypatch):
         import psycopg
 
         monkeypatch.setenv("DATABASE_URL", requires_postgres)
         with psycopg.connect(make_settings().checkpointer_dsn, connect_timeout=3) as conn:
             search_path = conn.execute("SHOW search_path").fetchone()[0]
         assert search_path == "langgraph,public"
-

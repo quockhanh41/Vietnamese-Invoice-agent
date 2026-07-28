@@ -49,7 +49,8 @@
 
 ## 1. Vị trí hiện tại (tóm tắt 1 đoạn)
 
-**Updated 2026-07-27 — M0 closed, gate 5/5. M1 open: 1.1, 1.2, 1.5, 1.6 done; 1.3 and 1.4 remain.**
+**Updated 2026-07-28 — M0 closed (gate 5/5). M1 closed (gate 4/4). M2-A closed (10/10 tasks, 15 tables, 9 migrations, 11/11 mutation guards verified, gate evidence in `docs/notes/2026-07-28-m2a-database-defends-itself.md`). `make check` green with 159 tests.**
+
 
 **M0 — nền chạy được.** Repo `git init` riêng, đã push lên
 `github.com/quockhanh41/Vietnamese-Invoice-agent` (private). src-layout `src/invoice_agent/` cài
@@ -100,7 +101,8 @@ actually stops that is the M2.4 `UNIQUE` constraint plus the M5.3 guard, not the
 
 **M1.3 + 1.4 — done 2026-07-27, then hardened by review the same day**, exactly as 1.5 and 1.6 were.
 `xml_schema.py` (path map anchored at `HDon`), `models.py` (`InvoiceData`), `xml_parser.py`. 8/8 real
-fixtures parse; `make check` green with 116 tests. Spec
+fixtures parse; `make check` green with 123 tests (116 at the time of writing; the review commits
+that closed the two holes added the other 7). Spec
 `docs/superpowers/specs/2026-07-27-xml-extraction-design.md`, plan
 `docs/superpowers/plans/2026-07-27-xml-extraction.md`. **M1 gate 4/4.**
 
@@ -297,7 +299,7 @@ gate "phải có XML thật" tồn tại để bắt. Ghi lại vì nó là nộ
 | có namespace phải xử lý | Phần dữ liệu **không namespace** ở cả 4 file. Chỉ subtree `Signature` mang `xmlns=…xmldsig#` | XPath viết kèm namespace → không khớp node nào |
 | dòng hàng luôn có `TSuat`, `DVTinh` | Vắng ở hóa đơn bán hàng (`KHMSHDon=2`); có ở GTGT (`=1`) dưới dạng **chuỗi `'8%'`, `'10%'`** | Model bắt buộc `TSuat` → fail mọi hóa đơn không-GTGT. Parse `'8%'` thành số → `ValueError`. **Mọi field thuế phải Optional** |
 | `NMua` có `MST` | Vắng ở hầu hết file. Và "thiếu" có **ba** biểu hiện: `'0'`, element rỗng → `''`, element vắng → `None` | Validator MST ở M2.6 nổ trên hóa đơn bán lẻ |
-| MST là "10/13 số" | **3 hình dạng**: `0104093672` (10), `0304998358-042` (**có gạch**, chi nhánh), `052098014618` (**12 số**, hộ kinh doanh) | Validator từ chối 2/3 dạng thật |
+| MST là "10/13 số" | **3 hình dạng**: `0100000003` (10), `0300000018-042` (**có gạch**, chi nhánh), `050000000000` (**12 số**, hộ kinh doanh) | Validator từ chối 2/3 dạng thật |
 | *(không dự đoán)* | **`TTKhac`** — khối `(TTruong, KDLieu, DLieu)` ở `TTChung`, `NBan`, `NMua`, từng dòng hàng, và `TToan`. **Thứ tự con khác nhau giữa NCC**: Viettel `DLieu,KDLieu,TTruong` vs VNPT/Phong Vũ `TTruong,KDLieu,DLieu` | Đọc theo **vị trí** là vỡ. Và xem ngay dưới — đây là phát hiện đắt nhất |
 | *(không dự đoán)* | **`TChat=4` là dòng GHI CHÚ**, không phải hàng hoá — chỉ có `THHDVu`, không giá trị tiền | Cộng nó vào số học là sai; đòi `ThTien` trên mọi dòng là crash |
 | *(không dự đoán)* | Số tiền có cả `47777` lẫn **`21618409.09000000`** (8 chữ số thập phân) | `float` sai ở đồng cuối. Bắt buộc `Decimal` |
@@ -357,9 +359,21 @@ Trường có mà plan không liệt kê: `PBan`, `MCCQT`, `Fkey`, `DLQRCode`, `
 công khai áp dụng được không. Đừng cho validator từ chối nó cho tới khi trả lời được.
 
 **⚠️ Hóa đơn thật mang PII** (tên, email, mã khách hàng, MST, số tài khoản) **và chứng thư số thật**.
-gitleaks **không bắt được** — nó tìm token, không tìm PII. `.gitignore` chặn `/*.xml` và `/*.pdf` ở
-root; chỉ bản **đã ẩn danh** trong `tests/fixtures/real_samples/` mới được commit. Nguyên tắc ẩn danh:
-**giữ cấu trúc, thay giá trị** — kiểm chứng bằng cách so cây tag gốc vs ẩn danh phải giống hệt.
+gitleaks **không bắt được** — nó tìm token, không tìm PII. `.gitignore` chặn `*.xml` và `*.pdf`
+(**không neo root** — neo cũ `/*.xml` chính là chỗ đã thủng ở `bb8718d`), với ngoại lệ
+`!tests/**/*.xml`; chỉ bản **đã ẩn danh** trong `tests/fixtures/real_samples/` mới được commit.
+Nguyên tắc ẩn danh: **giữ cấu trúc, thay giá trị** — kiểm chứng bằng cách so cây tag gốc vs ẩn danh
+phải giống hệt.
+
+> **Redacted 2026-07-28 (M1 review).** The MST row of the table above carried `0104093672`,
+> `0304998358-042` and `052098014618` — the **real, pre-anonymisation** tax codes, confirmed by the
+> user during this review. None of the three appears in `tests/fixtures/real_samples/`, which is how
+> they were caught: `c97da4e` had already swapped them out of the fixtures and source comments but
+> deliberately left this doc for a human decision. They are now the corpus's own anonymised values.
+> The row's point was always the three *shapes* — 10-digit, dash-suffixed branch, 12-digit household
+> — so nothing measured is lost. **Still in git history on origin**; purging it is a separate,
+> unmade decision. The lesson generalises: PII leaks into *prose about* the data as readily as into
+> the data, and no automated layer here looks at prose.
 
 **Gate M1**: `test_hitl_survives_restart.py` **xanh** (10/10 lần); 2–3 XML thật parse ra
 `InvoiceData` đúng; `alembic revision --autogenerate` trên schema đã có checkpoint **không** sinh ra
@@ -573,14 +587,43 @@ ngay; **mọi con số trong README trace được về `docs/eval-report.md` tr
 | Milestone | Trạng thái | Ngày xong | Ghi chú |
 |---|---|---|---|
 | M0 — Nền sạch | ✅ | 2026-07-27 | Gate 5/5. `make dev` + `make check` green; CI green on real Postgres (`30233872335`, 62 passed). Alembic scaffolding was pulled in here because the gate demanded "run migrations" while 0.1–0.7 contained no item that built it. A CI hole survived until 2026-07-27: the workflow created the schemas but never ran `alembic upgrade head`, invisible until a test needed a table |
-| M1 — XML thật + HITL spike | 🟡 | | ✅ 1.1 (8 files / 8 vendors) · ✅ 1.2 · ✅ **1.5 HITL durability — `kill -9` 10/10, no repeated side effect** · ✅ **1.6 Alembic schema isolation + ADR 0002** · 🔲 1.3 `xml_schema.py` · 🔲 1.4 `xml_parser.py`. Both HITL tests were rewritten on 2026-07-27 after review: the Alembic guard tested a copy of `include_object` rather than the real one, and the interrupt-node re-run — the finding M5 depends on — was asserted but never measured. Both now hold, and ADR 0002 records that node placement is necessary, not sufficient |
-| M2 — Corpus + schema + domain | 🔲 | | |
+| M1 — XML thật + HITL spike | ✅ | 2026-07-28 | **Gate 4/4, re-verified independently 2026-07-28** (not merely re-read): `make check` 123 passed, HITL `kill -9` **10/10 locally** at `HITL_RUNS=10`, real `alembic revision --autogenerate` against the 4 live checkpoint tables emits an **empty** migration. All 6 items done: ✅ 1.1 (8 files / 8 vendors / 3 `PBan`) · ✅ 1.2 · ✅ 1.3 `xml_schema.py` · ✅ 1.4 `xml_parser.py` (8/8 parse) · ✅ 1.5 HITL durability · ✅ 1.6 Alembic isolation + ADR 0002. **8/8 guards re-confirmed red under mutation** — see the review note below. Owed, non-blocking: ADR `0001-three-graphs-not-one.md`; terminal recording (deferred to M8); NĐ 70/2025 field check |
+| M2 — Corpus + schema + domain | 🟡 **đang mở** | | Gate M1 đã mở khoá milestone này 2026-07-28; chưa bắt đầu hạng mục nào. **Ba ràng buộc thừa kế từ M1, đọc trước khi viết dòng code đầu tiên**: (1) **`scripts/generate_invoices.py` KHÔNG được import hay đọc `xml_schema.py`** — nếu generator và parser cùng dựa trên một hiểu biết về format thì điểm 100% chỉ chứng minh chúng đồng ý với nhau, và `false-positive rate 0%` trong eval report là số bịa; (2) generator phải sinh được thứ hóa đơn thật đã dạy: dòng `TChat=4` không tiền, `ThTien=0` với tiền nằm ở `TTKhac['Amount']`, `TSuat` dạng chuỗi `'8%'`, đơn giá lẻ khiến `SLuong × DGia ≠ ThTien` (lệch tới 0.01), và MST cả 3 hình dạng — generator nhân xuôi từ đơn giá sẽ luôn chia hết và bỏ lỡ cả nhóm defect này; (3) `TSuat` mã `KCT`/`KKKNT` hiện parser **từ chối lớn tiếng** vì không fixture nào có — nếu M2.1 sinh ra chúng thì phải mở rộng `vat_rate()` trước, đừng để generator tạo dữ liệu mà parser không đọc nổi |
 | M3 — Extraction + tools + cost + replay | 🔲 | | |
 | M4 — Multi-agent + memory + serialization | 🔲 | | |
 | M5 — HITL production + API + UI | 🔲 | | |
 | M6 — Security + observability + eval | 🔲 | | |
 | M7 — MCP + Next.js | 🔲 | | Quy tắc dừng: 4 ngày cho Next.js |
 | M8 — Portfolio final | 🔲 | | |
+
+### M1 exit review — 2026-07-28
+
+M1 produced **four** separate tests that passed while guarding nothing (1.5, 1.6, and two in 1.4).
+Four is a pattern, not bad luck, so closing the milestone on the *claim* that they were since
+mutation-verified would repeat the exact mistake the milestone kept making. Every guard was
+re-broken from scratch and re-run:
+
+| Mutation applied to source | Guard that should catch it | |
+|---|---|:---:|
+| `defusedxml` → stdlib `ElementTree` | `test_entity_declarations_rejected` | ✅ red |
+| 2 of 6 `EXT_SCOPES` paths broken | `test_header_ext_scopes_are_populated…` | ✅ red |
+| `money('')` → `Decimal(0)` | `test_empty_element_is_none_not_zero` | ✅ red |
+| `locate_hdon`: `len(found) != 1` → `< 1` | `test_multi_invoice_envelope_raises` | ✅ red |
+| `ext_bag` reads children positionally | `test_ext_bag_is_order_independent` | ✅ red |
+| root-anchored `.//PBan` | `test_envelope_values_do_not_leak` | ✅ red |
+| `EXT_KEY_LINE_AMOUNT` → the gross-amount key | `test_invoice_data_is_sufficient…` | ✅ red |
+| `include_object` → `return True` | `test_alembic_ignores_langgraph` | ✅ red |
+
+**8/8.** The guards are real this time, and the two `.//` guards divide the work exactly as row 1.3
+claims: the static one catches field-level `.//`, the behavioural one catches root-anchored lookups.
+
+Two corrections to the record, both small:
+
+- **Test count drifted.** Rows 1.3/1.4 say 116; the suite is **123**. The 7 came from the review
+  commits themselves (`4442bd1`, `c97da4e`) — the guards added to close the holes.
+- **A PII leak lived in this document, not in the data.** See the redaction note in §M1.2.
+
+Nothing found in this review blocks M2. **The gate is open.**
 
 ---
 

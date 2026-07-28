@@ -14,13 +14,25 @@ from invoice_agent.db import models
 
 
 def raise_flag(
-    conn: Connection, invoice_id: uuid.UUID, *, code: str, severity: str,
-    raised_by: str, detail: dict[str, Any] | None = None,
+    conn: Connection,
+    invoice_id: uuid.UUID,
+    *,
+    code: str,
+    severity: str,
+    raised_by: str,
+    detail: dict[str, Any] | None = None,
 ) -> int:
-    stmt = models.invoice_flags.insert().values(
-        invoice_id=invoice_id, code=code, severity=severity,
-        raised_by=raised_by, detail=detail or {},
-    ).returning(models.invoice_flags.c.id)
+    stmt = (
+        models.invoice_flags.insert()
+        .values(
+            invoice_id=invoice_id,
+            code=code,
+            severity=severity,
+            raised_by=raised_by,
+            detail=detail or {},
+        )
+        .returning(models.invoice_flags.c.id)
+    )
     return int(conn.execute(stmt).scalar_one())
 
 

@@ -30,6 +30,7 @@ if TRACING_ENABLED:
     if "langfuse_otel" not in litellm.callbacks:
         litellm.callbacks.append("langfuse_otel")
 else:
+
     def observe(*args, **kwargs):
         """Identity no-op decorator: supports @observe and @observe(...)."""
         if len(args) == 1 and callable(args[0]) and not kwargs:

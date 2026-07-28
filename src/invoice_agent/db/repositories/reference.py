@@ -14,9 +14,13 @@ def list_departments(conn: Connection) -> list[dict[str, Any]]:
 
 
 def get_category(conn: Connection, code: str) -> dict[str, Any] | None:
-    row = conn.execute(
-        select(models.expense_categories).where(models.expense_categories.c.code == code)
-    ).mappings().first()
+    row = (
+        conn.execute(
+            select(models.expense_categories).where(models.expense_categories.c.code == code)
+        )
+        .mappings()
+        .first()
+    )
     return dict(row) if row else None
 
 
@@ -43,8 +47,11 @@ def upsert_category(
     keywords_vi: list[str],
 ) -> None:
     values = {
-        "code": code, "name_vi": name_vi, "debit_account": debit_account,
-        "vat_account": vat_account, "credit_account": credit_account,
+        "code": code,
+        "name_vi": name_vi,
+        "debit_account": debit_account,
+        "vat_account": vat_account,
+        "credit_account": credit_account,
         "keywords_vi": keywords_vi,
     }
     stmt = insert(models.expense_categories).values(**values)
@@ -64,12 +71,23 @@ def upsert_budget(
     warn_threshold_pct: Decimal = Decimal("0.8"),
 ) -> int:
     values = {
-        "department_code": department_code, "period": period, "category": category,
-        "amount_limit": amount_limit, "warn_threshold_pct": warn_threshold_pct,
+        "department_code": department_code,
+        "period": period,
+        "category": category,
+        "amount_limit": amount_limit,
+        "warn_threshold_pct": warn_threshold_pct,
     }
-    stmt = insert(models.budgets).values(**values)
-    stmt = stmt.on_conflict_do_update(
-        constraint="uq_budgets_department_period_category",
-        set_={"amount_limit": amount_limit, "warn_threshold_pct": warn_threshold_pct},
-    ).returning(models.budgets.c.id)
+    stmt = (
+        insert(models.budgets)
+        .values(**values)
+        .on_conflict_do_update(
+            constraint="uq_budgets_department_period_category",
+            set_={
+                "amount_limit": amount_limit,
+                "warn_threshold_pct": warn_threshold_pct,
+            },
+        )
+        .returning(models.budgets.c.id)
+    )
     return int(conn.execute(stmt).scalar_one())
+

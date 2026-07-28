@@ -123,7 +123,13 @@ class LLMGateway:
             Generated text
         """
         text, _ = self._generate_impl(
-            prompt, system_prompt, model, temperature, max_tokens, json_mode, reasoning_effort,
+            prompt,
+            system_prompt,
+            model,
+            temperature,
+            max_tokens,
+            json_mode,
+            reasoning_effort,
         )
         return text
 
@@ -146,7 +152,13 @@ class LLMGateway:
             (generated_text, model_name)
         """
         return self._generate_impl(
-            prompt, system_prompt, model, temperature, max_tokens, json_mode, reasoning_effort,
+            prompt,
+            system_prompt,
+            model,
+            temperature,
+            max_tokens,
+            json_mode,
+            reasoning_effort,
         )
 
     def _generate_impl(
