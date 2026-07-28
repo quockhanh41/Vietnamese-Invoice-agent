@@ -1,0 +1,20 @@
+{%- macro ttkhac(entries, order) -%}
+<TTKhac>{% for key, value in entries %}<TTin>
+{%- if order == 'dlieu_first' -%}
+<DLieu>{{ value }}</DLieu><KDLieu>string</KDLieu><TTruong>{{ key }}</TTruong>
+{%- else -%}
+<TTruong>{{ key }}</TTruong><KDLieu>string</KDLieu><DLieu>{{ value }}</DLieu>
+{%- endif -%}
+</TTin>{% endfor %}</TTKhac>
+{%- endmacro -%}
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?><HDon><DLHDon Id="{{ s.doc_id }}"><TTChung><PBan>{{ s.schema_version }}</PBan><THDon>{{ s.invoice_kind_text }}</THDon><KHMSHDon>{{ s.template_no }}</KHMSHDon><KHHDon>{{ s.invoice_series }}</KHHDon><SHDon>{{ s.invoice_number }}</SHDon><NLap>{{ s.issue_date }}</NLap><DVTTe>VND</DVTTe><TGia>1</TGia><HTTToan>TM/CK</HTTToan><MSTTCGP>REDACTED-MST</MSTTCGP>{{ ttkhac(s.header_ext, s.ext_order) }}<HDCTTChinh>0</HDCTTChinh></TTChung><NDHDon><NBan><Ten>{{ s.seller_name }}</Ten><MST>{{ s.seller_tax_code }}</MST><DChi>{{ s.seller_address }}</DChi><SDThoai>19000000</SDThoai><DCTDTu/><STKNHang/><TNHang/><Fax/><Website/>{{ ttkhac(s.seller_ext, s.ext_order) }}</NBan><NMua><Ten>{{ s.buyer_name }}</Ten><MST>{{ s.buyer_tax_code }}</MST><DChi>{{ s.buyer_address }}</DChi><MKHang/><SDThoai/><DCTDTu/><HVTNMHang/><STKNHang/><TNHang/></NMua><DSHHDVu>{% for l in s.lines %}<HHDVu><TChat>{{ l.item_kind }}</TChat><STT>{{ l.line_no }}</STT><THHDVu>{{ l.description }}</THHDVu>
+{%- if l.item_kind != 4 -%}
+{%- if l.self_closing -%}<DVTinh/><SLuong /><DGia /><TLCKhau /><STCKhau />
+{%- else -%}<DVTinh>{{ l.unit }}</DVTinh><SLuong>{{ l.quantity }}</SLuong><DGia>{{ l.unit_price }}</DGia><TLCKhau>0</TLCKhau><STCKhau>0</STCKhau>
+{%- endif -%}
+<ThTien>{{ l.amount }}</ThTien>
+{%- if l.vat_rate is not none %}<TSuat>{{ l.vat_percent }}</TSuat>{% endif -%}
+{%- if l.vat_amount is not none %}<TThue>{{ l.vat_amount }}</TThue>{% endif -%}
+{%- if l.ext_amount is not none %}{{ ttkhac([('Amount', l.ext_amount)], s.ext_order) }}{% endif -%}
+{%- endif -%}
+</HHDVu>{% endfor %}</DSHHDVu><TToan>{% if s.vat_total is not none %}<TgTCThue>{{ s.subtotal }}</TgTCThue><TgTThue>{{ s.vat_total }}</TgTThue>{% endif %}<DSLPhi/><TTCKTMai>0</TTCKTMai><TgTTTBSo>{{ s.total_amount }}</TgTTTBSo><TgTTTBChu>{{ s.words }}</TgTTTBChu></TToan></NDHDon></DLHDon></HDon>
