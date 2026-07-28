@@ -235,3 +235,56 @@ def test_no_production_caller_of_journal_repository():
     )
 
 
+def test_audit_log_update_denied_to_runtime_role(runtime_conn):
+    """MUTATION GUARD 1 of 2 — the PRIVILEGE layer.
+
+    Verified red 2026-07-28 by granting UPDATE on audit_log to invoice_app.
+    Kept separate from the trigger test on purpose: each mechanism is checked
+    with the other still in place, so neither can be credited for the other's
+    work.
+    """
+    from invoice_agent.db import audit
+
+    audit.record(runtime_conn, actor="system", action="probe", allowed=True)
+    with pytest.raises((DBAPIError, IntegrityError), match="permission denied"):
+        runtime_conn.execute(models.audit_log.update().values(reason="tampered"))
+
+
+def test_audit_log_immutable_even_as_owner(owner_conn):
+    """MUTATION GUARD 2 of 2 — the TRIGGER layer, and the reason it exists.
+
+    Measured 2026-07-28: POSTGRES_USER=invoice is a SUPERUSER, and superusers
+    bypass privilege checks entirely — the REVOKE lands in the ACL
+    ({invoice=arDxtm/invoice}, w and d gone) and the UPDATE succeeds anyway.
+    Every psql session opened during a demo is such a session. Without this
+    trigger, "append-only" would be a README claim rather than a property.
+    """
+    from invoice_agent.db import audit
+
+    audit.record(owner_conn, actor="system", action="probe-owner", allowed=True)
+    with pytest.raises((DBAPIError, IntegrityError), match="append-only"):
+        owner_conn.execute(models.audit_log.update().values(reason="tampered"))
+
+
+def test_audit_log_delete_denied_even_as_owner(owner_conn):
+    from invoice_agent.db import audit
+
+    audit.record(owner_conn, actor="system", action="probe-delete", allowed=True)
+    with pytest.raises((DBAPIError, IntegrityError), match="append-only"):
+        owner_conn.execute(models.audit_log.delete())
+
+
+def test_audit_log_records_grants_not_only_refusals(runtime_conn):
+    """A refusal-only log cannot be audited: you cannot tell "nothing happened"
+    from "the writer was never called"."""
+    from invoice_agent.db import audit
+
+    row_id = audit.record(
+        runtime_conn, actor="mcp:claude-desktop", action="create_journal_entry",
+        target_table="journal_entries", target_id="abc", allowed=False,
+        reason="invoice not approved",
+    )
+    assert row_id is not None
+
+
+

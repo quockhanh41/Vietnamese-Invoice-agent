@@ -335,6 +335,24 @@ journal_entry_lines = Table(
     sa.CheckConstraint("debit >= 0 AND credit >= 0", name="ck_journal_line_non_negative"),
 )
 
+audit_log = Table(
+    "audit_log",
+    metadata,
+    Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    Column("occurred_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # 'system' | 'human:<name>' | 'mcp:<client>' (M7.2 writes the third form).
+    Column("actor", sa.Text, nullable=False),
+    Column("action", sa.Text, nullable=False),
+    Column("target_table", sa.Text),
+    Column("target_id", sa.Text),
+    # Grants AND refusals. A refusal-only log cannot distinguish "nothing
+    # happened" from "the writer was never called".
+    Column("allowed", sa.Boolean, nullable=False),
+    Column("reason", sa.Text),
+    Column("detail", postgresql.JSONB, nullable=False, server_default="{}"),
+)
+
+
 
 
 
