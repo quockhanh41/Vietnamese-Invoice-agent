@@ -32,6 +32,7 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://invoice:invoice@localhost:5433/invoice_agent
+      RUNTIME_DATABASE_URL: postgresql://invoice_app:invoice_app@localhost:5433/invoice_agent
       # KHÔNG có API key nào trong CI, và đó là chủ ý: LLM_MODE=replay đọc
       # fixture cache thay vì gọi mạng (design doc §11.4). CI xanh mà không có
       # secret nghĩa là fork PR cũng chạy được test, và test không thể hỏng vì

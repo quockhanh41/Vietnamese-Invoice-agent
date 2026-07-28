@@ -120,6 +120,31 @@ class TestSchemaIsolationDsn:
             == "postgresql://u:p@host/db?sslmode=require&options=-csearch_path%3Dapp%2Cpublic"
         )
 
+    def test_runtime_dsn_is_a_different_role_from_the_owner(self):
+        """The whole point of the runtime role is that it is NOT the owner.
+
+        Measured 2026-07-28 (spec §2.1): `invoice` is a SUPERUSER, and superusers
+        bypass privilege checks entirely, so `REVOKE UPDATE ON audit_log` applies
+        to the ACL and changes nothing. If both DSNs resolve to the same role the
+        permission layer is decorative.
+        """
+        settings = make_settings()
+        assert "invoice_app" in settings.runtime_dsn
+        assert settings.runtime_dsn != settings.app_dsn
+
+    def test_runtime_dsn_url_encodes_search_path_options(self):
+        """Same trap as M0.2: an unencoded `options=-csearch_path=app,public`
+        carries a second `=`, which psycopg rejects as `extra key/value separator`
+        while SQLAlchemy silently rebuilds the conninfo and accepts it."""
+        dsn = make_settings().runtime_dsn
+        assert "options=-csearch_path%3Dapp%2Cpublic" in dsn
+        assert "options=-csearch_path=" not in dsn
+
+    def test_runtime_sqlalchemy_url_selects_psycopg3(self):
+        """Bare `postgresql://` means psycopg2, which is not installed."""
+        assert make_settings().runtime_sqlalchemy_url.startswith("postgresql+psycopg://")
+
+
 
 
 class TestLlmMode:

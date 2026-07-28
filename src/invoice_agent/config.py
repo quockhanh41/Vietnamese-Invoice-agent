@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     # Mặc định khớp docker-compose.yml. Deploy thì trỏ sang Neon.
     database_url: str = "postgresql://invoice:invoice@localhost:5433/invoice_agent"
 
+    # Runtime role. NOT the owner: measured 2026-07-28 (spec §2.1), `invoice`
+    # is a SUPERUSER, so REVOKE against it lands in the ACL and is then
+    # bypassed. Repositories connect as this role; Alembic and the seed script
+    # keep using `database_url` because both are administrative.
+    runtime_database_url: str = "postgresql://invoice_app:invoice_app@localhost:5433/invoice_agent"
+
     # --- LLM ----------------------------------------------------------------
     llm_model_chain: _CsvList = Field(default_factory=lambda: list(DEFAULT_MODEL_CHAIN))
 
@@ -146,7 +152,16 @@ class Settings(BaseSettings):
         """
         return self.app_dsn.replace("postgresql://", "postgresql+psycopg://", 1)
 
-    def _with_options(self, options: str) -> str:
+    @property
+    def runtime_dsn(self) -> str:
+        """Business connection with least privilege — see `app_dsn` for the options rules."""
+        return self._with_options(f"-csearch_path={APP_SCHEMA},public", base=self.runtime_database_url)
+
+    @property
+    def runtime_sqlalchemy_url(self) -> str:
+        return self.runtime_dsn.replace("postgresql://", "postgresql+psycopg://", 1)
+
+    def _with_options(self, options: str, base: str | None = None) -> str:
         # `quote(..., safe="")` là bắt buộc, không phải cho chắc: giá trị options
         # chứa dấu `=` (`-csearch_path=app,public`), và psycopg coi dấu `=` thứ
         # hai trong một query param là lỗi cú pháp — `ProgrammingError: extra
@@ -154,8 +169,10 @@ class Settings(BaseSettings):
         # qua SQLAlchemy (nó tự dựng lại conninfo) nhưng psycopg trực tiếp thì
         # không, tức là PostgresSaver chết còn Alembic vẫn chạy — kiểu bug chỉ
         # lộ ra ở đúng chỗ tệ nhất.
-        separator = "&" if "?" in self.database_url else "?"
-        return f"{self.database_url}{separator}options={quote(options, safe='')}"
+        url = self.database_url if base is None else base
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}options={quote(options, safe='')}"
+
 
 
 @lru_cache
