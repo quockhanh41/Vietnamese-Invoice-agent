@@ -153,6 +153,35 @@ class Settings(BaseSettings):
         return self.app_dsn.replace("postgresql://", "postgresql+psycopg://", 1)
 
     @property
+    def alembic_sqlalchemy_url(self) -> str:
+        """Alembic's connection. `app` must NOT come first in search_path.
+
+        Measured 2026-07-28: with `-csearch_path=app,public`, Alembic treats
+        `app` as the connection's DEFAULT schema and reflects its tables under
+        the `None` key, while `db/models.py` declares them under `'app'`. Every
+        foreign key then compares as removed-and-re-added — a probe
+        `--autogenerate` against a database that exactly matches its migrations
+        emitted **32 diffs (16 `remove_fk` + 16 `add_fk`)**:
+
+            remove_fk  table: None.approvals -> referred None.invoices
+            add_fk     table: app.approvals  -> referred app.invoices
+
+        That is not cosmetic. The generated `op.drop_constraint` calls omit
+        `schema='app'`, so running them unedited fails; and real drift hides in
+        30 lines of noise, which inverts the purpose of the M1.6 isolation
+        guard. With `-csearch_path=public` the probe migration is empty.
+
+        Safe because every DDL op in `migrations/versions/` names `schema="app"`
+        explicitly (verified 2026-07-28: 16/16 `create_table` calls), and
+        `version_table_schema="app"` in `migrations/env.py` places
+        `alembic_version`. `public` stays in the path so the `vector` extension
+        type still resolves when M7 adds `episodic_decisions.reason_embedding`.
+        """
+        return self._with_options("-csearch_path=public", base=self.database_url).replace(
+            "postgresql://", "postgresql+psycopg://", 1
+        )
+
+    @property
     def runtime_dsn(self) -> str:
         """Business connection with least privilege — see `app_dsn` for the options rules."""
         return self._with_options(

@@ -35,12 +35,20 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# `app_sqlalchemy_url` chứ không phải `app_dsn`: SQLAlchemy đọc scheme để chọn
-# driver, và `postgresql://` trần nghĩa là psycopg2 (không cài trong repo này).
-# `%` trong query param phải được escape thành `%%` cho ConfigParser của Alembic.
-config.set_main_option(
-    "sqlalchemy.url", get_settings().app_sqlalchemy_url.replace("%", "%%")
-)
+# `alembic_sqlalchemy_url`, NOT `app_dsn` and NOT `app_sqlalchemy_url`. Three
+# separate reasons, each measured:
+#
+# 1. SQLAlchemy picks its driver from the scheme, and a bare `postgresql://`
+#    means psycopg2, which this repo does not install -> ModuleNotFoundError.
+#    `postgresql+psycopg://` is required.
+# 2. `%` in a query param must be escaped to `%%` for Alembic's ConfigParser.
+# 3. The search_path must NOT put `app` first. Measured 2026-07-28: with
+#    `-csearch_path=app,public`, Alembic treats `app` as the connection's
+#    default schema, reflects its tables under the `None` key, and then sees
+#    every foreign key as removed-and-re-added -- 32 phantom diffs against a
+#    database that exactly matches its migrations. Full reasoning and the
+#    safety argument live on `Settings.alembic_sqlalchemy_url`.
+config.set_main_option("sqlalchemy.url", get_settings().alembic_sqlalchemy_url.replace("%", "%%"))
 
 
 # Trỏ vào metadata của schema `app`. KHÔNG để None: với None, autogenerate coi
@@ -49,15 +57,12 @@ config.set_main_option(
 target_metadata = app_metadata
 
 
-
 def include_object(object, name, type_, reflected, compare_to) -> bool:
     """Alembic không được nhìn vào lãnh thổ của LangGraph. Xem docstring module."""
     schema = getattr(object, "schema", None)
     if schema == LANGGRAPH_SCHEMA:
         return False
     return not (name == "alembic_version" and schema != APP_SCHEMA)
-
-
 
 
 def run_migrations_offline() -> None:

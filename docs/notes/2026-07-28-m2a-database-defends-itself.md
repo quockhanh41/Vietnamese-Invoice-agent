@@ -1,7 +1,8 @@
 # Milestone 2-A Verification: The Database Defends Itself
 
 **Date:** 2026-07-28 · **Milestone:** M2-A (Schema, Seed & Repositories)
-**Status:** schema and guards **verified**; one gate condition **NOT met** — see §5.
+**Status:** schema and guards **verified**; the autogenerate defect found during review is **fixed
+and guarded** — see §5.
 
 > **Revision note (2026-07-28, review).** The first version of this document claimed a
 > `ck_vendors_tax_code_format` CHECK constraint that **does not exist in the schema**, and listed it
@@ -22,8 +23,8 @@ convention.
   `spike_counter` from M1.5 and `alembic_version`).
 - **Role segregation**: `invoice` (owner, SUPERUSER) vs `invoice_app` (runtime, NOSUPERUSER).
 - **All 11 mutation guards re-broken from scratch and confirmed RED**, then restored.
-- ⚠️ **Alembic autogenerate is NOT clean** — it emits ~30 phantom foreign-key operations. This is an
-  open defect, documented in §5, not a passing condition.
+- **Alembic autogenerate is clean** — it was not, on first implementation; the defect and its fix are
+  in §5, and it now has a mutation-verified test of its own.
 
 ---
 
@@ -112,10 +113,10 @@ before anything else calls `saver.setup()`.
 
 ---
 
-## 5. ⚠️ Open defect — Alembic autogenerate is not clean
+## 5. Alembic autogenerate — was broken, now fixed
 
 Success criterion 2 of the M2-A spec requires `alembic revision --autogenerate` to produce an
-**empty** migration. It does not. Measured 2026-07-28:
+**empty** migration. On first implementation it did not. Measured 2026-07-28:
 
 ```
 op.drop_constraint(op.f('approvals_invoice_id_fkey'), 'approvals', type_='foreignkey')
@@ -124,21 +125,45 @@ op.create_foreign_key(None, 'approvals', 'invoices', ['invoice_id'], ['id'],
 ...  (~30 such pairs, one per foreign key in the schema)
 ```
 
-**The database itself is correct** — `pg_get_constraintdef` confirms
-`FOREIGN KEY (batch_id) REFERENCES app.batches(id)` and so on. This is a comparison artefact:
-`migrations/env.py` connects with `options=-csearch_path=app,public`, so `app` is the connection's
-default schema and reflection reports `referred_schema=None`, while the metadata says `'app'`.
-Alembic sees a difference that does not exist and proposes to rewrite every FK.
+**The database itself was always correct** — `pg_get_constraintdef` confirms
+`FOREIGN KEY (batch_id) REFERENCES app.batches(id)`. It was a comparison artefact. Inspecting the
+diff objects directly showed the reflected side carrying `schema=None`:
 
-Two consequences, both real:
+```
+remove_fk   table: None.approvals  ->  referred None.invoices     (reflected)
+add_fk      table: app.approvals   ->  referred app.invoices      (metadata)
+```
 
-1. Every future `--autogenerate` starts with ~30 spurious operations that a developer must delete by
-   hand — and the generated `op.drop_constraint` calls omit `schema='app'`, so running them
-   unedited would fail.
-2. Genuine drift is now hidden in the noise, which is the opposite of what the M1.6 guard is for.
+`migrations/env.py` connected with `-csearch_path=app,public`, so Alembic treated `app` as the
+connection's **default** schema and reflected its tables under the `None` key, while `db/models.py`
+declares them under `'app'`. Every FK therefore compared as removed-and-re-added.
 
-This was not caught during implementation because Task 10 Step 1 — the explicit "confirm the probe
-migration's `upgrade()` body is `pass`" check — was not run. **Fix is not attempted in this note.**
+Two consequences, both real, and why this was not cosmetic:
+
+1. The generated `op.drop_constraint` calls omit `schema='app'`, so running them unedited fails.
+2. Genuine drift hid inside 30 lines of noise — the opposite of what the M1.6 guard is for.
+
+**Fix**: `Settings.alembic_sqlalchemy_url` keeps `app` out of Alembic's search_path. Safe because
+every DDL op in `migrations/versions/` names `schema="app"` explicitly (16/16 `create_table` calls
+verified) and `version_table_schema="app"` places `alembic_version`.
+
+**Verified after the fix:**
+
+- probe `--autogenerate` `upgrade()` body is `pass` — no operations at all;
+- on a **freshly created database** (`init_db.sql` → `alembic upgrade head` → seed): all **17
+  relations land in `app`, zero in `public`**, and autogenerate is empty there too;
+- full suite green against that fresh database — 159 passed.
+
+**Two false negatives are now closed with tests**, because the property had none, which is exactly
+why it broke unnoticed:
+
+| Guard | Asserts | Mutation-verified |
+| :--- | :--- | :---: |
+| `test_migrations.py::test_autogenerate_emits_an_empty_migration` | **nothing** is emitted | revert `env.py` to `app_sqlalchemy_url` → **RED** |
+| `test_alembic_ignores_langgraph.py` | nothing is **dropped** | both `include_object` mutations → **RED** |
+
+Root cause of the miss: Task 10 Step 1 — "confirm the probe migration's `upgrade()` body is `pass`"
+— was never run during implementation.
 
 ---
 
@@ -151,5 +176,5 @@ migration's `upgrade()` body is `pass`" check — was not run. **Fix is not atte
 | LangGraph isolation guard catches both mutations | ✅ re-measured 2026-07-28 (§4) |
 | Unbalanced journal entry refused by CHECK *(M2 gate)* | ✅ guard #1 |
 | `UPDATE audit_log` refused — privilege **and** trigger *(M2 gate)* | ✅ guards #10, #11 |
-| Autogenerate emits an empty migration | ❌ **fails — see §5** |
-| `make db-reset && make seed && make check` from an empty volume | ⚠️ **not independently verified**; all measurements above were taken against an incrementally migrated database |
+| Autogenerate emits an empty migration | ✅ fixed and guarded — see §5 |
+| Migrate + seed + full suite on a **freshly created database** | ✅ 17 relations in `app`, 0 in `public`; **159 passed** |
