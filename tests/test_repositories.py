@@ -69,6 +69,8 @@ def test_insert_with_lines_round_trips_a_real_fixture(runtime_conn):
 
     path = Path("tests/fixtures/real_samples/lienket_gtgt_7dong_2.1.0.xml")
     data = parse_invoice_xml(path.read_bytes())
+    # Suffix invoice_number so re-running the test against persistent DB won't collide.
+    data = data.model_copy(update={"invoice_number": f"FX{uuid.uuid4().hex[:6]}"})
     batch_id = batches.create_batch(runtime_conn, label="fixture")
 
     invoice_id = invoice_repo.insert_with_lines(
@@ -80,6 +82,9 @@ def test_insert_with_lines_round_trips_a_real_fixture(runtime_conn):
     assert len(lines) == 7, "the 7-line fixture lost lines in storage"
     # line_no is NOT NULL and dense; STT was present on 15/15 measured lines.
     assert [r["line_no"] for r in lines] == [1, 2, 3, 4, 5, 6, 7]
+
+
+
 
 
 def test_decimal_precision_survives_storage(runtime_conn):
@@ -100,4 +105,57 @@ def test_decimal_precision_survives_storage(runtime_conn):
     invoice_id = invoice_repo.insert_row(runtime_conn, values)
     row = invoice_repo.get_by_id(runtime_conn, invoice_id)
     assert row["total_amount"] == exact
+
+
+def test_approval_latency_is_computed_by_the_database(runtime_conn):
+    """Design doc §2.8 calls time-to-approve a free metric. Verified
+    2026-07-28 that the GENERATED column produces it — a row 90s apart
+    yields latency 90 — so no application code computes it and it cannot
+    drift from requested_at/decided_at."""
+    import time
+
+    from invoice_agent.db.repositories import approvals, vendors
+    from invoice_agent.db.repositories import invoices as invoice_repo
+    from tests.test_schema_constraints import _invoice_values
+
+    vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
+    invoice_id = invoice_repo.insert_row(
+        runtime_conn, _invoice_values(invoice_number=f"AP{uuid.uuid4().hex[:6]}")
+    )
+    approval_id = approvals.open_approval(
+        runtime_conn, invoice_id=invoice_id, thread_id=f"appr:{invoice_id}",
+        interrupt_payload={"q": "duyệt?"}, flags_snapshot={}, suggestions={},
+    )
+    assert approvals.get_approval(runtime_conn, approval_id)["latency_seconds"] is None
+    assert any(r["id"] == approval_id for r in approvals.list_pending(runtime_conn))
+
+    time.sleep(1)
+    approvals.record_decision(
+        runtime_conn, approval_id, decision="approved", decided_by="human:test"
+    )
+    row = approvals.get_approval(runtime_conn, approval_id)
+    assert row["latency_seconds"] >= 1
+    assert not any(r["id"] == approval_id for r in approvals.list_pending(runtime_conn))
+
+
+def test_approval_decision_is_constrained(runtime_conn):
+    from sqlalchemy.exc import IntegrityError
+
+    from invoice_agent.db.repositories import approvals, vendors
+    from invoice_agent.db.repositories import invoices as invoice_repo
+    from tests.test_schema_constraints import _invoice_values
+
+    vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
+    invoice_id = invoice_repo.insert_row(
+        runtime_conn, _invoice_values(invoice_number=f"AD{uuid.uuid4().hex[:6]}")
+    )
+    approval_id = approvals.open_approval(
+        runtime_conn, invoice_id=invoice_id, thread_id="t", interrupt_payload={},
+        flags_snapshot={}, suggestions={},
+    )
+    with pytest.raises(IntegrityError):
+        approvals.record_decision(
+            runtime_conn, approval_id, decision="maybe", decided_by="human:test"
+        )
+
 

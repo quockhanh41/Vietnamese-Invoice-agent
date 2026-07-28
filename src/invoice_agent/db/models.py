@@ -246,4 +246,41 @@ invoice_flags = Table(
     ),
 )
 
+APPROVAL_DECISIONS = ("approved", "rejected", "edited")
+
+approvals = Table(
+    "approvals",
+    metadata,
+    Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+    Column("invoice_id", sa.Uuid(as_uuid=True), sa.ForeignKey("invoices.id"), nullable=False),
+    # The approval_graph thread. Convention `appr:{invoice_id}` (design doc §1.3).
+    Column("thread_id", sa.Text, nullable=False),
+    Column("interrupt_payload", postgresql.JSONB, nullable=False, server_default="{}"),
+    Column("flags_snapshot", postgresql.JSONB, nullable=False, server_default="{}"),
+    Column("suggestions", postgresql.JSONB, nullable=False, server_default="{}"),
+    Column("decision", sa.Text),
+    Column("field_corrections", postgresql.JSONB),
+    Column("reason", sa.Text),
+    Column("decided_by", sa.Text),
+    Column("requested_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("decided_at", sa.DateTime(timezone=True)),
+    # Time-to-approve, computed by Postgres. Verified 2026-07-28: a row 90s
+    # apart yields 90. Application code never computes it, so it cannot drift.
+    Column(
+        "latency_seconds", sa.Numeric,
+        sa.Computed("EXTRACT(EPOCH FROM (decided_at - requested_at))", persisted=True),
+    ),
+    sa.CheckConstraint(
+        "decision IS NULL OR decision IN " + str(APPROVAL_DECISIONS),
+        name="ck_approvals_decision",
+    ),
+    sa.Index("ix_approvals_thread_id", "thread_id"),
+    # Exactly the query scripts/recover_pending.py runs at M5.5.
+    sa.Index(
+        "ix_approvals_pending", "invoice_id",
+        postgresql_where=sa.text("decision IS NULL"),
+    ),
+)
+
+
 
