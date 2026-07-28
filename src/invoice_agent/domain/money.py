@@ -17,9 +17,9 @@ none of them guessable from the regulation:
 accounting.py both call it; neither reimplements it.
 """
 
+import re
 from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
-import re
 
 from invoice_agent.extraction import xml_schema as sch
 from invoice_agent.extraction.models import InvoiceLine

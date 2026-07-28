@@ -5,7 +5,11 @@ from decimal import Decimal
 
 from invoice_agent.domain import findings
 from invoice_agent.domain.anomaly import (
-    InvoiceKey, VendorStats, near_duplicate, new_vendor, price_outlier,
+    InvoiceKey,
+    VendorStats,
+    near_duplicate,
+    new_vendor,
+    price_outlier,
 )
 
 KNOWN = VendorStats(invoice_count=50, avg_amount=Decimal("1000"), stddev_amount=Decimal("100"))

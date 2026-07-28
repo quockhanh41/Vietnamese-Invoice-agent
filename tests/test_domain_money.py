@@ -15,10 +15,30 @@ def line(**kw) -> InvoiceLine:
 def test_note_lines_are_not_money():
     """MUTATION GUARD. TChat=4 is a NOTE line — description only, no money.
     Summing it is wrong, and it is the first of the three facts that make the
-    measured rule work (found in `hokinhdoanh_…`)."""
+    measured rule work (found in `hokinhdoanh_…`).
+
+    THE NOTE LINE CARRIES AN AMOUNT ON PURPOSE. Fixed 2026-07-28 after the
+    first version gave it `amount=None`: `line_amount` returns 0 for an
+    empty line anyway, so the assertion held whether or not the ITEM_KIND_NOTE
+    branch existed — measured by replacing that branch with `if False:` and
+    watching the test stay GREEN. A note line with money is exactly the shape
+    the guard exists for, and exactly what M2-C can seed as a defect.
+    """
     lines = [
         line(item_kind=1, amount=Decimal("1000")),
-        line(item_kind=4, description="Ghi chú: giao hàng trong 3 ngày"),
+        line(item_kind=4, amount=Decimal("500"), description="Ghi chú: giao hàng trong 3 ngày"),
+    ]
+    assert money.goods_subtotal(lines) == Decimal("1000")
+
+
+def test_note_line_with_money_is_still_excluded_via_the_ext_fallback():
+    """The other way a note line can carry money. `line_amount` checks
+    ITEM_KIND_NOTE before consulting ext, so a note line with an ext Amount is
+    still worth zero — without that ordering, VNPT-style extensions would drag
+    note lines back into the sum."""
+    lines = [
+        line(item_kind=1, amount=Decimal("1000")),
+        line(item_kind=4, amount=Decimal("0"), ext={"Amount": "700"}),
     ]
     assert money.goods_subtotal(lines) == Decimal("1000")
 

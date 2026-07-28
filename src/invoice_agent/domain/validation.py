@@ -50,12 +50,11 @@ def validate(invoice: InvoiceData) -> list[findings.Finding]:
     # 2. Subtotal — ONLY when TgTCThue is stated AND non-zero.
     #    A non-VAT invoice (KHMSHDon=2) reports TgTCThue = 0 while its lines
     #    carry the full amount; comparing them flags a valid invoice.
-    if invoice.subtotal:
-        if subtotal != invoice.subtotal:
-            out.append(findings.make(
-                findings.SUBTOTAL_MISMATCH,
-                computed=subtotal, declared=invoice.subtotal,
-            ))
+    if invoice.subtotal and subtotal != invoice.subtotal:
+        out.append(findings.make(
+            findings.SUBTOTAL_MISMATCH,
+            computed=subtotal, declared=invoice.subtotal,
+        ))
 
     # 3. VAT total — ONLY when EVERY goods line states TThue.
     #    dienluc_ and phongvu_ state TSuat per line but not TThue; only the
@@ -81,18 +80,26 @@ def validate(invoice: InvoiceData) -> list[findings.Finding]:
 def _check_lines(goods: Sequence[InvoiceLine]) -> list[findings.Finding]:
     out: list[findings.Finding] = []
     for index, ln in enumerate(goods, start=1):
-        if ln.quantity is not None and ln.unit_price is not None and ln.amount is not None:
-            if abs(ln.quantity * ln.unit_price - ln.amount) > LINE_AMOUNT_TOLERANCE:
-                out.append(findings.make(
-                    findings.LINE_AMOUNT_MISMATCH, line_no=index,
-                    quantity=ln.quantity, unit_price=ln.unit_price, amount=ln.amount,
-                ))
-        if ln.amount is not None and ln.vat_rate is not None and ln.vat_amount is not None:
-            if abs(ln.amount * ln.vat_rate - ln.vat_amount) > LINE_VAT_TOLERANCE:
-                out.append(findings.make(
-                    findings.LINE_VAT_MISMATCH, line_no=index,
-                    amount=ln.amount, vat_rate=ln.vat_rate, vat_amount=ln.vat_amount,
-                ))
+        if (
+            ln.quantity is not None
+            and ln.unit_price is not None
+            and ln.amount is not None
+            and abs(ln.quantity * ln.unit_price - ln.amount) > LINE_AMOUNT_TOLERANCE
+        ):
+            out.append(findings.make(
+                findings.LINE_AMOUNT_MISMATCH, line_no=index,
+                quantity=ln.quantity, unit_price=ln.unit_price, amount=ln.amount,
+            ))
+        if (
+            ln.amount is not None
+            and ln.vat_rate is not None
+            and ln.vat_amount is not None
+            and abs(ln.amount * ln.vat_rate - ln.vat_amount) > LINE_VAT_TOLERANCE
+        ):
+            out.append(findings.make(
+                findings.LINE_VAT_MISMATCH, line_no=index,
+                amount=ln.amount, vat_rate=ln.vat_rate, vat_amount=ln.vat_amount,
+            ))
     return out
 
 
