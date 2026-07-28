@@ -282,5 +282,59 @@ approvals = Table(
     ),
 )
 
+JOURNAL_STATUSES = ("draft", "posted", "void")
+POSTING_AUTHORITIES = ("auto_clean", "human_approved")
+
+journal_entries = Table(
+    "journal_entries",
+    metadata,
+    Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+    # UNIQUE: one invoice can never be posted twice. Measured at M1.5 that a
+    # `kill -9` inside a post-gate node makes it run again on resume and write
+    # a SECOND row — graph shape does not prevent that, this constraint does.
+    Column("invoice_id", sa.Uuid(as_uuid=True), sa.ForeignKey("invoices.id"),
+           nullable=False, unique=True),
+    Column("entry_date", sa.Date, nullable=False),
+    Column("status", sa.Text, nullable=False, server_default="draft"),
+    Column("posting_authority", sa.Text, nullable=False),
+    Column("approval_id", sa.Uuid(as_uuid=True), sa.ForeignKey("approvals.id")),
+    Column("posted_at", sa.DateTime(timezone=True)),
+    Column("posted_by", sa.Text),
+    Column("total_debit", sa.Numeric, nullable=False),
+    Column("total_credit", sa.Numeric, nullable=False),
+    Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
+    sa.CheckConstraint("total_debit = total_credit", name="ck_journal_balanced"),
+    # Without this, 'human_approved' is just a string the application writes.
+    sa.CheckConstraint(
+        "posting_authority <> 'human_approved' OR approval_id IS NOT NULL",
+        name="ck_journal_human_approved_needs_approval",
+    ),
+    sa.CheckConstraint("status IN " + str(JOURNAL_STATUSES), name="ck_journal_status"),
+    sa.CheckConstraint(
+        "posting_authority IN " + str(POSTING_AUTHORITIES), name="ck_journal_authority"
+    ),
+)
+
+journal_entry_lines = Table(
+    "journal_entry_lines",
+    metadata,
+    Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    Column("journal_entry_id", sa.Uuid(as_uuid=True),
+           sa.ForeignKey("journal_entries.id", ondelete="CASCADE"), nullable=False),
+    Column("line_no", sa.Integer, nullable=False),
+    Column("account_code", sa.Text, nullable=False),
+    Column("account_name", sa.Text, nullable=False),
+    Column("debit", sa.Numeric, nullable=False, server_default="0"),
+    Column("credit", sa.Numeric, nullable=False, server_default="0"),
+    Column("description", sa.Text),
+    sa.UniqueConstraint("journal_entry_id", "line_no", name="uq_journal_lines_entry_line_no"),
+    sa.CheckConstraint("debit = 0 OR credit = 0", name="ck_journal_line_one_side"),
+    # Beyond the design doc, and load-bearing: debit=-100/credit=0 satisfies the
+    # constraint above, so without this a "balanced" entry can be built entirely
+    # from negative amounts.
+    sa.CheckConstraint("debit >= 0 AND credit >= 0", name="ck_journal_line_non_negative"),
+)
+
+
 
 

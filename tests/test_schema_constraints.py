@@ -90,3 +90,148 @@ def test_flag_source_must_be_deterministic(runtime_conn):
             raised_by="classifier_agent",
         )
 
+
+from invoice_agent.db.repositories import approvals, flags, journal, vendors
+from invoice_agent.db.repositories.journal import JournalLine
+
+BALANCED = [
+    # A real office-supplies entry (design doc §2.7):
+    #   Nợ 6422  3.250.000 / Nợ 1331  260.000 / Có 331  3.510.000
+    JournalLine("6422", "Chi phí quản lý doanh nghiệp", Decimal("3250000"), Decimal("0"), None),
+    JournalLine("1331", "Thuế GTGT được khấu trừ", Decimal("260000"), Decimal("0"), None),
+    JournalLine("331", "Phải trả cho người bán", Decimal("0"), Decimal("3510000"), None),
+]
+
+
+def _clean_invoice(conn, suffix):
+    vendors.ensure_vendor(conn, "0100000003", name="NCC")
+    return invoice_repo.insert_row(conn, _invoice_values(invoice_number=suffix))
+
+
+def test_unbalanced_journal_entry_rejected(runtime_conn):
+    """M2 GATE CONDITION + MUTATION GUARD (drop CHECK total_debit=total_credit)."""
+    invoice_id = _clean_invoice(runtime_conn, f"JB{uuid.uuid4().hex[:6]}")
+    with pytest.raises(IntegrityError):
+        journal.create_entry_with_lines(
+            runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
+            posting_authority="auto_clean",
+            lines=[
+                JournalLine("6422", "Chi phí QLDN", Decimal("3250000"), Decimal("0"), None),
+                JournalLine("331", "Phải trả người bán", Decimal("0"), Decimal("9999999"), None),
+            ],
+        )
+
+
+def test_human_approved_requires_an_approval_row(runtime_conn):
+    """MUTATION GUARD. Without this CHECK, `posting_authority='human_approved'`
+    is a string an application can simply write — the DB layer of the safety
+    property would be asserting nothing."""
+    invoice_id = _clean_invoice(runtime_conn, f"JH{uuid.uuid4().hex[:6]}")
+    with pytest.raises(IntegrityError):
+        journal.create_entry_with_lines(
+            runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
+            posting_authority="human_approved", approval_id=None, lines=BALANCED,
+        )
+
+
+def test_auto_clean_blocked_while_flags_open(runtime_conn):
+    """MUTATION GUARD (drop the trigger). An invoice carrying an unresolved
+    flag must never be auto-posted; only a human decision can clear it."""
+    invoice_id = _clean_invoice(runtime_conn, f"JF{uuid.uuid4().hex[:6]}")
+    flags.raise_flag(runtime_conn, invoice_id, code="ARITHMETIC_MISMATCH",
+                     severity="critical", raised_by="validation")
+    with pytest.raises((IntegrityError, DBAPIError), match="open flag"):
+        journal.create_entry_with_lines(
+            runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
+            posting_authority="auto_clean", lines=BALANCED,
+        )
+
+
+def test_auto_clean_allowed_once_every_flag_is_resolved(runtime_conn):
+    """The trigger must not be a blanket ban — otherwise it would pass the test
+    above while breaking the 85% straight-through-processing target."""
+    invoice_id = _clean_invoice(runtime_conn, f"JR{uuid.uuid4().hex[:6]}")
+    flag_id = flags.raise_flag(runtime_conn, invoice_id, code="X", severity="info",
+                               raised_by="validation")
+    flags.resolve_flag(runtime_conn, flag_id)
+    entry_id = journal.create_entry_with_lines(
+        runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
+        posting_authority="auto_clean", lines=BALANCED,
+    )
+    assert journal.get_for_invoice(runtime_conn, invoice_id)["id"] == entry_id
+
+
+def test_line_cannot_be_both_debit_and_credit(runtime_conn):
+    """MUTATION GUARD (drop CHECK debit=0 OR credit=0)."""
+    invoice_id = _clean_invoice(runtime_conn, f"JD{uuid.uuid4().hex[:6]}")
+    with pytest.raises(IntegrityError):
+        journal.create_entry_with_lines(
+            runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
+            posting_authority="auto_clean",
+            lines=[
+                JournalLine("6422", "Chi phí QLDN", Decimal("100"), Decimal("100"), None),
+                JournalLine("331", "Phải trả người bán", Decimal("0"), Decimal("0"), None),
+            ],
+        )
+
+
+def test_negative_amounts_rejected(runtime_conn):
+    """MUTATION GUARD (drop CHECK debit>=0 AND credit>=0). Beyond the design
+    doc, and it closes a real hole: debit=-100/credit=0 satisfies
+    `debit = 0 OR credit = 0`, so without this a 'balanced' entry can be
+    assembled entirely from negative amounts."""
+    invoice_id = _clean_invoice(runtime_conn, f"JN{uuid.uuid4().hex[:6]}")
+    with pytest.raises(IntegrityError):
+        journal.create_entry_with_lines(
+            runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
+            posting_authority="auto_clean",
+            lines=[
+                JournalLine("6422", "Chi phí QLDN", Decimal("-100"), Decimal("0"), None),
+                JournalLine("331", "Phải trả người bán", Decimal("0"), Decimal("-100"), None),
+            ],
+        )
+
+
+
+def test_one_invoice_cannot_be_posted_twice(runtime_conn):
+    """Design doc §2.7: invoice_id is UNIQUE on journal_entries. Measured at
+    M1.5: a `kill -9` inside a post-gate node makes the node run again on
+    resume, producing TWO rows. Node placement does not stop that — this
+    constraint does."""
+    invoice_id = _clean_invoice(runtime_conn, f"JT{uuid.uuid4().hex[:6]}")
+    journal.create_entry_with_lines(
+        runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
+        posting_authority="auto_clean", lines=BALANCED,
+    )
+    with pytest.raises(IntegrityError):
+        journal.create_entry_with_lines(
+            runtime_conn, invoice_id=invoice_id, entry_date=date(2026, 7, 1),
+            posting_authority="auto_clean", lines=BALANCED,
+        )
+
+
+def test_no_production_caller_of_journal_repository():
+    """Spec §6.1 — an ORDERING RISK made measurable.
+
+    This repository can create a journal entry, and its code-layer guard
+    (`tools/guards.py`, item 5.3) does not exist until M5. Until then the
+    protections are the DB constraints above plus the fact that NOTHING CALLS
+    IT. That last one is an assumption, so it gets asserted.
+
+    When M5.3 lands, DELETE this test and let
+    `test_never_post_without_approval.py` take over.
+    """
+    import pathlib
+
+    src = pathlib.Path("src/invoice_agent")
+    offenders = [
+        p for p in src.rglob("*.py")
+        if "repositories.journal" in p.read_text(encoding="utf-8")
+        or "repositories import journal" in p.read_text(encoding="utf-8")
+    ]
+    offenders = [p for p in offenders if p.name != "journal.py"]
+    assert not offenders, (
+        f"journal repository gained a production caller before its guard exists: {offenders}"
+    )
+
+
