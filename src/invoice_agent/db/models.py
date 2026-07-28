@@ -83,7 +83,43 @@ budgets = Table(
         name="uq_budgets_department_period_category",
         postgresql_nulls_not_distinct=True,
     ),
-
-
 )
 
+vendors = Table(
+    "vendors",
+    metadata,
+    # TEXT with no length constraint. Three real shapes measured 2026-07-28 on
+    # the 8 fixtures: '0100000003' (10), '0300000018-042' (branch, with a dash)
+    # and '050000000000' (12, household business). CHAR(10) rejects two of three.
+    Column("tax_code", sa.Text, primary_key=True),
+    Column("name", sa.Text),
+    Column("normalized_name", sa.Text),
+    Column("first_seen_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("last_seen_at", sa.DateTime(timezone=True)),
+    Column("invoice_count", sa.Integer, nullable=False, server_default="0"),
+    Column("total_amount", sa.Numeric, nullable=False, server_default="0"),
+    Column("avg_amount", sa.Numeric),
+    Column("stddev_amount", sa.Numeric),
+    Column("category_histogram", postgresql.JSONB, nullable=False, server_default="{}"),
+    Column("modal_category", sa.Text),
+    Column("modal_department", sa.Text),
+    Column("rejection_count", sa.Integer, nullable=False, server_default="0"),
+    Column("is_trusted", sa.Boolean, nullable=False, server_default=sa.false()),
+    Column("reviewer_notes", sa.Text),
+)
+
+BATCH_STATUSES = ("running", "completed", "failed")
+
+batches = Table(
+    "batches",
+    metadata,
+    Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+    Column("label", sa.Text),
+    Column("status", sa.Text, nullable=False, server_default="running"),
+    Column("invoice_count", sa.Integer, nullable=False, server_default="0"),
+    Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("completed_at", sa.DateTime(timezone=True)),
+    sa.CheckConstraint(
+        "status IN ('running', 'completed', 'failed')", name="ck_batches_status"
+    ),
+)
