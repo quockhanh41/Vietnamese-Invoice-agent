@@ -68,3 +68,25 @@ def test_invoice_status_is_constrained(runtime_conn):
             models.invoices.insert(),
             _invoice_values(status="whatever", invoice_number=f"ST{uuid.uuid4().hex[:6]}"),
         )
+
+
+def test_flag_source_must_be_deterministic(runtime_conn):
+    """MUTATION GUARD, and the point of the whole milestone.
+
+    Principle 1: no LLM ever raises a flag; flags are computed by Python from
+    DB state. Today that is a convention enforced by code review. As a CHECK
+    listing only deterministic producers, adding an agent as a flag source
+    requires a MIGRATION — it cannot happen by accident inside a node.
+    """
+    from invoice_agent.db.repositories import flags, vendors
+
+    vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
+    invoice_id = invoice_repo.insert_row(
+        runtime_conn, _invoice_values(invoice_number=f"FL{uuid.uuid4().hex[:6]}")
+    )
+    with pytest.raises(IntegrityError):
+        flags.raise_flag(
+            runtime_conn, invoice_id, code="ANYTHING", severity="warn",
+            raised_by="classifier_agent",
+        )
+

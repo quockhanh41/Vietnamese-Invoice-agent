@@ -219,3 +219,31 @@ invoice_line_items = Table(
     sa.UniqueConstraint("invoice_id", "line_no", name="uq_line_items_invoice_line_no"),
 )
 
+# Deterministic producers ONLY. This list is the DDL encoding of principle 1
+# ("the LLM never raises a flag"): adding an agent here requires a migration,
+# so it cannot happen by accident in a node. Design doc §2.5.
+FLAG_SOURCES = ("validation", "taxcode", "anomaly", "budget", "duplicate", "vendor_memory")
+FLAG_SEVERITIES = ("info", "warn", "critical")
+
+invoice_flags = Table(
+    "invoice_flags",
+    metadata,
+    Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    Column("invoice_id", sa.Uuid(as_uuid=True),
+           sa.ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False),
+    Column("code", sa.Text, nullable=False),
+    Column("severity", sa.Text, nullable=False),
+    Column("detail", postgresql.JSONB, nullable=False, server_default="{}"),
+    Column("raised_by", sa.Text, nullable=False),
+    # Open == NULL. The journal-entry trigger reads this on every insert.
+    Column("resolved_at", sa.DateTime(timezone=True)),
+    Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
+    sa.CheckConstraint("severity IN " + str(FLAG_SEVERITIES), name="ck_flags_severity"),
+    sa.CheckConstraint("raised_by IN " + str(FLAG_SOURCES), name="ck_flags_raised_by"),
+    sa.Index(
+        "ix_flags_open_by_invoice", "invoice_id",
+        postgresql_where=sa.text("resolved_at IS NULL"),
+    ),
+)
+
+
