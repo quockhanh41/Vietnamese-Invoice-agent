@@ -55,3 +55,52 @@ def make_header_only_vat_spec(base: InvoiceSpec) -> InvoiceSpec:
         base, lines=lines, subtotal=subtotal, vat_total=vat_total,
         total_amount=subtotal + vat_total,
     )
+
+
+from scripts.generator.amounts import to_amount_words
+from scripts.generator.vendors import invalidate_checksum
+
+
+def seed_arithmetic_error(base: InvoiceSpec) -> InvoiceSpec:
+    """6% group. The declared total disagrees with the lines.
+
+    Note this is a DATA error, not an extraction error (§3.3): the document
+    stays perfectly readable, and it travels onward as a flag for a human.
+    """
+    return dataclasses.replace(
+        base, total_amount=base.total_amount + Decimal("100000"), total_in_words=None
+    )
+
+
+def seed_words_mismatch(base: InvoiceSpec) -> InvoiceSpec:
+    """2% group. TgTTTBChu is a SECOND, INDEPENDENT encoding of the total
+    (§10.3), so making the words disagree is a real cross-field defect.
+    Rendered through this module's own number->words, never the parser's."""
+    return dataclasses.replace(
+        base, total_in_words=to_amount_words(base.total_amount + Decimal("1000"))
+    )
+
+
+def seed_bad_tax_code(base: InvoiceSpec) -> InvoiceSpec:
+    """4% group. Perturbing the check digit is guaranteed to invalidate, so no
+    checksum algorithm is needed here (spec §2.1)."""
+    return dataclasses.replace(base, seller_tax_code=invalidate_checksum(base.seller_tax_code))
+
+
+def seed_wrong_vat_rate(base: InvoiceSpec) -> InvoiceSpec:
+    """3% group: states 8% but charges 10%. The stated rate is what a reviewer
+    reads; the charged amount is what they pay."""
+    lines = [
+        dataclasses.replace(
+            line, vat_rate=Decimal("0.08"),
+            vat_amount=(line.amount * Decimal("0.10")).quantize(Decimal("1")),
+        )
+        for line in base.lines
+        if line.item_kind != 4
+    ]
+    vat_total = sum((line.vat_amount for line in lines if line.vat_amount is not None), Decimal("0"))
+    subtotal = sum((line.amount for line in lines), Decimal("0"))
+    return dataclasses.replace(
+        base, lines=lines, subtotal=subtotal, vat_total=vat_total,
+        total_amount=subtotal + vat_total, total_in_words=None,
+    )
