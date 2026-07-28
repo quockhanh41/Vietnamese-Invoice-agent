@@ -19,6 +19,7 @@ accounting.py both call it; neither reimplements it.
 
 from collections.abc import Sequence
 from decimal import Decimal, InvalidOperation
+import re
 
 from invoice_agent.extraction import xml_schema as sch
 from invoice_agent.extraction.models import InvoiceLine
@@ -60,3 +61,86 @@ def goods_subtotal(lines: Sequence[InvoiceLine]) -> Decimal:
     visible to a reviewer.
     """
     return sum((line_amount(line) for line in lines), Decimal("0"))
+
+
+# Vietnamese numerals. This is DATA the system ingests, not authoring style, so
+# it stays Vietnamese (CLAUDE.md language rule).
+_UNITS = {
+    "không": 0, "một": 1, "hai": 2, "ba": 3, "bốn": 4,
+    "năm": 5, "sáu": 6, "bảy": 7, "tám": 8, "chín": 9,
+}
+# Units-position variants after a tens word. 51 is 'năm mươi MỐT', never
+# 'năm mươi một' — measured in viettelpost_. 'lăm'/'nhăm' (5) and 'tư' (4)
+# appear in NO fixture but are unambiguous standard Vietnamese, so they are
+# supported and marked unobserved (spec §2.5).
+_UNIT_VARIANTS = {"mốt": 1, "lăm": 5, "nhăm": 5, "tư": 4}
+_SCALES = {"nghìn": 1000, "triệu": 1_000_000, "tỷ": 1_000_000_000}
+# Zero-fillers. Both forms are real and mean the same thing: 'lẻ' in newimage_
+# (702000), 'không trăm' in dienluc_ (763044).
+_FILLERS = {"lẻ", "linh"}
+
+_TRAILING = re.compile(r"\s*(đồng)?\s*(chẵn)?\s*(\./\.)?\s*$")
+
+
+def parse_amount_words(text: str | None) -> Decimal | None:
+    """`'Ba  triệu năm trăm ngàn đồng./.'` -> `Decimal('3500000')`.
+
+    Returns None when the text cannot be read — NEVER Decimal(0). 'unreadable'
+    and 'zero' are different facts and only one of them is a finding.
+
+    Normalisation, in order, each step justified by a real value measured
+    2026-07-28: collapse whitespace runs ('Ba  triệu' has two spaces, so does
+    'mười nghìn  đồng'); strip the './.' suffix and a trailing 'đồng' (vnpt_);
+    lowercase; and treat 'ngàn' as 'nghìn' (vnpt_ says ngàn, the other seven
+    say nghìn).
+    """
+    if not text:
+        return None
+    cleaned = _TRAILING.sub("", " ".join(text.split()).lower())
+    cleaned = cleaned.replace("ngàn", "nghìn")
+    if not cleaned:
+        return None
+
+    total = Decimal(0)
+    group = Decimal(0)
+    pending: int | None = None
+    saw_number = False
+
+    for token in cleaned.split():
+        if token in _UNITS:
+            pending = _UNITS[token]
+            saw_number = True
+        elif token in _UNIT_VARIANTS:
+            group += _UNIT_VARIANTS[token]
+            pending = None
+            saw_number = True
+        elif token == "trăm":
+            group += (pending or 0) * 100
+            pending = None
+        elif token == "mươi":
+            group += (pending or 0) * 10
+            pending = None
+        elif token == "mười":
+            # 'mười' is a standalone ten ('mười nghìn' = 10 000), unlike 'mươi'
+            # which multiplies the digit before it.
+            group += 10
+            pending = None
+            saw_number = True
+        elif token in _FILLERS:
+            pending = None
+        elif token in _SCALES:
+            if pending is not None:
+                group += pending
+                pending = None
+            total += group * _SCALES[token]
+            group = Decimal(0)
+        else:
+            # An unknown token means we did not understand the sentence. Return
+            # None rather than a partial sum: a confidently wrong number here
+            # would silently defeat the cross-check TgTTTBChu exists to provide.
+            return None
+
+    if pending is not None:
+        group += pending
+    total += group
+    return total if saw_number else None

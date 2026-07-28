@@ -2,6 +2,8 @@
 
 from decimal import Decimal
 
+import pytest
+
 from invoice_agent.domain import money
 from invoice_agent.extraction.models import InvoiceLine
 
@@ -58,3 +60,48 @@ def test_unparseable_ext_amount_is_ignored_not_crashed():
     the DATA layer, the wrong side of the §3.3 split."""
     lines = [line(item_kind=1, amount=Decimal("0"), ext={"Amount": "n/a"})]
     assert money.goods_subtotal(lines) == Decimal("0")
+
+
+# Every value is REAL, read from tests/fixtures/real_samples/ on 2026-07-28.
+REAL_AMOUNT_WORDS = [
+    ("Bảy trăm sáu mươi ba nghìn không trăm bốn mươi bốn đồng", "763044"),
+    ("Chín mươi nghìn đồng", "90000"),
+    ("Ba triệu bốn trăm mười nghìn  đồng", "3410000"),
+    ("Mười triệu chín trăm chín mươi bốn nghìn ba trăm chín mươi bảy đồng", "10994397"),
+    ("Bảy trăm lẻ hai nghìn đồng", "702000"),
+    ("Hai mươi ba triệu bảy trăm tám mươi nghìn hai trăm năm mươi đồng", "23780250"),
+    ("Năm mươi mốt nghìn năm trăm chín mươi chín đồng", "51599"),
+    ("Ba  triệu năm trăm ngàn đồng./.", "3500000"),
+]
+
+
+@pytest.mark.parametrize("text,expected", REAL_AMOUNT_WORDS)
+def test_parses_all_eight_real_amount_words(text, expected):
+    """MUTATION GUARD. §10.3 uses TgTTTBChu as a SECOND INDEPENDENT ENCODING of
+    the total, so the parser has to survive real data: 'ngàn' as well as
+    'nghìn', 'lẻ' and 'không trăm' as zero-fillers, 'mốt' for 1 after a tens
+    word, double spaces, and a './.' suffix."""
+    assert money.parse_amount_words(text) == Decimal(expected)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # Unobserved in the corpus but structurally real and unambiguous, so
+        # supported rather than rejected (spec §2.5, open question 3).
+        ("Hai mươi lăm nghìn đồng", "25000"),
+        ("Hai mươi tư nghìn đồng", "24000"),
+        ("Hai mươi nhăm nghìn đồng", "25000"),
+    ],
+)
+def test_supports_lam_tu_nham_though_no_fixture_has_them(text, expected):
+    assert money.parse_amount_words(text) == Decimal(expected)
+
+
+@pytest.mark.parametrize("text", [None, "", "   ", "không đọc được", "abc xyz"])
+def test_unparseable_returns_none_never_zero(text):
+    """`None` means 'could not read', `Decimal(0)` means 'the amount is zero'.
+    Conflating them makes validation compare 0 against a real total and raise
+    WORDS_DIGITS_MISMATCH on every invoice it cannot parse — the same
+    None-vs-zero distinction xml_schema.money() already makes."""
+    assert money.parse_amount_words(text) is None
