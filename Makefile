@@ -1,4 +1,4 @@
-.PHONY: help install dev migrate db-stop db-reset test lint typecheck check lock clean
+.PHONY: help install dev migrate seed db-stop db-reset test lint typecheck check lock clean
 
 UV  := uv
 PY  := .venv/bin/python
@@ -9,6 +9,7 @@ help:
 	@echo "  make install    - uv venv (3.13) + pip install -e '.[dev]'"
 	@echo "  make dev        - Khởi động Postgres + pgvector, chờ healthy, chạy migration"
 	@echo "  make migrate    - alembic upgrade head"
+	@echo "  make seed       - nạp reference data (phòng ban, danh mục, ngân sách)"
 	@echo "  make db-stop    - Dừng Postgres (giữ dữ liệu)"
 	@echo "  make db-reset   - XOÁ volume, dựng lại từ init_db.sql"
 	@echo "  make test       - pytest"
@@ -32,9 +33,14 @@ dev:
 	@docker exec invoice-agent-postgres psql -U invoice -d invoice_agent -tAc \
 		"SELECT 'schema: ' || nspname FROM pg_namespace WHERE nspname IN ('app','langgraph') ORDER BY nspname"
 	$(MAKE) migrate
+	$(MAKE) seed
 
 migrate:
 	.venv/bin/alembic upgrade head
+
+seed:
+	$(PY) -m scripts.seed_reference
+
 
 db-stop:
 	docker compose stop postgres

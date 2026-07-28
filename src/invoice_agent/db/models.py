@@ -13,6 +13,8 @@ nghĩa phép thử.
 """
 
 from sqlalchemy import BigInteger, Column, DateTime, MetaData, String, Table, func
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 from invoice_agent.config import APP_SCHEMA
 
@@ -36,3 +38,52 @@ spike_counter = Table(
     Column("node", String(32), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
+
+departments = Table(
+    "departments",
+    metadata,
+    Column("code", sa.Text, primary_key=True),
+    Column("name_vi", sa.Text, nullable=False),
+)
+
+expense_categories = Table(
+    "expense_categories",
+    metadata,
+    Column("code", sa.Text, primary_key=True),
+    Column("name_vi", sa.Text, nullable=False),
+    Column("debit_account", sa.Text, nullable=False),
+    Column("vat_account", sa.Text),
+    Column("credit_account", sa.Text, nullable=False),
+    # The non-LLM baseline (design doc §10.4). Vietnamese by design: it is
+    # ingested data, not authoring style (CLAUDE.md language rule).
+    Column("keywords_vi", postgresql.ARRAY(sa.Text), nullable=False, server_default="{}"),
+)
+
+budgets = Table(
+    "budgets",
+    metadata,
+    Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    Column("department_code", sa.Text, sa.ForeignKey("departments.code"), nullable=False),
+    Column("period", sa.Text, nullable=False),  # YYYY-MM
+    Column("category", sa.Text, sa.ForeignKey("expense_categories.code")),
+    Column("amount_limit", sa.Numeric, nullable=False),
+    Column("warn_threshold_pct", sa.Numeric, nullable=False, server_default="0.8"),
+    sa.CheckConstraint("amount_limit > 0", name="ck_budgets_limit_positive"),
+    sa.CheckConstraint(
+        "warn_threshold_pct > 0 AND warn_threshold_pct <= 1",
+        name="ck_budgets_warn_threshold_range",
+    ),
+    # NULLS NOT DISTINCT because `category IS NULL` MEANS "whole department"
+    # and two such rows must not coexist. Measured 2026-07-28 (spec §2.2): a
+    # plain UNIQUE admits both. This is the one place in the schema where a
+    # NULL in a key is meaningful — `invoices` solves the same problem by
+    # making seller_tax_code NOT NULL instead.
+    sa.UniqueConstraint(
+        "department_code", "period", "category",
+        name="uq_budgets_department_period_category",
+        postgresql_nulls_not_distinct=True,
+    ),
+
+
+)
+

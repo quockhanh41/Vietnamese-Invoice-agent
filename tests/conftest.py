@@ -37,3 +37,22 @@ def requires_postgres() -> str:
         pytest.skip(f"Cần Postgres đang chạy (`make dev`): {exc}")
     return dsn
 
+
+@pytest.fixture
+def owner_conn(requires_postgres):
+    """Admin connection — Alembic and the seed script use this role."""
+    from invoice_agent.db.engine import get_owner_engine
+
+    with get_owner_engine().begin() as conn:
+        yield conn
+
+
+@pytest.fixture
+def runtime_conn(requires_postgres):
+    """Least-privilege connection — what repositories actually use in production."""
+    from invoice_agent.db.engine import get_engine
+
+    with get_engine().begin() as conn:
+        yield conn
+
+
