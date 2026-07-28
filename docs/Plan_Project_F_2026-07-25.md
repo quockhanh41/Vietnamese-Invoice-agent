@@ -407,15 +407,20 @@ Artefacts still owed: the terminal recording (deferred to M8 by the M1.5 spec �
 
 ### M2 — Corpus + schema + lõi deterministic *(tuần 2)*
 
+> **Sub-milestones status (2026-07-28)**:
+> - ✅ **M2-A (Schema, Seed, Repositories)** done 2026-07-28. Migrations 01–09, `seed_reference.py`, repositories (`vendors`, `batches`, `invoices`, `journal`, `flags`, `budget`, `audit_log`, `episodic`, `llm_calls`), 3 CHECK constraints verified. Spec `docs/superpowers/specs/2026-07-28-m2a-schema-seed-repositories-design.md`.
+> - ✅ **M2-B (Domain Core)** done 2026-07-28. `src/invoice_agent/domain/` (6 pure modules, 0 I/O), 106 domain unit tests passing, 8/8 real invoices 0 false positives, 10/10 mutation guards verified red, journal entry credit balancing spec corrected. Note `docs/notes/2026-07-28-m2b-domain-core.md`.
+> - 🔲 **M2-C (Corpus Generator)** open.
+
 | # | Việc | Tham chiếu |
 |---|---|---|
 | 2.1 | `scripts/generate_invoices.py --count 300 --seed 42` — Jinja template, **viết độc lập với `xml_schema.py`** | §10.2 |
 | 2.2 | Đủ **14 nhóm defect** theo tỉ lệ §10.2. `defects` là **LIST** không phải enum (hóa đơn thật mang nhiều vấn đề cùng lúc) | §10.2 |
 | 2.3 | **Ca vượt ngân sách phải phụ thuộc thứ tự**: seed 3 hóa đơn Marketing sao cho theo thứ tự canonical thì cái thứ 3 vượt, thứ tự khác thì cái khác vượt. Manifest ghi cái nào vượt canonically | §10.2 |
-| 2.4 | Alembic migrations: mọi bảng + **`UNIQUE(seller_tax_code, template_no, invoice_series, invoice_number)`** + 2 CHECK constraint + trigger + `REVOKE UPDATE,DELETE ON audit_log` | §2.3, §2.7 |
-| 2.5 | Seed reference data với **số hiệu tài khoản TT133 thật** (`6421`, `6422`, `1331`, `331`, `156`, `153`) + `keywords_vi` (= baseline eval) | §2.1 |
-| 2.6 | Toàn bộ `domain/` — pure function, zero I/O: `validation.py`, `taxcode.py` (checksum MST 10/13 số), `money.py` (Decimal VND + **số tiền bằng chữ ↔ số**), `accounting.py` (JE builder + balance check), `budget.py`, `anomaly.py` | §3.2 |
-| 2.7 | Repositories + `audit_log` writer | §2 |
+| 2.4 | ✅ **Done 2026-07-28 (M2-A)**. Alembic migrations 01–09: mọi bảng + `UNIQUE(seller_tax_code, template_no, invoice_series, invoice_number)` + `ck_flags_severity`, `ck_flags_raised_by`, `ck_journal_balanced` + `REVOKE UPDATE,DELETE ON audit_log` | §2.3, §2.7 |
+| 2.5 | ✅ **Done 2026-07-28 (M2-A)**. Seed reference data với **số hiệu tài khoản TT133 thật** (`6421`, `6422`, `1331`, `331`, `156`, `153`) + `keywords_vi` (= baseline eval) | §2.1 |
+| 2.6 | ✅ **Done 2026-07-28 (M2-B)**. Toàn bộ `domain/` — pure function, zero I/O: `validation.py`, `taxcode.py` (checksum MST 10/13/12 số), `money.py` (Decimal VND + số tiền bằng chữ ↔ số), `accounting.py` (JE builder + balance check), `budget.py`, `anomaly.py`. 106 unit tests green. | §3.2 |
+| 2.7 | ✅ **Done 2026-07-28 (M2-A)**. Repositories + `audit_log` writer | §2 |
 
 **Gate M2**: `make generate && make seed` chạy sạch; ≥60 unit test `domain/` xanh; parser round-trip
 300/300 hóa đơn synthetic **và** 2–3 file thật; thử `INSERT` một bút toán lệch Nợ/Có → **bị CHECK
