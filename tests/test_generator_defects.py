@@ -46,3 +46,50 @@ def test_seeded_defects_still_parse():
     for seed in (defects.seed_arithmetic_error, defects.seed_words_mismatch,
                  defects.seed_bad_tax_code, defects.seed_wrong_vat_rate):
         parse_invoice_xml(templates.render(seed(spec())).encode("utf-8"))
+
+
+import random
+
+
+def test_exact_duplicate_shares_the_whole_natural_key():
+    """3% group. §2.3's UNIQUE is (seller, template, series, number); an exact
+    duplicate must repeat ALL FOUR or ON CONFLICT DO NOTHING never fires and
+    the idempotency path goes untested."""
+    original = spec()
+    dup = defects.duplicate_of(original)
+    assert (dup.seller_tax_code, dup.template_no, dup.invoice_series, dup.invoice_number) == (
+        original.seller_tax_code, original.template_no,
+        original.invoice_series, original.invoice_number,
+    )
+
+
+def test_near_duplicate_keeps_seller_and_total_but_changes_the_number():
+    """3% group, the 'wow' case: a vendor re-issues an almost identical invoice
+    under a new number to be paid twice. Same seller and total, different
+    number — exactly what domain.anomaly.near_duplicate looks for."""
+    original = spec()
+    near = defects.near_duplicate_of(original, random.Random(7))
+    assert near.seller_tax_code == original.seller_tax_code
+    assert near.total_amount == original.total_amount
+    assert near.invoice_number != original.invoice_number
+
+
+def test_near_duplicate_lands_inside_the_detection_window():
+    from invoice_agent.domain import anomaly  # TEST-ONLY
+
+    original = spec()
+    near = defects.near_duplicate_of(original, random.Random(7))
+    delta = abs((near.issue_date - original.issue_date).days)
+    assert delta <= anomaly.NEAR_DUP_WINDOW_DAYS, (
+        "a near-duplicate outside the window is not a near-duplicate — the "
+        "corpus would be seeding a case the detector cannot see"
+    )
+
+
+def test_ambiguous_descriptions_are_genuinely_two_sided():
+    """3% group. These exist to make the Classifier and Auditor DISAGREE at
+    M4 — the multi-agent evidence. A description that is obviously one category
+    produces agreement and proves nothing."""
+    assert len(defects.AMBIGUOUS_DESCRIPTIONS) >= 5
+    for text, options in defects.AMBIGUOUS_DESCRIPTIONS:
+        assert len(options) == 2, f"{text!r} must plausibly fit exactly two categories"

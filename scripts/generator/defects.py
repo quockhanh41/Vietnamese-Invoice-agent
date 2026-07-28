@@ -104,3 +104,47 @@ def seed_wrong_vat_rate(base: InvoiceSpec) -> InvoiceSpec:
         base, lines=lines, subtotal=subtotal, vat_total=vat_total,
         total_amount=subtotal + vat_total, total_in_words=None,
     )
+
+
+import datetime
+from random import Random
+
+# Price-outlier group (2%): 10x the vendor's usual amount, well beyond the
+# z-score threshold whatever M6 finally sets it to.
+OUTLIER_MULTIPLIER = Decimal("10")
+
+# Ambiguous-category group (3%). Each genuinely fits TWO seeded categories —
+# they exist to make the Classifier and the Auditor disagree at M4, which is
+# the multi-agent evidence. Vietnamese, because it is invoice content.
+AMBIGUOUS_DESCRIPTIONS: tuple[tuple[str, tuple[str, str]], ...] = (
+    ("Mực in và giấy in cho máy in văn phòng", ("OFFICE_SUPPLIES", "IT_SERVICES")),
+    ("Thiết kế và in ấn catalogue giới thiệu sản phẩm", ("MARKETING", "OFFICE_SUPPLIES")),
+    ("Phí gửi hàng mẫu cho khách hàng tiềm năng", ("LOGISTICS", "MARKETING")),
+    ("Gia hạn tên miền và hosting website công ty", ("IT_SERVICES", "MARKETING")),
+    ("Mua máy tính bảng phục vụ trưng bày tại hội chợ", ("TOOLS", "MARKETING")),
+    ("Cước điện thoại của bộ phận chăm sóc khách hàng", ("UTILITIES", "MARKETING")),
+)
+
+
+def duplicate_of(base: InvoiceSpec) -> InvoiceSpec:
+    """An EXACT duplicate — the whole natural key repeats.
+
+    Design doc §2.3 makes re-upload idempotent via ON CONFLICT DO NOTHING, and
+    that path is only exercised if all four key columns match.
+    """
+    return dataclasses.replace(base)
+
+
+def near_duplicate_of(base: InvoiceSpec, rng: Random) -> InvoiceSpec:
+    """Same seller, same total, new number, a few days later.
+
+    The date shift stays inside anomaly.NEAR_DUP_WINDOW_DAYS — seeding one
+    outside the window would create a case the detector is not designed to see,
+    which measures nothing.
+    """
+    return dataclasses.replace(
+        base,
+        invoice_number=f"{int(base.invoice_number) + rng.randint(100, 999):08d}",
+        issue_date=base.issue_date + datetime.timedelta(days=rng.randint(1, 5)),
+        total_in_words=None,
+    )
