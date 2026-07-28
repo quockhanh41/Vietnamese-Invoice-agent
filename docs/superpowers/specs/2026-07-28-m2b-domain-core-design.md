@@ -278,9 +278,18 @@ Produces the shape design doc §2.7 gives:
 
 ```
 Nợ 6422   3.250.000      debit  = goods_subtotal
-Nợ 1331     260.000      debit  = vat_amount        (omitted when zero/absent)
-    Có 331          3.510.000    credit = total_amount
+Nợ 1331     260.000      debit  = vat_amount            (omitted when zero/absent)
+    Có 331          3.510.000    credit = goods_subtotal + vat_amount
 ```
+
+> **Corrected 2026-07-28.** This block first read `credit = total_amount`, which is wrong on exactly
+> the invoices that matter. On a clean invoice the two are identical, but the 6% "sai số học" defect
+> group is defined by `total_amount` disagreeing with the lines — and §3.3 sends those to a **human**,
+> who may approve them, so M5 will still try to post one. Measured: `subtotal=1000, vat=100,
+> declared total=1200` gives `debit=1100 / credit=1200`, which `ck_journal_balanced` refuses at
+> INSERT. Crediting the computed sum makes the entry balance **by construction**, so the constraint
+> is a backstop rather than the thing that discovers the bug. M2-A's
+> `test_unbalanced_journal_entry_rejected` already proves the database refuses the other version.
 
 **It must use `money.goods_subtotal`, not `invoice.subtotal`.** Measured §2.3: on the non-VAT fixture
 `TgTCThue = 0` while the real amount is 3,410,000 — building from the raw header would emit
