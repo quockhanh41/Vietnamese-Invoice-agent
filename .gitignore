@@ -26,6 +26,9 @@ venv/
 !docs/**/*.pdf
 invoices_raw/
 
+# Generated synthetic corpus — reproducible from `make generate` with seed 42.
+/corpus/
+
 # Environment — KHÔNG BAO GIỜ commit key.
 # Bài học từ Project A: .claude/settings.json ở đó chứa LANGFUSE_SECRET_KEY
 # plaintext. May là .claude/ đã bị ignore nên key chưa vào git history, nhưng

@@ -1,4 +1,4 @@
-.PHONY: help install dev migrate seed db-stop db-reset test lint typecheck check lock clean
+.PHONY: help install dev migrate seed generate db-stop db-reset test lint typecheck check lock clean
 
 UV  := uv
 PY  := .venv/bin/python
@@ -10,6 +10,7 @@ help:
 	@echo "  make dev        - Khởi động Postgres + pgvector, chờ healthy, chạy migration"
 	@echo "  make migrate    - alembic upgrade head"
 	@echo "  make seed       - nạp reference data (phòng ban, danh mục, ngân sách)"
+	@echo "  make generate   - sinh synthetic corpus 300 hóa đơn (seed 42)"
 	@echo "  make db-stop    - Dừng Postgres (giữ dữ liệu)"
 	@echo "  make db-reset   - XOÁ volume, dựng lại từ init_db.sql"
 	@echo "  make test       - pytest"
@@ -40,6 +41,9 @@ migrate:
 
 seed:
 	$(PY) -m scripts.seed_reference
+
+generate:
+	$(PY) -m scripts.generate_invoices --count 300 --seed 42 --out corpus
 
 
 db-stop:
