@@ -159,3 +159,75 @@ def test_approval_decision_is_constrained(runtime_conn):
         )
 
 
+def test_budget_consumption_is_unique_per_budget_and_invoice(runtime_conn):
+    """Design doc §2.6. Without this UNIQUE, a retried batch double-counts an
+    invoice against a budget and `test_budget_serialization.py` (M4) becomes
+    unprovable."""
+    from sqlalchemy.exc import IntegrityError
+
+    from invoice_agent.db.repositories import (
+        budget_consumption, reference, vendors,
+    )
+    from invoice_agent.db.repositories import invoices as invoice_repo
+    from tests.test_schema_constraints import _invoice_values
+
+    reference.upsert_department(runtime_conn, "MKT", "Phòng Marketing")
+    budget_id = reference.upsert_budget(
+        runtime_conn, "MKT", "2026-07", None, Decimal("50000000")
+    )
+    vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
+    invoice_id = invoice_repo.insert_row(
+        runtime_conn, _invoice_values(invoice_number=f"BC{uuid.uuid4().hex[:6]}")
+    )
+    budget_consumption.record_consumption(
+        runtime_conn, budget_id=budget_id, invoice_id=invoice_id,
+        amount=Decimal("1000"), balance_before=Decimal("50000000"),
+        balance_after=Decimal("49999000"), sequence_no=1,
+    )
+    with pytest.raises(IntegrityError):
+        budget_consumption.record_consumption(
+            runtime_conn, budget_id=budget_id, invoice_id=invoice_id,
+            amount=Decimal("1000"), balance_before=Decimal("49999000"),
+            balance_after=Decimal("49998000"), sequence_no=2,
+        )
+
+
+def test_llm_calls_records_failures_too(runtime_conn):
+    """Design doc §2.9: a 429 still burned input tokens. Omitting failed calls
+    makes the cost number wrong, and cost honesty is a portfolio claim."""
+    from invoice_agent.db.repositories import llm_calls
+
+    row_id = llm_calls.record_call(
+        runtime_conn, model="groq/llama-3.3-70b-versatile", provider="groq",
+        node="classify", prompt_tokens=800, completion_tokens=0,
+        cost_usd=Decimal("0"), shadow_cost_usd=Decimal("0.00012"),
+        latency_ms=340, attempt=1, succeeded=False, error="429 rate limit",
+    )
+    assert row_id is not None
+
+
+def test_episodic_similar_uses_the_sql_channel(runtime_conn):
+    """Design doc §7.1: episodic recall is SQL FIRST — same vendor OR same
+    category, ordered by flag overlap and recency. pgvector is M7 and only if
+    there is time, which is why there is no embedding column yet."""
+    from invoice_agent.db.repositories import episodic, vendors
+    from invoice_agent.db.repositories import invoices as invoice_repo
+    from tests.test_schema_constraints import _invoice_values
+
+    vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
+    invoice_id = invoice_repo.insert_row(
+        runtime_conn, _invoice_values(invoice_number=f"EP{uuid.uuid4().hex[:6]}")
+    )
+    episodic.record_episode(
+        runtime_conn, approval_id=None, invoice_id=invoice_id,
+        vendor_tax_code="0100000003", category="MARKETING", department="MKT",
+        amount=Decimal("5000000"), flags={"BUDGET_EXCEEDED": True},
+        decision="approved", reason="Giám đốc đã duyệt ngoài hệ thống",
+    )
+    hits = episodic.similar_episodes(
+        runtime_conn, vendor_tax_code="0100000003", category=None, limit=5
+    )
+    assert any(h["invoice_id"] == invoice_id for h in hits)
+
+
+

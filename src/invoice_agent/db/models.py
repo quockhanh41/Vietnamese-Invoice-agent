@@ -352,6 +352,59 @@ audit_log = Table(
     Column("detail", postgresql.JSONB, nullable=False, server_default="{}"),
 )
 
+budget_consumption = Table(
+    "budget_consumption",
+    metadata,
+    Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    Column("budget_id", sa.BigInteger, sa.ForeignKey("budgets.id"), nullable=False),
+    Column("invoice_id", sa.Uuid(as_uuid=True), sa.ForeignKey("invoices.id"), nullable=False),
+    Column("amount", sa.Numeric, nullable=False),
+    Column("consumed_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("balance_before", sa.Numeric, nullable=False),
+    Column("balance_after", sa.Numeric, nullable=False),
+    Column("sequence_no", sa.Integer, nullable=False),
+    # UNIQUE: an invoice can be recorded against a budget AT MOST ONCE.
+    # Without this, a retried batch double-counts an invoice against a budget.
+    sa.UniqueConstraint("budget_id", "invoice_id", name="uq_budget_consumption_invoice"),
+)
+
+episodic_decisions = Table(
+    "episodic_decisions",
+    metadata,
+    Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+    Column("approval_id", sa.Uuid(as_uuid=True), sa.ForeignKey("approvals.id")),
+    Column("invoice_id", sa.Uuid(as_uuid=True), sa.ForeignKey("invoices.id"), nullable=False),
+    Column("vendor_tax_code", sa.Text, nullable=False),
+    Column("category", sa.Text),
+    Column("department", sa.Text),
+    Column("amount", sa.Numeric, nullable=False),
+    Column("flags", postgresql.JSONB, nullable=False, server_default="{}"),
+    Column("decision", sa.Text, nullable=False),
+    Column("reason", sa.Text),
+    Column("decided_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
+    sa.Index("ix_episodic_vendor", "vendor_tax_code"),
+    sa.Index("ix_episodic_category", "category"),
+)
+
+llm_calls = Table(
+    "llm_calls",
+    metadata,
+    Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    Column("occurred_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("model", sa.Text, nullable=False),
+    Column("provider", sa.Text, nullable=False),
+    Column("node", sa.Text, nullable=False),
+    Column("prompt_tokens", sa.Integer, nullable=False),
+    Column("completion_tokens", sa.Integer, nullable=False),
+    Column("cost_usd", sa.Numeric, nullable=False, server_default="0"),
+    Column("shadow_cost_usd", sa.Numeric, nullable=False, server_default="0"),
+    Column("latency_ms", sa.Integer, nullable=False),
+    Column("attempt", sa.Integer, nullable=False, server_default="1"),
+    Column("succeeded", sa.Boolean, nullable=False, server_default="true"),
+    Column("error", sa.Text),
+)
+
+
 
 
 
