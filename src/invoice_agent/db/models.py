@@ -123,3 +123,99 @@ batches = Table(
         "status IN ('running', 'completed', 'failed')", name="ck_batches_status"
     ),
 )
+
+# Predicted from design doc §3.3's routing, NOT measured — M3-M5 will amend it.
+# TEXT + CHECK (rather than a native ENUM) is exactly what makes amending it
+# cheap: measured 2026-07-28, a native enum cannot add a value and backfill
+# rows to it in one migration ("unsafe use of new value").
+INVOICE_STATUSES = (
+    "received", "extracted", "validated", "classified", "flagged",
+    "pending_approval", "approved", "rejected", "posted", "manual_queue", "failed",
+)
+SOURCE_TYPES = ("xml", "pdf_vision", "manual")
+
+invoices = Table(
+    "invoices",
+    metadata,
+    Column("id", sa.Uuid(as_uuid=True), primary_key=True),
+    Column("batch_id", sa.Uuid(as_uuid=True), sa.ForeignKey("batches.id")),
+    Column("template_no", sa.Text, nullable=False),      # KHMSHDon
+    Column("invoice_series", sa.Text, nullable=False),   # KHHDon
+    Column("invoice_number", sa.Text, nullable=False),   # SHDon
+    # NOT NULL although InvoiceData types it `str | None`. Measured 2026-07-28:
+    # seller MST is present in 8/8 real fixtures. An invoice without one cannot
+    # be given an identity, so ingestion routes it to manual_queue rather than
+    # storing it identity-less. The parser is still right to report what it saw;
+    # this is the boundary that refuses.
+    Column("seller_tax_code", sa.Text, sa.ForeignKey("vendors.tax_code"), nullable=False),
+    # Nullable and in no key: measured 8/8 either absent or ''.
+    Column("buyer_tax_code", sa.Text),
+    Column("issue_date", sa.Date, nullable=False),
+    Column("currency", sa.Text),
+    Column("exchange_rate", sa.Numeric),
+    Column("subtotal", sa.Numeric),
+    Column("vat_amount", sa.Numeric),
+    Column("total_amount", sa.Numeric, nullable=False),
+    Column("total_in_words", sa.Text),
+    # Header TTKhac bags. Stored, not dropped: ext already proved load-bearing
+    # once — VNPT sets ThTien=0 and puts the real amount in ext['Amount'].
+    Column("ext", postgresql.JSONB, nullable=False, server_default="{}"),
+    Column("source_type", sa.Text, nullable=False),
+    Column("source_path", sa.Text),
+    Column("raw_xml", sa.Text),
+    Column("extraction_confidence", sa.Numeric),
+    Column("extraction_attempts", sa.Integer, nullable=False, server_default="0"),
+    Column("category", sa.Text, sa.ForeignKey("expense_categories.code")),
+    Column("department", sa.Text, sa.ForeignKey("departments.code")),
+    Column("classification_confidence", sa.Numeric),
+    Column("status", sa.Text, nullable=False, server_default="received"),
+    Column("cost_usd", sa.Numeric),
+    Column("shadow_cost_usd", sa.Numeric),
+    Column("tokens_in", sa.Integer),
+    Column("tokens_out", sa.Integer),
+    Column("langfuse_trace_id", sa.Text),
+    Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # THE identity of a Vietnamese e-invoice (design doc §2.3). invoice_number
+    # alone is NOT unique across sellers — two vendors both issue no. 00001234.
+    sa.UniqueConstraint(
+        "seller_tax_code", "template_no", "invoice_series", "invoice_number",
+        name="uq_invoices_natural_key",
+    ),
+    sa.CheckConstraint(
+        "status IN " + str(INVOICE_STATUSES), name="ck_invoices_status"
+    ),
+    sa.CheckConstraint(
+        "source_type IN " + str(SOURCE_TYPES), name="ck_invoices_source_type"
+    ),
+)
+
+invoice_line_items = Table(
+    "invoice_line_items",
+    metadata,
+    Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    Column("invoice_id", sa.Uuid(as_uuid=True),
+           sa.ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False),
+    # NOT NULL although InvoiceLine.line_no is `int | None`. STT was present on
+    # 15/15 lines across 8/8 fixtures (2026-07-28); where absent the repository
+    # substitutes 1-based document position. One column, not two: a line index
+    # is an ordinal, not a fact about the invoice.
+    Column("line_no", sa.Integer, nullable=False),
+    # ⚠️ PROMPT-INJECTION SURFACE (design doc §2.4, §9.1). Free text written by
+    # whoever issued the invoice. Never concatenate into a system prompt —
+    # M3.3 wraps it in an escaped <invoice_data> block.
+    Column("description", sa.Text),
+    Column("unit", sa.Text),
+    Column("quantity", sa.Numeric),
+    Column("unit_price", sa.Numeric),
+    Column("amount", sa.Numeric),
+    Column("vat_rate", sa.Numeric),
+    Column("vat_amount", sa.Numeric),
+    # QĐ-1450 TChat: 1 goods, 2 promotion, 3 discount, 4 NOTE.
+    # Nullable, NOT defaulted to 1 — that waits on M1.2's outstanding
+    # NĐ 70/2025 check. A wrong default folds a note line into the money sum.
+    Column("item_kind", sa.Integer),
+    Column("ext", postgresql.JSONB, nullable=False, server_default="{}"),
+    sa.UniqueConstraint("invoice_id", "line_no", name="uq_line_items_invoice_line_no"),
+)
+

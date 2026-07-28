@@ -55,3 +55,49 @@ def test_batch_status_is_constrained(runtime_conn):
     batch_id = batches.create_batch(runtime_conn, label="bad-status")
     with pytest.raises(IntegrityError):
         batches.complete_batch(runtime_conn, batch_id, status="finished", invoice_count=1)
+
+
+def test_insert_with_lines_round_trips_a_real_fixture(runtime_conn):
+    """The eight real fixtures are the anti-circularity anchor (design doc
+    §10.1). If the schema cannot store what the M1 parser produces, the
+    corpus generator at M2-C will paper over it."""
+    from pathlib import Path
+
+    from invoice_agent.db.repositories import batches
+    from invoice_agent.db.repositories import invoices as invoice_repo
+    from invoice_agent.extraction.xml_parser import parse_invoice_xml
+
+    path = Path("tests/fixtures/real_samples/lienket_gtgt_7dong_2.1.0.xml")
+    data = parse_invoice_xml(path.read_bytes())
+    batch_id = batches.create_batch(runtime_conn, label="fixture")
+
+    invoice_id = invoice_repo.insert_with_lines(
+        runtime_conn, data, batch_id=batch_id, source_type="xml", source_path=str(path)
+    )
+    assert invoice_id is not None
+
+    lines = invoice_repo.get_lines(runtime_conn, invoice_id)
+    assert len(lines) == 7, "the 7-line fixture lost lines in storage"
+    # line_no is NOT NULL and dense; STT was present on 15/15 measured lines.
+    assert [r["line_no"] for r in lines] == [1, 2, 3, 4, 5, 6, 7]
+
+
+def test_decimal_precision_survives_storage(runtime_conn):
+    """Money columns are unconstrained NUMERIC. M1 measured 21618409.09000000
+    (8 dp) and a unit price of 398181.33 where 3 x 398181.33 = 1194543.99 but
+    ThTien = 1194544. NUMERIC(18,2) rounds, and the validation rule that holds
+    8/8 is an EXACT comparison."""
+    from invoice_agent.db.repositories import batches
+    from invoice_agent.db.repositories import invoices as invoice_repo
+    from tests.test_schema_constraints import _invoice_values
+
+    vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
+    batch_id = batches.create_batch(runtime_conn, label="precision")
+    exact = Decimal("21618409.09000000")
+    values = _invoice_values(
+        batch_id=batch_id, total_amount=exact, invoice_number=f"PR{uuid.uuid4().hex[:6]}"
+    )
+    invoice_id = invoice_repo.insert_row(runtime_conn, values)
+    row = invoice_repo.get_by_id(runtime_conn, invoice_id)
+    assert row["total_amount"] == exact
+
