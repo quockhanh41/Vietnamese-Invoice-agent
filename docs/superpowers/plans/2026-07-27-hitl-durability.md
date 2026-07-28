@@ -90,7 +90,9 @@ class TestDsnActuallyConnects:
             search_path = conn.execute("SHOW search_path").fetchone()[0]
         assert search_path == "app,public"
 
-    def test_checkpointer_dsn_connects_and_sets_search_path(self, requires_postgres, monkeypatch):
+    def test_checkpointer_dsn_connects_and_sets_search_path(
+        self, requires_postgres, monkeypatch
+    ):
         monkeypatch.setenv("DATABASE_URL", requires_postgres)
         with psycopg.connect(make_settings().checkpointer_dsn, connect_timeout=3) as conn:
             search_path = conn.execute("SHOW search_path").fetchone()[0]
@@ -136,7 +138,10 @@ Nếu test so chuỗi cũ (`test_app_and_checkpointer_use_different_search_paths
 ```
 
 ```python
-assert s.app_dsn == "postgresql://u:p@host/db?sslmode=require&options=-csearch_path%3Dapp%2Cpublic"
+        assert (
+            s.app_dsn
+            == "postgresql://u:p@host/db?sslmode=require&options=-csearch_path%3Dapp%2Cpublic"
+        )
 ```
 
 ```python
@@ -204,7 +209,8 @@ class TestCheckpointerSchemaIsolation:
 
         with psycopg.connect(requires_postgres) as conn:
             rows = conn.execute(
-                "SELECT schemaname, tablename FROM pg_tables WHERE tablename = ANY(%s)",
+                "SELECT schemaname, tablename FROM pg_tables "
+                "WHERE tablename = ANY(%s)",
                 (list(EXPECTED_TABLES),),
             ).fetchall()
 
@@ -454,7 +460,9 @@ class TestSpikeGraphInProcess:
         with build_checkpointer() as saver:
             saver.setup()
             app = build_spike_graph().compile(checkpointer=saver)
-            result = app.invoke({"thread_id": thread_id, "trace": [], "decision": ""}, config)
+            result = app.invoke(
+                {"thread_id": thread_id, "trace": [], "decision": ""}, config
+            )
 
         assert "__interrupt__" in result, "graph phải dừng ở interrupt()"
         assert result["trace"] == ["n1_record"], "chỉ node trước cổng được chạy"
@@ -535,7 +543,9 @@ class SpikeState(TypedDict):
 def record_side_effect(thread_id: str) -> None:
     """Insert one row. Stand-in for the irreversible write M5 must never repeat."""
     with psycopg.connect(get_settings().database_url) as conn:
-        conn.execute("INSERT INTO app.spike_counter (thread_id) VALUES (%s)", (thread_id,))
+        conn.execute(
+            "INSERT INTO app.spike_counter (thread_id) VALUES (%s)", (thread_id,)
+        )
 
 
 def n1_record(state: SpikeState) -> dict[str, Any]:
@@ -629,7 +639,9 @@ def main(thread_id: str) -> None:
     with build_checkpointer() as saver:
         saver.setup()
         app = build_spike_graph().compile(checkpointer=saver)
-        result = app.invoke({"thread_id": thread_id, "trace": [], "decision": ""}, config)
+        result = app.invoke(
+            {"thread_id": thread_id, "trace": [], "decision": ""}, config
+        )
         if "__interrupt__" not in result:
             print("NO_INTERRUPT", flush=True)
             sys.exit(2)
@@ -761,14 +773,18 @@ def test_hitl_survives_restart(requires_postgres, run):
             child.kill()
             child.wait(timeout=5)
         with psycopg.connect(requires_postgres) as conn:
-            conn.execute("DELETE FROM app.spike_counter WHERE thread_id = %s", (thread_id,))
+            conn.execute(
+                "DELETE FROM app.spike_counter WHERE thread_id = %s", (thread_id,)
+            )
 
 
 def test_ci_runs_the_full_ten():
     """Chốt chặn: không có test này, một ngày nào đó ai đó sửa workflow, CI âm
     thầm chạy 3 lần, và gate "10/10" tự suy yếu mà không ai biết."""
     if os.getenv("CI", "").lower() in ("true", "1"):
-        assert HITL_RUNS >= 10, f"CI phải đặt HITL_RUNS>=10 để đóng gate M1, đang là {HITL_RUNS}"
+        assert HITL_RUNS >= 10, (
+            f"CI phải đặt HITL_RUNS>=10 để đóng gate M1, đang là {HITL_RUNS}"
+        )
 ```
 
 - [ ] **Step 3: Chạy, xác nhận đỏ**
@@ -878,7 +894,9 @@ def test_autogenerate_never_drops_langgraph_tables(requires_postgres, tmp_path):
     assert len(generated) == 1, f"kỳ vọng 1 file migration, có {len(generated)}"
     body = generated[0].read_text(encoding="utf-8")
 
-    assert "drop_table" not in body, f"autogenerate đề nghị DROP — include_object hỏng.\n{body}"
+    assert "drop_table" not in body, (
+        f"autogenerate đề nghị DROP — include_object hỏng.\n{body}"
+    )
     for table in LANGGRAPH_TABLES:
         assert table not in body, f"autogenerate nhìn thấy bảng langgraph `{table}`"
     assert "langgraph" not in body
@@ -902,17 +920,9 @@ def include_object(object, name, type_, reflected, compare_to) -> bool:
     if schema == LANGGRAPH_SCHEMA:
         return False
     # Bảng phản chiếu được mà không có schema tường minh: đối chiếu theo tên.
-    if (
-        reflected
-        and type_ == "table"
-        and name
-        in {
-            "checkpoints",
-            "checkpoint_blobs",
-            "checkpoint_writes",
-            "checkpoint_migrations",
-        }
-    ):
+    if reflected and type_ == "table" and name in {
+        "checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations",
+    }:
         return False
     return True
 ```

@@ -1297,7 +1297,10 @@ BILLION_LAUGHS = (
     b'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY e0 "AAAA">'
     b'<!ENTITY e1 "&e0;&e0;"><!ENTITY e2 "&e1;&e1;">]><r>&e2;</r>'
 )
-XXE = b'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY x SYSTEM "file:///etc/hostname">]><r>&x;</r>'
+XXE = (
+    b'<?xml version="1.0"?><!DOCTYPE r ['
+    b'<!ENTITY x SYSTEM "file:///etc/hostname">]><r>&x;</r>'
+)
 
 
 @pytest.mark.parametrize("payload", [BILLION_LAUGHS, XXE], ids=["billion-laughs", "xxe"])
@@ -1370,7 +1373,8 @@ def parse_invoice_xml(raw: bytes) -> InvoiceData:
     buyer = hdon.find(sch.BUYER)
 
     lines = [
-        _line(element, index) for index, element in enumerate(hdon.findall(sch.LINES), start=1)
+        _line(element, index)
+        for index, element in enumerate(hdon.findall(sch.LINES), start=1)
     ]
     if not lines:
         raise XmlExtractionError(f"{sch.LINES}: no invoice lines found")
@@ -1393,8 +1397,12 @@ def parse_invoice_xml(raw: bytes) -> InvoiceData:
         buyer_name=_party(buyer, sch.PARTY_NAME),
         buyer_tax_code=_party(buyer, sch.PARTY_TAX_CODE),
         buyer_address=_party(buyer, sch.PARTY_ADDRESS),
-        subtotal=sch.money(totals.findtext(sch.SUBTOTAL), where=f"{sch.TOTALS}/{sch.SUBTOTAL}"),
-        vat_amount=sch.money(totals.findtext(sch.VAT_TOTAL), where=f"{sch.TOTALS}/{sch.VAT_TOTAL}"),
+        subtotal=sch.money(
+            totals.findtext(sch.SUBTOTAL), where=f"{sch.TOTALS}/{sch.SUBTOTAL}"
+        ),
+        vat_amount=sch.money(
+            totals.findtext(sch.VAT_TOTAL), where=f"{sch.TOTALS}/{sch.VAT_TOTAL}"
+        ),
         total_amount=_grand_total(totals),
         total_in_words=totals.findtext(sch.TOTAL_IN_WORDS),
         lines=lines,
@@ -1441,7 +1449,9 @@ def _grand_total(totals: Element) -> Decimal:
 
     TgTCThue and TgTThue are absent from 3/8, so they stay Optional.
     """
-    value = sch.money(totals.findtext(sch.GRAND_TOTAL), where=f"{sch.TOTALS}/{sch.GRAND_TOTAL}")
+    value = sch.money(
+        totals.findtext(sch.GRAND_TOTAL), where=f"{sch.TOTALS}/{sch.GRAND_TOTAL}"
+    )
     if value is None:
         raise XmlExtractionError(f"{sch.TOTALS}/{sch.GRAND_TOTAL}: required")
     return value
@@ -1451,12 +1461,18 @@ def _line(element: Element, index: int) -> InvoiceLine:
     where = f"{sch.LINES}[{index}]"
     return InvoiceLine(
         line_no=sch.integer(element.findtext(sch.LINE_NO), where=f"{where}/{sch.LINE_NO}"),
-        item_kind=sch.integer(element.findtext(sch.LINE_KIND), where=f"{where}/{sch.LINE_KIND}"),
+        item_kind=sch.integer(
+            element.findtext(sch.LINE_KIND), where=f"{where}/{sch.LINE_KIND}"
+        ),
         description=element.findtext(sch.LINE_DESC),
         unit=element.findtext(sch.LINE_UNIT),
         quantity=sch.money(element.findtext(sch.LINE_QTY), where=f"{where}/{sch.LINE_QTY}"),
-        unit_price=sch.money(element.findtext(sch.LINE_PRICE), where=f"{where}/{sch.LINE_PRICE}"),
-        amount=sch.money(element.findtext(sch.LINE_AMOUNT), where=f"{where}/{sch.LINE_AMOUNT}"),
+        unit_price=sch.money(
+            element.findtext(sch.LINE_PRICE), where=f"{where}/{sch.LINE_PRICE}"
+        ),
+        amount=sch.money(
+            element.findtext(sch.LINE_AMOUNT), where=f"{where}/{sch.LINE_AMOUNT}"
+        ),
         vat_rate=sch.vat_rate(
             element.findtext(sch.LINE_VAT_RATE), where=f"{where}/{sch.LINE_VAT_RATE}"
         ),

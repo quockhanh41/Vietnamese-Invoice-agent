@@ -206,23 +206,23 @@ diff this module against the Jinja template by eye, which is the point of the ar
 
 ```python
 HDON_TAG = "HDon"
-TTCHUNG = "DLHDon/TTChung"
-NDHDON = "DLHDon/NDHDon"
-SELLER = f"{NDHDON}/NBan"
-BUYER = f"{NDHDON}/NMua"
-LINES = f"{NDHDON}/DSHHDVu/HHDVu"
-TOTALS = f"{NDHDON}/TToan"
+TTCHUNG  = "DLHDon/TTChung"
+NDHDON   = "DLHDon/NDHDon"
+SELLER   = f"{NDHDON}/NBan"
+BUYER    = f"{NDHDON}/NMua"
+LINES    = f"{NDHDON}/DSHHDVu/HHDVu"
+TOTALS   = f"{NDHDON}/TToan"
 
 # Six TTKhac scopes observed across the 8 fixtures (measured 2026-07-27,
 # spec docs/superpowers/specs/2026-07-27-xml-extraction-design.md §2.6).
 # Name -> path relative to HDon.
 EXT_SCOPES = {
-    "dlhdon": "DLHDon/TTKhac",
+    "dlhdon":  "DLHDon/TTKhac",
     "ttchung": f"{TTCHUNG}/TTKhac",
-    "seller": f"{SELLER}/TTKhac",
-    "buyer": f"{BUYER}/TTKhac",
-    "ndhdon": f"{NDHDON}/TTKhac",
-    "totals": f"{TOTALS}/TTKhac",
+    "seller":  f"{SELLER}/TTKhac",
+    "buyer":   f"{BUYER}/TTKhac",
+    "ndhdon":  f"{NDHDON}/TTKhac",
+    "totals":  f"{TOTALS}/TTKhac",
 }
 
 # Measured 2026-07-27 on all 8 fixtures: only vnpt_… uses this exact key.
@@ -276,41 +276,40 @@ rather than as silent data loss.
 
 ```python
 class InvoiceLine(BaseModel):
-    line_no: int | None  # STT
-    item_kind: int | None  # TChat — 1 goods, 2 promo, 3 discount, 4 NOTE
-    description: str | None  # THHDVu  ⚠️ prompt-injection surface (design §2.4)
-    unit: str | None  # DVTinh — absent on non-VAT invoices
-    quantity: Decimal | None  # SLuong — <SLuong /> is None, not 0
-    unit_price: Decimal | None  # DGia
-    amount: Decimal | None  # ThTien — 0 at VNPT, real value in ext['Amount']
-    vat_rate: Decimal | None  # TSuat  — '8%' -> Decimal('0.08')
-    vat_amount: Decimal | None  # TThue
-    ext: dict[str, str]  # whole TTKhac verbatim
-
+    line_no: int | None          # STT
+    item_kind: int | None        # TChat — 1 goods, 2 promo, 3 discount, 4 NOTE
+    description: str | None      # THHDVu  ⚠️ prompt-injection surface (design §2.4)
+    unit: str | None             # DVTinh — absent on non-VAT invoices
+    quantity: Decimal | None     # SLuong — <SLuong /> is None, not 0
+    unit_price: Decimal | None   # DGia
+    amount: Decimal | None       # ThTien — 0 at VNPT, real value in ext['Amount']
+    vat_rate: Decimal | None     # TSuat  — '8%' -> Decimal('0.08')
+    vat_amount: Decimal | None   # TThue
+    ext: dict[str, str]          # whole TTKhac verbatim
 
 class InvoiceData(BaseModel):
-    schema_version: str | None  # PBan — 2.0.0 / 2.0.1 / 2.1.0 all in corpus
-    template_no: str  # KHMSHDon — required
-    invoice_series: str  # KHHDon   — required
-    invoice_number: str  # SHDon    — required
-    issue_date: date  # NLap     — required
-    currency: str | None  # DVTTe
-    exchange_rate: Decimal | None  # TGia — '1' and '1.00' both occur
+    schema_version: str | None       # PBan — 2.0.0 / 2.0.1 / 2.1.0 all in corpus
+    template_no: str                 # KHMSHDon — required
+    invoice_series: str              # KHHDon   — required
+    invoice_number: str              # SHDon    — required
+    issue_date: date                 # NLap     — required
+    currency: str | None             # DVTTe
+    exchange_rate: Decimal | None    # TGia — '1' and '1.00' both occur
 
-    seller_name: str | None  # NBan/Ten
-    seller_tax_code: str | None  # NBan/MST — 3 shapes: 10, 10-3, 12 digits
+    seller_name: str | None          # NBan/Ten
+    seller_tax_code: str | None      # NBan/MST — 3 shapes: 10, 10-3, 12 digits
     seller_address: str | None
-    buyer_name: str | None  # NMua/Ten — absent in 1/8 files
-    buyer_tax_code: str | None  # '0' / '' / absent are three different facts
-    buyer_address: str | None  # real value: 'Người mua không lấy hóa đơn'
+    buyer_name: str | None           # NMua/Ten — absent in 1/8 files
+    buyer_tax_code: str | None       # '0' / '' / absent are three different facts
+    buyer_address: str | None        # real value: 'Người mua không lấy hóa đơn'
 
-    subtotal: Decimal | None  # TgTCThue — absent 3/8
-    vat_amount: Decimal | None  # TgTThue  — absent 3/8
-    total_amount: Decimal  # TgTTTBSo — required
-    total_in_words: str | None  # TgTTTBChu — verbatim, double spaces intact
+    subtotal: Decimal | None         # TgTCThue — absent 3/8
+    vat_amount: Decimal | None       # TgTThue  — absent 3/8
+    total_amount: Decimal            # TgTTTBSo — required
+    total_in_words: str | None       # TgTTTBChu — verbatim, double spaces intact
 
-    lines: list[InvoiceLine]  # non-empty
-    ext: dict[str, dict[str, str]]  # EXT_SCOPES name -> bag
+    lines: list[InvoiceLine]         # non-empty
+    ext: dict[str, dict[str, str]]   # EXT_SCOPES name -> bag
 ```
 
 The `ext` bags have no consumer yet. They are kept because `TTKhac` already proved load-bearing
