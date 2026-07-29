@@ -34,23 +34,17 @@ GOOD = json.dumps(
 
 @pytest.fixture
 def pdf_corpus(tmp_path):
-    """A one-entry corpus holding a single PDF-only invoice."""
+    """A two-entry corpus holding PDF-only invoices."""
     from scripts.generator import pdf as pdf_gen
     from tests.helpers.invoice_specs import make_spec
 
     (tmp_path / "INV-9001.pdf").write_bytes(pdf_gen.render_pdf(make_spec()))
-    (tmp_path / "manifest.jsonl").write_text(
-        json.dumps(
-            {
-                "invoice_id": "INV-9001",
-                "path": "INV-9001.pdf",
-                "pdf_path": None,
-                "source_type": "pdf_vision",
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    (tmp_path / "INV-9002.pdf").write_bytes(pdf_gen.render_pdf(make_spec()))
+    manifest_lines = [
+        json.dumps({"invoice_id": "INV-9001", "path": "INV-9001.pdf", "pdf_path": None, "source_type": "pdf_vision"}),
+        json.dumps({"invoice_id": "INV-9002", "path": "INV-9002.pdf", "pdf_path": None, "source_type": "pdf_vision"}),
+    ]
+    (tmp_path / "manifest.jsonl").write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
     return tmp_path
 
 
@@ -111,16 +105,17 @@ def test_cost_row_exists_before_the_graph_finishes(
 
     monkeypatch.setattr(enrichment, "validate_node", exploding_validate)
     with pytest.raises(RuntimeError):
-        run_one("INV-9001", corpus=pdf_corpus, gateway=stub_gateway(monkeypatch))
+        run_one("INV-9002", corpus=pdf_corpus, gateway=stub_gateway(monkeypatch))
     monkeypatch.setattr(enrichment, "validate_node", original)
 
     rows = (
         runtime_conn.execute(
             select(models.llm_calls).where(
-                models.llm_calls.c.thread_id == "enrich:INV-9001"
+                models.llm_calls.c.thread_id == "enrich:INV-9002"
             )
         )
         .mappings()
         .all()
     )
     assert rows, "the call was billed and the record was lost"
+
