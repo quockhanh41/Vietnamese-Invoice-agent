@@ -165,7 +165,10 @@ ALTER TABLE app.llm_calls
 ```
 
 `CHAR(32)` because that is what `invoices.id` and `batches.id` already are (measured: both
-`CHAR(32)`, UUID hex) — a `BIGINT` FK would not even create.
+`CHAR(32)`, UUID hex) — a `BIGINT` FK would not even create. In SQLAlchemy that column is declared
+`sa.Uuid(as_uuid=True)`, which renders as `CHAR(32)` on Postgres because the dialect is not using
+native `uuid`; the migration and `db/models.py` must declare `sa.Uuid()`, not a literal `CHAR(32)`,
+or `--autogenerate` will see a type change and the M1.6 empty-migration guard goes red.
 
 **All five nullable, deliberately.** A call made by `scripts/run_one.py` before any invoice row
 exists has no `invoice_id`; an eval harness call has neither. `NOT NULL` here would force callers to
@@ -244,9 +247,18 @@ plaintext container.
 | `replay` | read only; **never** touch the network |
 
 **A replayed failure is a first-class entry.** `error` non-null means replay *raises* that error
-instead of returning text. Without it, §2.9's "record the failed call too" is untestable in CI: no
-keys means no real 429, so the failure path would ship unmeasured — the exact shape of the M1/M2
-defects.
+instead of returning text.
+
+> **Corrected 2026-07-29, while writing the plan.** An earlier draft justified this by claiming
+> §2.9's "record the failed call too" is otherwise untestable in CI. That is wrong: the recording
+> path is tested in `live` mode with `litellm.completion` monkeypatched, which needs no key and no
+> network, and is the idiom `tests/test_gateway.py` already uses. Worse, the claim implied a test
+> that **cannot exist** — API keys are deliberately not in the cache key, so "key 1 rate-limits,
+> key 2 succeeds" hashes to one entry and is unrepresentable in replay.
+>
+> The real reason to keep the field is M3-C: replaying the escalation path — a vision call that
+> fails, sending the graph to `manual_queue` — requires a recorded failure. Recording behaviour and
+> replay behaviour are tested separately and must not be conflated.
 
 **Miss in replay raises `LLMReplayMiss`**, naming the key, the model chain tried, and the command to
 re-record. Never a silent fallthrough to live: a fallthrough turns a missing fixture into a
@@ -339,8 +351,10 @@ verified by breaking the source, not by inspection:
 1. `make check` green with `LLM_MODE=replay` and **no API keys in the environment**.
 2. `alembic upgrade head` applies migration 10; `alembic revision --autogenerate` afterwards emits an
    **empty** migration (the M1.6 guard still holds).
-3. A recorded fallback — two rate-limited keys then a success — produces **three** `llm_calls` rows,
-   two with `succeeded=false` and non-zero `prompt_tokens`.
+3. A stubbed fallback — `live` mode with `litellm.completion` monkeypatched to raise a 429 twice and
+   then succeed — produces **three** `llm_calls` rows, two with `succeeded=false` and non-zero
+   `prompt_tokens`. Stubbed rather than replayed for the reason in §5.2: API keys are not in the
+   cache key, so a per-key rotation is unrepresentable as fixtures.
 4. A Groq call records `cost_usd = 0` and `shadow_cost_usd > 0`; a `gpt-4o-mini` call records both
    equal.
 5. Ten mutations from §6.2 verified red, one at a time.
