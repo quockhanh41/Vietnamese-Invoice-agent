@@ -158,3 +158,15 @@ def test_an_unparseable_xml_with_a_pdf_twin_climbs_to_vision(tmp_path, monkeypat
     assert final["strategy"] == "vision"
     assert final["extracted"] is not None
     assert final["extracted"].total_amount == Decimal("1194544")
+
+
+def test_the_committed_diagram_matches_the_graph():
+    """The artefact is a drift guard, not decoration — which is the one thing a
+    committed PNG could never be. Regenerate with:
+        .venv/bin/python -m scripts.render_graph
+    """
+    committed = pathlib.Path("docs/diagrams/enrichment_graph.mmd")
+    assert committed.exists(), "run `.venv/bin/python -m scripts.render_graph`"
+    current = build_enrichment_graph().get_graph().draw_mermaid()
+    assert committed.read_text(encoding="utf-8").strip() == current.strip()
+
