@@ -12,17 +12,15 @@ venv/
 # chứng thư số thật. gitleaks KHÔNG bắt được thứ này — nó tìm token, không tìm PII.
 # Bản đã ẩn danh nằm ở tests/fixtures/real_samples/ và được commit có chủ đích.
 # PDF cũng bị chặn: nhà cung cấp gửi ZIP chứa CẢ .xml lẫn .pdf, và bản PDF mang
-# đúng PII đó ở dạng người đọc được + QR tra cứu. M3.4 có cần mẫu PDF cho nhánh
-# vision, nhưng phải là bản đã ẩn danh đặt trong tests/fixtures/.
-# KHÔNG neo `/` — nhà cung cấp giao hóa đơn trong THƯ MỤC (vd
-# PC06BB0378706…/ chứa .xml + 2 bản .pdf). Neo root chỉ chặn được file rời và
-# để lọt nguyên thư mục; đã suýt lọt 2 PDF có số CCCD vì lỗi này.
-# Bản ẩn danh nằm dưới tests/ nên được whitelist lại ngay bên dưới.
+# KHÔNG có ngoại lệ nào cho *.pdf nữa. Ngoại lệ `!tests/**/*.pdf` chính là chỗ
+# 6 file PDF nhà cung cấp (PII thật + mã QR tra cứu) lọt vào commit a377e15 và
+# lên origin. Gỡ 2026-07-29 (spec M3-B §4): corpus PDF sinh vào corpus/ (đã
+# ignore), PDF cho test render ra tmp_path lúc chạy — không file PDF nào cần
+# được track. tests/test_no_pii_files_tracked.py giữ điều đó.
 *.xml
 *.pdf
 *.zip
 !tests/**/*.xml
-!tests/**/*.pdf
 !docs/**/*.pdf
 invoices_raw/
 
