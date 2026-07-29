@@ -65,6 +65,32 @@ and a `generate_stream` bypassing the replay seam (M3-A), a "verbatim" criteria 
 its own failing criterion (M3-B), and two tests that passed exactly once per database plus a guard
 made red by asserting a list contains itself (M3-C). All fixed and re-measured.
 
+**First real number, measured 2026-07-29 by the M3 exit audit.** The deterministic layer was run
+across all 285 XML invoices and scored against the corpus manifest — no LLM involved, so it costs
+nothing to repeat:
+
+| | |
+|---|---|
+| XML parsed | **285/285** |
+| Expected findings detected (locally-decidable codes) | **47/47 — recall 100%** |
+| Invoices with no expected local finding, flagged anyway | **0/238 — false-positive rate 0.0%** |
+
+Locally-decidable means the four codes `validate()` can decide from one invoice with no database:
+`ARITHMETIC_MISMATCH`, `WORDS_DIGITS_MISMATCH`, `TAX_CODE_CHECKSUM_INVALID`, `LINE_VAT_MISMATCH`.
+Duplicate, budget and vendor codes need corpus-wide or DB state and are M4's to measure. Design doc
+§10.4 targets a flag false-positive rate ≤5%; the deterministic layer is at **0%** before any LLM
+exists. The generator imports neither `xml_schema` nor `domain/` — enforced by
+`test_generator_independence` — so this agreement is evidence, not a tautology.
+
+> The first pass of that measurement read **2.5% false positives**, and every one turned out to be a
+> **mislabelled corpus row rather than a validator error**: `price_outlier` scaled a line's amount
+> 10× without scaling its `TThue` (4 invoices, deviations to 5,040,000 đồng), and duplicates
+> inherited `wrong_vat_rate` from the invoice they copied while declaring only their duplicate
+> marker (2 invoices, one of them two hops down a chain). Both fixed in the generator, and
+> `test_no_invoice_carries_an_UNDECLARED_finding` now pins the corpus's labels to its contents in
+> both directions. Left unfixed, M6 would have scored six correct detections as false positives and
+> **understated its own precision**.
+
 > **The pattern is now the finding.** Three consecutive milestones were declared closed on a commit
 > where `make check` was RED, with the fixes sitting uncommitted. M3-C's red commit `097388b` was
 > **pushed**, CI ran it, and CI **failed** (run `30420027036`) — the safety net worked and nobody

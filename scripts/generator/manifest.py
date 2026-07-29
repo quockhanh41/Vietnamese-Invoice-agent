@@ -38,6 +38,25 @@ DEFECT_CODES: dict[str, tuple[str, ...]] = {
 }
 
 
+# Defects that live in the invoice BODY and are decidable from that body alone
+# — exactly the ones `domain.validation.validate()` can raise without touching
+# the database. A duplicate copies the body, so it copies these too, and its
+# manifest row must SAY so.
+#
+# Found 2026-07-29 by the M3 exit audit: `INV-0070` is an exact duplicate of
+# `INV-0060` (`wrong_vat_rate`), inherited the wrong line VAT exactly as a real
+# duplicate would, and declared only `DUPLICATE_INVOICE`. `validate()` flagged
+# it correctly and the manifest called that a false positive. At M6 the eval
+# scores predictions against this file, so an undeclared true positive
+# UNDERSTATES precision.
+BODY_DEFECTS: tuple[str, ...] = (
+    "arithmetic_error",
+    "words_digits_mismatch",
+    "bad_tax_code",
+    "wrong_vat_rate",
+)
+
+
 @dataclass(frozen=True)
 class ManifestRecord:
     invoice_id: str

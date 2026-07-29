@@ -44,6 +44,33 @@ DEPARTMENTS = ("MKT", "IT", "HR", "LOG", "ADM", "SAL")
 CATEGORIES = ("MARKETING", "IT_SERVICES", "OFFICE_SUPPLIES", "LOGISTICS", "UTILITIES", "TOOLS")
 
 
+def _inherited_body_defects(
+    source_defects: list[str], source_meta: dict, target_defects: list[str]
+) -> list[str]:
+    """Body defects a duplicate copies along with the invoice it duplicates.
+
+    `duplicate_of` / `near_duplicate_of` copy the source SPEC, so every defect
+    that lives in the body travels with it — but the manifest row was being
+    built from the target slot's own defect list, so the inherited ones went
+    undeclared. Found 2026-07-29 by the M3 exit audit; see
+    `manifest.BODY_DEFECTS`.
+
+    Relational defects (the duplicate markers themselves, budget overrun, new
+    vendor, PDF-only) are deliberately NOT inherited: they describe how the
+    invoice relates to the rest of the corpus, not what is inside it.
+
+    TRANSITIVE, because the chains are real: measured 2026-07-29, `INV-0085` is
+    a near-duplicate of an invoice that is itself an exact duplicate of a
+    `wrong_vat_rate` invoice. Reading only the source's own `defects` list stops
+    at the middle link, because that link records its inheritance in `meta`
+    rather than in `defects` — so the source's inherited set must be read too.
+    """
+    source_all = [*source_defects, *source_meta.get("inherited_defects", [])]
+    return [
+        d for d in manifest.BODY_DEFECTS if d in source_all and d not in target_defects
+    ]
+
+
 def _make_base_spec(index: int, vendor: vendors.Vendor, rng: Random) -> InvoiceSpec:
     inv_num = f"{index + 1:08d}"
     series = "C26TAA" if index % 2 == 0 else "C26TBB"
@@ -208,21 +235,56 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
         target_idx = idx - 10
         orig_spec = specs[target_idx][0]
         dup_spec = defects.duplicate_of(orig_spec)
-        specs[idx] = (dup_spec, specs[idx][1] + ["exact_duplicate"], {"duplicate_of": orig_spec.doc_id})
+        specs[idx] = (
+            dup_spec,
+            specs[idx][1] + ["exact_duplicate"],
+            {
+                "duplicate_of": orig_spec.doc_id,
+                "inherited_defects": _inherited_body_defects(
+                    specs[target_idx][1], specs[target_idx][2], specs[idx][1]
+                ),
+            },
+        )
 
     # near_duplicate (9)
     for idx in _allocate_indices(counts["near_duplicate"]):
         target_idx = idx - 15
         orig_spec = specs[target_idx][0]
         near_spec = defects.near_duplicate_of(orig_spec, rng)
-        specs[idx] = (near_spec, specs[idx][1] + ["near_duplicate"], {})
+        specs[idx] = (
+            near_spec,
+            specs[idx][1] + ["near_duplicate"],
+            {
+                "inherited_defects": _inherited_body_defects(
+                    specs[target_idx][1], specs[target_idx][2], specs[idx][1]
+                )
+            },
+        )
 
     # price_outlier (6)
     for idx in _allocate_indices(counts["price_outlier"]):
         s, d, meta = specs[idx]
         line = s.lines[0]
         new_amt = line.amount * defects.OUTLIER_MULTIPLIER
-        new_line = dataclasses.replace(line, amount=new_amt, unit_price=line.unit_price * defects.OUTLIER_MULTIPLIER)
+        new_line = dataclasses.replace(
+            line,
+            amount=new_amt,
+            unit_price=line.unit_price * defects.OUTLIER_MULTIPLIER,
+            # Scale the LINE's VAT too. The header below is scaled in full
+            # (subtotal / vat_total / total_amount), so leaving TThue at its
+            # pre-outlier value keeps the header consistent while making the
+            # LINE arithmetic wrong — a *price* outlier silently becomes a VAT
+            # error as well. Measured 2026-07-29 (M3 exit audit): 4 invoices,
+            # deviations up to 5,040,000 đồng, e.g. 140,000 stated against
+            # 14,000,000 at 10%. `defects` is a LIST so each one stays
+            # attributable; a defect that drags an undeclared second defect
+            # along makes M6's eval unattributable.
+            vat_amount=(
+                line.vat_amount * defects.OUTLIER_MULTIPLIER
+                if line.vat_amount is not None
+                else None
+            ),
+        )
         sub = s.subtotal * defects.OUTLIER_MULTIPLIER if s.subtotal else None
         vat = s.vat_total * defects.OUTLIER_MULTIPLIER if s.vat_total else None
         outlier_spec = dataclasses.replace(
@@ -284,8 +346,14 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
         xml_filename = f"{inv_id}.xml"
         xml_path = out / xml_filename
 
+        # `defects` records what was deliberately SEEDED — that list carries the
+        # §10.2 ratios and must not grow. `expected_finding_codes` records what a
+        # detector should FIND, which also includes defects inherited from a
+        # duplicated invoice's body. Two different questions; conflating them
+        # inflates the ratio counts (measured 2026-07-29: wrong_vat_rate went
+        # 9 -> 11) while leaving the real problem unfixed.
         expected_findings: list[str] = []
-        for df in defect_list:
+        for df in [*defect_list, *meta.get("inherited_defects", [])]:
             for code in manifest.DEFECT_CODES.get(df, ()):
                 if code not in expected_findings:
                     expected_findings.append(code)

@@ -110,3 +110,81 @@ def test_clean_invoices_produce_no_findings(tmp_path):
         if found:
             noisy.append(f"{record['invoice_id']}: {found}")
     assert not noisy, f"clean invoices produced findings (false positives): {noisy[:5]}"
+
+
+# Codes `domain.validation.validate()` can decide from ONE invoice, with no
+# database. The rest (duplicates, budget, vendor stats) need corpus-wide or DB
+# state and belong to M4's tests, not here.
+LOCALLY_DECIDABLE = frozenset(
+    {
+        "ARITHMETIC_MISMATCH",
+        "WORDS_DIGITS_MISMATCH",
+        "TAX_CODE_CHECKSUM_INVALID",
+        "LINE_VAT_MISMATCH",
+    }
+)
+
+
+def test_no_invoice_carries_an_UNDECLARED_finding(tmp_path):
+    """Every locally-decidable finding the validator raises must be declared in
+    `expected_finding_codes` — the corpus's own labels must describe the corpus.
+
+    THE ANTI-CIRCULARITY PAYOFF, and the guard that was missing. The generator
+    imports neither `xml_schema` nor `domain/` (enforced by
+    test_generator_independence), so agreement between what it SEEDS and what
+    `validate()` FINDS is evidence rather than a tautology. Disagreement in this
+    direction is a mislabelled corpus, and at M6 the eval scores predictions
+    against these labels — an undeclared true positive is counted as a false
+    positive and UNDERSTATES precision.
+
+    Found 2026-07-29 by the M3 exit audit, which measured 6 such invoices:
+      * 4 `price_outlier` rows scaled the line amount 10x but not the line's
+        TThue, turning a price outlier into an undeclared VAT error;
+      * 2 duplicates inherited `wrong_vat_rate` from the invoice they copied
+        while declaring only their duplicate marker.
+    """
+    from invoice_agent.domain import validation  # TEST-ONLY
+
+    out, records = build(tmp_path)
+    undeclared = []
+    for record in records:
+        if record["source_type"] != "xml":
+            continue
+        data = parse_invoice_xml((out / f"{record['invoice_id']}.xml").read_bytes())
+        raised = {f.code for f in validation.validate(data)} & LOCALLY_DECIDABLE
+        declared = set(record["expected_finding_codes"])
+        if raised - declared:
+            undeclared.append(
+                f"{record['invoice_id']} defects={record['defects']} "
+                f"raised={sorted(raised - declared)}"
+            )
+
+    assert not undeclared, "corpus rows carry findings their manifest does not declare:\n" + "\n".join(
+        undeclared
+    )
+
+
+def test_every_declared_local_finding_is_actually_raised(tmp_path):
+    """The other direction: a label with nothing behind it would inflate recall.
+
+    Together with the test above this pins the corpus's labels to its contents
+    in both directions, which is what makes M6's numbers mean anything.
+    """
+    from invoice_agent.domain import validation  # TEST-ONLY
+
+    out, records = build(tmp_path)
+    missing = []
+    for record in records:
+        if record["source_type"] != "xml":
+            continue
+        declared = set(record["expected_finding_codes"]) & LOCALLY_DECIDABLE
+        if not declared:
+            continue
+        data = parse_invoice_xml((out / f"{record['invoice_id']}.xml").read_bytes())
+        raised = {f.code for f in validation.validate(data)}
+        if declared - raised:
+            missing.append(f"{record['invoice_id']} declared={sorted(declared - raised)}")
+
+    assert not missing, "manifest declares findings the validator does not raise:\n" + "\n".join(
+        missing
+    )
