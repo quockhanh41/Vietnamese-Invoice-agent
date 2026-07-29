@@ -50,7 +50,9 @@ The plan implements these; the spec is wrong as written and Task 7 records it.
 | `tests/test_enrichment_routing.py` | **Create.** `route_after_validate` — the heart. |
 | `tests/test_enrichment_graph.py` | **Create.** Compiled-graph runs, the reducer trap, the diagram guard. |
 | `tests/test_run_one.py` | **Create.** The M3 gate sentence. |
+| `scripts/render_graph.py` | **Create** in Task 5. Regenerates the committed diagram. |
 | `docs/notes/2026-07-29-m3c-enrichment-graph.md` | **Create** in Task 7. |
+| `docs/Plan_Project_F_2026-07-25.md` | **Modify** in Task 7. Mark 3.5 done, close the M3 gate, record what M3 still owes. |
 
 ---
 
