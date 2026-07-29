@@ -12,12 +12,14 @@ Hai phần mở rộng đã lên lịch, CHƯA làm ở M0:
 """
 
 import re
+import time
 from collections.abc import Generator
 from typing import Any
 
 import litellm
 
 from invoice_agent.config import Settings, get_settings
+from invoice_agent.llm.cost import LLMCallRecord
 
 # Configure LiteLLM
 litellm.drop_params = True
@@ -34,6 +36,58 @@ class LLMGateway:
         self.gemini_keys = list(s.gemini_api_keys)
         self.openrouter_keys = list(s.openrouter_api_keys)
         self.openai_key = s.openai_api_key
+
+    def _record_attempt(
+        self,
+        calls: list[LLMCallRecord] | None,
+        model: str,
+        *,
+        started: float,
+        attempt: int,
+        messages: list[dict[str, Any]],
+        prompt_tokens: int | None = None,
+        completion_tokens: int | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        """One LLMCallRecord per ATTEMPT — including the ones that failed.
+
+        Design doc §2.9: a 429 still burned the input tokens, and not recording
+        it makes the cost number wrong. The provider sends no usage payload
+        with an error, so input tokens come from litellm.token_counter, which
+        works offline for all six chain models (measured 2026-07-29, spec §2.4)
+        and must be counted PER MODEL — the tokenizers differ, 26 vs 34 tokens
+        for the same Vietnamese sentence.
+        """
+        if calls is None:
+            return
+        if prompt_tokens is None:
+            prompt_tokens = self._count_tokens(model, messages)
+        calls.append(
+            LLMCallRecord(
+                model=model,
+                provider=self._provider(model),
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens or 0,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+                attempt=attempt,
+                succeeded=error is None,
+                error=None if error is None else f"{type(error).__name__}: {error}"[:500],
+            )
+        )
+
+    @staticmethod
+    def _count_tokens(model: str, messages: list[dict[str, Any]]) -> int:
+        """Input tokens for an attempt the provider never reported on.
+
+        Returns 0 rather than raising if litellm has no tokenizer for the
+        model: the same rule as pricing an unmapped model. Telemetry that can
+        kill an invoice run is worse than telemetry that under-reports.
+        """
+        try:
+            return int(litellm.token_counter(model=model, messages=messages))
+        except Exception:
+            return 0
+
 
     @staticmethod
     def _provider(model: str) -> str:
@@ -106,6 +160,7 @@ class LLMGateway:
         max_tokens: int = 2048,
         json_mode: bool = False,
         reasoning_effort: str | None = None,
+        calls: list[LLMCallRecord] | None = None,
     ) -> str:
         """Generate a response.
 
@@ -118,6 +173,14 @@ class LLMGateway:
             json_mode: Request JSON output format
             reasoning_effort: If set, forwarded as a provider-specific reasoning
                 control (e.g. "none" hides Groq Qwen3 <think> blocks).
+            calls: If a list is passed, one LLMCallRecord is appended per
+                ATTEMPT — including failed ones, which design doc §2.9 requires
+                because a 429 still burned input tokens. A LIST, not a dict:
+                one call can make several attempts (two rate-limited keys then
+                a success is three records), and a single out-dict could only
+                hold the last, silently dropping the failures. This is the same
+                out-param idiom as `used_model` in `generate_stream`, and the
+                same shape as `EnrichmentState.llm_calls` in design doc §3.1.
 
         Returns:
             Generated text
@@ -130,6 +193,7 @@ class LLMGateway:
             max_tokens,
             json_mode,
             reasoning_effort,
+            calls,
         )
         return text
 
@@ -142,6 +206,7 @@ class LLMGateway:
         max_tokens: int = 2048,
         json_mode: bool = False,
         reasoning_effort: str | None = None,
+        calls: list[LLMCallRecord] | None = None,
     ) -> tuple[str, str]:
         """Same as `generate()`, but also returns which model in the chain
         actually produced the answer — so a caller can tell which model to
@@ -159,6 +224,7 @@ class LLMGateway:
             max_tokens,
             json_mode,
             reasoning_effort,
+            calls,
         )
 
     def _generate_impl(
@@ -170,6 +236,7 @@ class LLMGateway:
         max_tokens: int,
         json_mode: bool,
         reasoning_effort: str | None,
+        calls: list[LLMCallRecord] | None = None,
     ) -> tuple[str, str]:
         messages = []
         if system_prompt:
@@ -187,6 +254,7 @@ class LLMGateway:
 
         # Try each model in chain; within a model, rotate API keys on rate-limit
         last_error = None
+        attempt_no = 0
         for attempt_model in models_to_try:
             model_kwargs = dict(extra_kwargs)
             if reasoning_effort is not None and self._is_thinking_model(attempt_model):
@@ -198,6 +266,8 @@ class LLMGateway:
                 )
 
             for api_key in self._keys_for(attempt_model):
+                attempt_no += 1
+                started = time.perf_counter()
                 try:
                     response = litellm.completion(
                         model=attempt_model,
@@ -207,17 +277,29 @@ class LLMGateway:
                         api_key=api_key,
                         **model_kwargs,
                     )
+                    usage = getattr(response, "usage", None)
+                    self._record_attempt(
+                        calls, attempt_model,
+                        started=started, attempt=attempt_no, messages=messages,
+                        prompt_tokens=getattr(usage, "prompt_tokens", None),
+                        completion_tokens=getattr(usage, "completion_tokens", None),
+                    )
                     return (
                         self._clean_thinking(response.choices[0].message.content),
                         attempt_model,
                     )
                 except Exception as e:
                     last_error = e
+                    self._record_attempt(
+                        calls, attempt_model,
+                        started=started, attempt=attempt_no, messages=messages, error=e,
+                    )
                     if self._is_rate_limit(e):
                         continue  # rotate to the next key for the same model
                     break  # non-rate-limit failure — try the next model
 
         raise RuntimeError(f"All models failed. Last error: {last_error}")
+
 
     def _clean_thinking(self, text: str | None) -> str:
         """Strip Qwen 3 `<think>...</think>` tags from output.
