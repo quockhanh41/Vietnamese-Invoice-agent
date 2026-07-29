@@ -12,26 +12,6 @@ from invoice_agent.llm.gateway import LLMGateway
 from scripts.run_one import run_one
 from tests.helpers.fake_llm import ok_response
 
-GOOD = json.dumps(
-    {
-        "template_no": "1",
-        "invoice_series": "C26TAA",
-        "invoice_number": "00099123",
-        "issue_date": "2026-07-01",
-        "total_amount": "1194544",
-        "seller_tax_code": "0100000003",
-        "lines": [
-            {
-                "line_no": 1,
-                "item_kind": 1,
-                "description": "Dịch vụ",
-                "amount": "1194544",
-            }
-        ],
-    }
-)
-
-
 @pytest.fixture
 def pdf_corpus(tmp_path):
     """A two-entry corpus holding PDF-only invoices."""
@@ -48,13 +28,32 @@ def pdf_corpus(tmp_path):
     return tmp_path
 
 
-def stub_gateway(monkeypatch) -> LLMGateway:
+def stub_gateway(monkeypatch, invoice_no: str = "00099123") -> LLMGateway:
+
     from invoice_agent.llm import gateway as gw_module
 
+    payload = json.dumps(
+        {
+            "template_no": "1",
+            "invoice_series": "C26TAA",
+            "invoice_number": invoice_no,
+            "issue_date": "2026-07-01",
+            "total_amount": "1194544",
+            "seller_tax_code": "0100000003",
+            "lines": [
+                {
+                    "line_no": 1,
+                    "item_kind": 1,
+                    "description": "Dịch vụ",
+                    "amount": "1194544",
+                }
+            ],
+        }
+    )
     monkeypatch.setattr(
         gw_module.litellm,
         "completion",
-        lambda **kw: ok_response(GOOD, prompt=900, completion=120),
+        lambda **kw: ok_response(payload, prompt=900, completion=120),
     )
     return LLMGateway(
         Settings(
@@ -66,12 +65,13 @@ def stub_gateway(monkeypatch) -> LLMGateway:
     )
 
 
+
 def test_run_one_links_cost_to_the_invoice(runtime_conn, pdf_corpus, monkeypatch):
     """THE M3 GATE SENTENCE: one invoice end to end, cost recorded in
     llm_calls — and reachable FROM the invoice, which is what the column was
     added for."""
     result = run_one(
-        "INV-9001", corpus=pdf_corpus, gateway=stub_gateway(monkeypatch)
+        "INV-9001", corpus=pdf_corpus, gateway=stub_gateway(monkeypatch, invoice_no="00099001")
     )
     invoice_id = result["db_invoice_id"]
     assert invoice_id is not None
@@ -105,8 +105,9 @@ def test_cost_row_exists_before_the_graph_finishes(
 
     monkeypatch.setattr(enrichment, "validate_node", exploding_validate)
     with pytest.raises(RuntimeError):
-        run_one("INV-9002", corpus=pdf_corpus, gateway=stub_gateway(monkeypatch))
+        run_one("INV-9002", corpus=pdf_corpus, gateway=stub_gateway(monkeypatch, invoice_no="00099002"))
     monkeypatch.setattr(enrichment, "validate_node", original)
+
 
     rows = (
         runtime_conn.execute(
