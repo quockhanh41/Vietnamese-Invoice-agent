@@ -41,6 +41,13 @@ dependencies = [
     # forbid_external=True: both payloads raise EntitiesForbidden while a
     # harmless bare <!DOCTYPE> still parses.
     "defusedxml>=0.7.1",
+    # Rasterizing a PDF for the vision branch (M3-B §5.5). Measured 2026-07-29:
+    # pypdfium2 RAISES PdfiumError on a truncated/garbage document rather than
+    # returning a zero-page one, so a broken PDF never reaches a model.
+    "pypdfium2>=5.12.1",
+    # Turns a pypdfium2 bitmap into PNG bytes. Imported directly rather than
+    # relied on transitively.
+    "pillow>=12.0.0",
 ]
 
 [project.optional-dependencies]
@@ -52,6 +59,8 @@ dev = [
     # defusedxml ships no py.typed. With this stub package mypy resolves
     # fromstring() to Element[str]; without it, every call is Any.
     "types-defusedxml>=0.7",
+    # Renders the corpus PDFs. Generator-side only — nothing in src/ imports it.
+    "fpdf2>=2.8.7",
 ]
 
 [tool.hatch.build.targets.wheel]

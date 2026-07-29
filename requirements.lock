@@ -41,7 +41,9 @@ click==8.4.2
     #   litellm
     #   uvicorn
 defusedxml==0.7.1
-    # via vietnamese-invoice-agent (pyproject.toml)
+    # via
+    #   vietnamese-invoice-agent (pyproject.toml)
+    #   fpdf2
 distro==1.9.0
     # via
     #   langsmith
@@ -52,6 +54,10 @@ fastuuid==0.14.0
     # via litellm
 filelock==3.32.0
     # via huggingface-hub
+fonttools==4.63.0
+    # via fpdf2
+fpdf2==2.8.7
+    # via vietnamese-invoice-agent (pyproject.toml)
 frozenlist==1.8.0
     # via
     #   aiohttp
@@ -187,6 +193,10 @@ packaging==25.0
     #   pytest
 pathspec==1.1.1
     # via mypy
+pillow==12.3.0
+    # via
+    #   vietnamese-invoice-agent (pyproject.toml)
+    #   fpdf2
 pluggy==1.6.0
     # via pytest
 propcache==0.5.2
@@ -224,6 +234,8 @@ pydantic-settings==2.14.2
     # via vietnamese-invoice-agent (pyproject.toml)
 pygments==2.20.0
     # via pytest
+pypdfium2==5.12.1
+    # via vietnamese-invoice-agent (pyproject.toml)
 pytest==9.1.1
     # via
     #   vietnamese-invoice-agent (pyproject.toml)
