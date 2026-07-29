@@ -1,0 +1,20 @@
+flowchart LR
+    ACC["Kế toán<br/>(người duyệt)"]
+    XML["Hóa đơn XML<br/>QĐ-1450"]
+    PDF["Hóa đơn PDF"]
+
+    subgraph SYS["Vietnamese Invoice & Expense Agent"]
+        direction TB
+        GRAPHS["LangGraph runtime<br/>enrichment / batch / approval"]
+        PG[("Postgres 17 + pgvector<br/>schema app + langgraph")]
+        GRAPHS <--> PG
+    end
+
+    LLM["LiteLLM gateway<br/>Groq · Gemini · OpenRouter · OpenAI"]
+    LF["Langfuse<br/>(env-gated)"]
+
+    XML --> SYS
+    PDF --> SYS
+    SYS <-->|"chỉ node vision<br/>(hiện tại)"| LLM
+    SYS -.->|trace| LF
+    SYS <-->|"interrupt / resume"| ACC

@@ -1,0 +1,7 @@
+flowchart LR
+    N["node gọi generate(calls=[])"] --> GW["gateway"]
+    GW -->|"mỗi ATTEMPT<br/>kể cả THẤT BẠI"| REC["LLMCallRecord"]
+    REC --> TEL["telemetry.record()"]
+    TEL -->|"actual_cost_usd"| ROW[("app.llm_calls")]
+    TEL -->|"shadow_cost_usd"| ROW
+    ROW -.->|"backfill qua thread_id"| BF["invoice_id"]

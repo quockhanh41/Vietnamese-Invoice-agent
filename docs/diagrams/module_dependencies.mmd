@@ -1,0 +1,20 @@
+flowchart TD
+    graphs["graphs/enrichment.py"]
+    telemetry["llm/telemetry.py"]
+    domain["domain/<br/>thuần, zero I/O"]
+    llmpkg["llm/gateway · cache · cost · structured"]
+    db["db/ + repositories/"]
+    extraction["extraction/<br/>models · xml_schema · xml_parser · sanitize"]
+    config["config.py"]
+
+    graphs --> domain
+    graphs --> extraction
+    graphs --> llmpkg
+    graphs --> telemetry
+    telemetry --> llmpkg
+    telemetry --> db
+    domain --> extraction
+    llmpkg --> extraction
+    db --> extraction
+    llmpkg --> config
+    db --> config

@@ -1,0 +1,23 @@
+flowchart TB
+    subgraph PROC["Tiến trình Python (một process, hiện tại là CLI)"]
+        RUNONE["scripts/run_one.py<br/>✅ M3 demo runner"]
+        API["FastAPI 🔲 M5.6"]
+        UI["Streamlit 🔲 M5.7"]
+        MCP["FastMCP 🔲 M7.1"]
+        GRAPH["invoice_agent.graphs"]
+        RUNONE --> GRAPH
+        API -.-> GRAPH
+        UI -.-> API
+        MCP -.-> GRAPH
+    end
+
+    subgraph DB["Postgres 17 (pgvector/pgvector:pg17, cổng 5433)"]
+        APP[("schema app<br/>16 bảng — system of record<br/>Alembic sở hữu")]
+        LG[("schema langgraph<br/>4 bảng checkpoint<br/>PostgresSaver.setup() sở hữu")]
+        PUB[("schema public<br/>extension vector")]
+    end
+
+    GRAPH -->|"role invoice_app<br/>search_path=app,public"| APP
+    GRAPH -->|"search_path=langgraph,public"| LG
+    APP -.-> PUB
+    LG -.-> PUB

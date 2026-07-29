@@ -1,0 +1,7 @@
+flowchart TD
+    A["docker compose up"] --> B["init_db.sql chạy MỘT LẦN<br/>lúc khởi tạo volume"]
+    B --> C["CREATE SCHEMA app, langgraph<br/>CREATE EXTENSION vector SCHEMA public"]
+    C --> D["healthcheck: pg_isready"]
+    D --> E["alembic upgrade head → 12 revision"]
+    E --> F["seed_reference: 5 phòng ban, danh mục TT133, ngân sách"]
+    F --> G["generate_invoices → corpus/"]

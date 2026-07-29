@@ -1,0 +1,28 @@
+sequenceDiagram
+    autonumber
+    participant BG as batch_graph
+    participant AG as approval_graph
+    participant CP as checkpoint (schema langgraph)
+    participant DB as app.approvals
+    actor ACC as Kế toán
+    participant OS as Hệ điều hành
+
+    BG->>DB: INSERT approvals (decision NULL)
+    BG->>AG: ainvoke(thread=appr:{invoice_id})
+    AG->>AG: load_snapshot — đọc hóa đơn + cờ
+    AG->>AG: suggest — episodic memory (KHÔNG gọi LLM)
+    AG->>AG: approval_gate → interrupt({invoice, flags, suggestions})
+    AG->>CP: TOÀN BỘ state được checkpoint
+    AG-->>BG: __interrupt__ ⏸
+    BG-->>BG: batch kết thúc
+
+    Note over OS: kill -9 / deploy / mất điện
+    OS--xAG: process CHẾT
+
+    Note over ACC: … sáng hôm sau …
+    ACC->>AG: Command(resume={decision:"approved", reason:"..."})
+    AG->>CP: khôi phục state
+    Note over AG: approval_gate CHẠY LẠI TỪ ĐẦU<br/>(ngữ nghĩa LangGraph, không phải bug)
+    AG->>DB: apply_decision — UPDATE approvals
+    AG->>DB: post_entry / record_rejection
+    AG->>DB: learn

@@ -1,0 +1,35 @@
+sequenceDiagram
+    autonumber
+    actor U as Người dùng
+    participant BG as batch_graph 🔲M4
+    participant EG as enrichment_graph ✅
+    participant DB as Postgres (app)
+    participant AG as approval_graph 🔲M5
+    actor ACC as Kế toán
+
+    U->>BG: upload N hóa đơn
+    BG->>BG: ingest + cost_gate 🔲M4
+    BG->>EG: Send × N (max_concurrency=4–6)
+    loop mỗi hóa đơn
+        EG->>EG: route → parse/vision → validate ✅
+        EG->>EG: classify → audit → signals 🔲M4
+        EG->>DB: llm_calls (ngay lúc đốt token) ✅
+    end
+    EG-->>BG: JOIN ngầm — mọi Send xong
+    BG->>DB: reconcile_budget SERIAL 🔲M4
+    BG->>BG: route_outcomes 🔲M4
+
+    alt sạch (~26/30)
+        BG->>DB: auto_post → journal_entries 🔲M5
+    else có cờ (~4/30)
+        BG->>DB: INSERT approvals (decision NULL) 🔲M5
+        BG->>AG: ainvoke(thread=appr:{id})
+        AG-->>BG: __interrupt__ ⏸
+        Note over BG: batch KẾT THÚC ở đây<br/>KHÔNG chờ người duyệt
+    end
+
+    Note over ACC: … vài giờ / sang hôm sau …
+    ACC->>AG: Command(resume={decision, reason})
+    AG->>DB: đọc lại approvals — guard 🔲M5.3
+    AG->>DB: journal_entries / record_rejection 🔲M5
+    AG->>DB: learn → episodic + vendors 🔲M5.4

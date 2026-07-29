@@ -1,0 +1,14 @@
+flowchart TD
+    S([START]) --> RS["route_source ✅<br/>✗ LLM"]
+    RS -->|source_type == xml| PX["parse_xml ✅<br/>✗ LLM — HÀM THUẦN"]
+    RS -->|source_type == pdf| VE["vision_extract ✅<br/>✓ LLM — node DUY NHẤT đốt token"]
+    PX --> V["validate ✅<br/>✗ LLM"]
+    VE --> V
+    V --> R{"route_after_validate ✅"}
+    R -->|lỗi EXTRACTION| VE
+    R -->|hết đường| MQ["manual_queue ✅<br/>✗ LLM"]
+    R -->|sạch hoặc lỗi DATA| C["classify 🔲M4.1<br/>✓ LLM rẻ"]
+    C --> A["audit 🔲M4.1<br/>✓ LLM KHÁC HỌ"]
+    A --> SG["signals 🔲M4.5<br/>✗ LLM"]
+    SG --> E([END])
+    MQ --> E

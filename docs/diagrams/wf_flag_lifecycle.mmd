@@ -1,0 +1,6 @@
+flowchart LR
+    R["luật deterministic<br/>domain/*.py ✅"] -->|"findings.make(CODE, **detail)"| F["Finding (frozen)<br/>code · severity · raised_by · detail"]
+    F -->|"🔲M4"| DB[("invoice_flags<br/>resolved_at = NULL")]
+    DB -->|"đọc"| GATE["approval_gate<br/>flags_snapshot 🔲M5"]
+    DB -->|"chặn"| TRG["trg_forbid_auto_clean ✅"]
+    GATE -->|"người duyệt giải quyết"| RES["resolve_flag()<br/>resolved_at = now() ✅"]

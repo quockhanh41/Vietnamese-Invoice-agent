@@ -1,0 +1,9 @@
+flowchart TB
+    G["generate(prompt, images?, calls?)"] --> RC["_resolve_chain"]
+    RC --> LM{"for model in chain"}
+    LM --> LK{"for key in keys_for(model)"}
+    LK --> C["_complete — SEAM duy nhất<br/>ra mạng, hoặc không"]
+    C -->|"429 / quota"| LK
+    C -->|"lỗi khác"| LM
+    C -->|"OK"| R["(text, model)"]
+    C -.->|"mỗi ATTEMPT"| REC["LLMCallRecord append vào calls"]

@@ -1,0 +1,12 @@
+flowchart TD
+    IN["yêu cầu post"] --> L1{"LỚP CODE 🔲M5.3<br/>tools/guards.py"}
+    L1 -->|"state['decision'] != 'approved'"| D1["DENIED<br/>+ audit_log"]
+    L1 -->|"đọc lại approvals từ Postgres:<br/>row không tồn tại / decision khác"| D2["DENIED<br/>+ audit_log"]
+    L1 -->|qua| L2{"LỚP DATABASE ✅"}
+    L2 -->|"total_debit != total_credit"| D3["ck_journal_balanced"]
+    L2 -->|"human_approved nhưng approval_id NULL"| D4["ck_journal_human_approved_needs_approval"]
+    L2 -->|"invoice_id đã có bút toán"| D5["UNIQUE"]
+    L2 -->|"auto_clean nhưng còn cờ mở"| D6["trg_forbid_auto_clean_with_open_flags"]
+    L2 -->|"debit < 0 hoặc credit < 0"| D7["ck_journal_line_non_negative"]
+    L2 -->|qua| OK["journal_entries + lines"]
+    OK -.->|"LỚP TEST 🔲M5"| T["test_never_post_without_approval.py"]

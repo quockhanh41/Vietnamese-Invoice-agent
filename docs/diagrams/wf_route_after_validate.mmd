@@ -1,0 +1,14 @@
+flowchart TD
+    V["validate xong"] --> Q1{"extracted is None?"}
+
+    Q1 -->|Có — KHÔNG ĐỌC ĐƯỢC GÌ| Q2{"strategy?"}
+    Q2 -->|xml, có pdf_path| VE["vision_extract<br/>LEO THANG chiến lược"]
+    Q2 -->|vision, attempts < 3| VE2["vision_extract<br/>RETRY kèm lỗi cụ thể"]
+    Q2 -->|hết đường| MQ["manual_queue"]
+
+    Q1 -->|Không — đọc được| Q3{"có finding?"}
+    Q3 -->|Không| END1([END — sạch])
+    Q3 -->|Có| Q4{"strategy?"}
+    Q4 -->|xml| END2([END — mang cờ đi tiếp])
+    Q4 -->|vision, attempts < 3| VE3["vision_extract<br/>có thể là đọc nhầm chữ số"]
+    Q4 -->|vision, hết lượt| MQ

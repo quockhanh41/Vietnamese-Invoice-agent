@@ -1,0 +1,16 @@
+stateDiagram-v2
+    [*] --> received: server_default ✅
+    received --> extracted: insert_with_lines ✅
+    received --> manual_queue: không đọc được 🔲M4
+    extracted --> validated: 🔲M4
+    validated --> classified: 🔲M4
+    classified --> flagged: có cờ mở 🔲M4
+    classified --> posted: auto_post (sạch) 🔲M5
+    flagged --> pending_approval: mở approval thread 🔲M5
+    pending_approval --> approved: người duyệt OK 🔲M5
+    pending_approval --> rejected: người duyệt từ chối 🔲M5
+    approved --> posted: post_entry qua guard 🔲M5
+    manual_queue --> [*]
+    rejected --> [*]
+    posted --> [*]
+    received --> failed: exception 🔲M4

@@ -1,0 +1,14 @@
+flowchart LR
+    P["push / PR"] --> J1["job: test"]
+    P --> J2["job: secrets"]
+
+    subgraph J1G["test"]
+        S1["service: pgvector/pgvector:pg17 THẬT"] --> S2["psql -f init_db.sql<br/>services: KHÔNG chạy initdb.d"]
+        S2 --> S3["uv pip sync requirements.lock"]
+        S3 --> S4["alembic upgrade head"]
+        S4 --> S5["ruff → mypy → pytest"]
+    end
+
+    subgraph J2G["secrets"]
+        T1["gitleaks detect --source=/repo<br/>TOÀN BỘ history"]
+    end

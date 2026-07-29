@@ -1,0 +1,18 @@
+stateDiagram-v2
+    [*] --> live: mặc định
+    live --> record: LLM_MODE=record
+    record --> replay: fixture đã ghi vào tests/fixtures/llm_cache/
+    replay --> [*]: CI + demo
+
+    note right of live
+        gọi mạng thật
+        cần API key
+    end note
+    note right of record
+        gọi mạng thật
+        + ghi fixture (kể cả THẤT BẠI)
+    end note
+    note right of replay
+        KHÔNG chạm mạng
+        miss → raise, không fallthrough
+    end note

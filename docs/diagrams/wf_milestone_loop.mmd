@@ -1,0 +1,12 @@
+flowchart TD
+    A["đọc plan §7 Trạng thái"] --> B["chọn việc trong milestone ĐANG MỞ"]
+    B --> C["spec → docs/superpowers/specs/"]
+    C --> D["plan → docs/superpowers/plans/"]
+    D --> E["implement"]
+    E --> F["verify BẰNG LỆNH CHẠY ĐƯỢC<br/>make check"]
+    F --> G{"review độc lập"}
+    G -->|"tìm ra defect"| E
+    G -->|"sạch"| H["note → docs/notes/"]
+    H --> I{"gate đạt?"}
+    I -->|"không"| B
+    I -->|"đạt"| J["cập nhật plan §7 → mở milestone sau"]

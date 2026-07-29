@@ -1,0 +1,9 @@
+flowchart LR
+    B["bytes"] --> RS{source_type}
+    RS -->|xml| XP["xml_parser.parse_invoice_xml<br/>HÀM THUẦN"]
+    RS -->|pdf| RA["vision.rasterize<br/>pypdfium2, 150 DPI"]
+    RA --> CS["structured.call_structured<br/>tối đa 3 lần"]
+    CS --> GW["gateway.generate<br/>images=[PNG…]"]
+    GW --> CS
+    XP --> ID["InvoiceData"]
+    CS --> ID
