@@ -439,13 +439,13 @@ Artefacts still owed: the terminal recording (deferred to M8 by the M1.5 spec �
 
 | # | Việc | Tham chiếu |
 |---|---|---|
-| 3.1 | `tools/registry.py` — `ToolSpec(name, args_model, return_model, side_effect, mcp_exposed)`. **Một nguồn** cho cả LangGraph executor lẫn MCP server | §8.1 |
+| 3.1 | `tools/registry.py` — **Moved to M7** (spec §3.3: MCP tool registry is M7's responsibility; extraction nodes in M3-B call domain/gateway directly) | §8.1 |
 | 3.2 | `tools/executor.py` — port `execute_tool_with_retry` (mini-project `agent.py:90`), thêm retry khi vi phạm Pydantic schema. **Không port hàm calculator dùng `eval()`** | §8.1 |
 | 3.3 | `extraction/sanitize.py` — bọc text hóa đơn thành block `<invoice_data>` đã escape, **không bao giờ nối vào system prompt** | §9.2 |
 | 3.4 | `vision_extract.py` — PDF → ảnh → structured output, inject `current_errors` vào prompt khi retry | §3.2 |
 | 3.5 | `graphs/enrichment.py` — **`route_after_validate` phân biệt lỗi EXTRACTION vs lỗi DATA**. Đây là nội dung thật của self-correction, không phải cái vòng lặp | §3.3 |
-| 3.6 | **Cost capture**: thêm `usage` out-param vào `_generate_impl` (theo đúng idiom `used_model` ở `gateway.py:256`) → `llm_calls`. **Ghi cả lần gọi thất bại** + `shadow_cost_usd` | §2.9 |
-| 3.7 | **`LLM_MODE=replay`** — fixture cache khóa theo `hash(model, messages)` | §11.4 |
+| 3.6 | ✅ **Done 2026-07-29 (M3-A)**. **Cost capture**: `calls` out-param trên gateway (`LLMCallRecord` list) → `llm/telemetry.py` → `llm_calls`. Ghi cả lần gọi thất bại + `shadow_cost_usd` | §2.9 |
+| 3.7 | ✅ **Done 2026-07-29 (M3-A)**. **`LLM_MODE=replay`** — `llm/cache.py` fixture cache khóa theo `sha256(model, messages, params)` với 64-bit key verification trên `load()` | §11.4 |
 
 **Gate M3**: một hóa đơn chạy end-to-end có cost ghi vào `llm_calls`; test vòng lặp **3 iteration**
 khẳng định `len(error_history) == 3` (bắt bug reducer `operator.add` trả cả list → tăng trưởng bậc
@@ -604,7 +604,7 @@ ngay; **mọi con số trong README trace được về `docs/eval-report.md` tr
 | M0 — Nền sạch | ✅ | 2026-07-27 | Gate 5/5. `make dev` + `make check` green; CI green on real Postgres (`30233872335`, 62 passed). Alembic scaffolding was pulled in here because the gate demanded "run migrations" while 0.1–0.7 contained no item that built it. A CI hole survived until 2026-07-27: the workflow created the schemas but never ran `alembic upgrade head`, invisible until a test needed a table |
 | M1 — XML thật + HITL spike | ✅ | 2026-07-28 | **Gate 4/4, re-verified independently 2026-07-28** (not merely re-read): `make check` 123 passed, HITL `kill -9` **10/10 locally** at `HITL_RUNS=10`, real `alembic revision --autogenerate` against the 4 live checkpoint tables emits an **empty** migration. All 6 items done: ✅ 1.1 (8 files / 8 vendors / 3 `PBan`) · ✅ 1.2 · ✅ 1.3 `xml_schema.py` · ✅ 1.4 `xml_parser.py` (8/8 parse) · ✅ 1.5 HITL durability · ✅ 1.6 Alembic isolation + ADR 0002. **8/8 guards re-confirmed red under mutation** — see the review note below. Owed, non-blocking: ADR `0001-three-graphs-not-one.md`; terminal recording (deferred to M8); NĐ 70/2025 field check |
 | M2 — Corpus + schema + domain | ✅ | 2026-07-28 | **Gate 5/5, re-verified independently 2026-07-28.** Split into three specs: **M2-A** (2.4/2.5/2.7 schema+seed+repositories, 15 bảng / 9 revision / 11 mutation guard đều đỏ) · **M2-B** (2.6 `domain/`, 107 test, 8/8 hóa đơn thật ra ZERO finding, 10 guard đỏ) · **M2-C** (2.1–2.3 generator, 67 test, 9 guard đỏ). Corpus: 300 mục = 285 XML **parse hết** + 15 PDF-only khai báo rõ là không parse được (M3.4 render). Generator KHÔNG import `xml_schema`/`xml_parser`/`domain` — có test chặn, nên điểm round-trip là bằng chứng chứ không phải lặp vòng. **Ba lần review, ba lần tìm ra lỗi mà bản implement đã báo là đạt**: guard M1.6 bị viết lại thành mù trên CI + artefact bịa `ck_vendors_tax_code_format` + 32 diff ma autogenerate (M2-A); một mutation guard xanh khi đã phá luật (M2-B); `make check` ĐỎ lúc đóng milestone + `scripts/` chưa từng được lint + `BUDGETS` import chết (M2-C). Đã sửa hết và đo lại. **Nợ, không chặn M3**: ADR `0001-three-graphs-not-one.md`; terminal recording (M8); NĐ 70/2025; KCT/KKKNT; PDF render (M3.4); injection variant 7–26 (M6.1) |
-| M3 — Extraction + tools + cost + replay | 🟡 **đang mở** | | |
+| M3 — Extraction + tools + cost + replay | 🟡 **đang mở** | 2026-07-29 | **M3-A done 2026-07-29.** `cost.py`, `cache.py`, `telemetry.py`, `gateway.py` out-param + replay seam, migration 10. `LLM_MODE=replay` with zero API keys passes all 376 tests. 12/12 mutation guards verified red. Note `docs/notes/2026-07-29-m3a-llm-plumbing.md`. Item 3.1 moved to M7 (spec §3.3). |
 | M4 — Multi-agent + memory + serialization | 🔲 | | |
 | M5 — HITL production + API + UI | 🔲 | | |
 | M6 — Security + observability + eval | 🔲 | | |
