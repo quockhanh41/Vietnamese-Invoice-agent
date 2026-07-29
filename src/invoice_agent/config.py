@@ -64,8 +64,15 @@ class Settings(BaseSettings):
     # keep using `database_url` because both are administrative.
     runtime_database_url: str = "postgresql://invoice_app:invoice_app@localhost:5433/invoice_agent"
 
-    # --- LLM ----------------------------------------------------------------
     llm_model_chain: _CsvList = Field(default_factory=lambda: list(DEFAULT_MODEL_CHAIN))
+    # Vision needs its own chain. Measured 2026-07-29 (spec M3-B §2.1):
+    # litellm.supports_vision is False for BOTH groq models and BOTH openrouter
+    # models, and groq is first in DEFAULT_MODEL_CHAIN — so a vision call on the
+    # text chain fails twice before it reaches a model that can see, burning two
+    # llm_calls rows per invoice on a failure knowable in advance.
+    vision_model_chain: _CsvList = Field(
+        default_factory=lambda: ["gemini/gemini-3.5-flash", "openai/gpt-4o-mini"]
+    )
 
     # Mỗi key thuộc một account riêng, nên rotation nhân thật sự capacity
     # (đã xác nhận ở Project A 2026-07-19, không phải giả định).
@@ -108,6 +115,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "llm_model_chain",
+        "vision_model_chain",
         "groq_api_keys",
         "gemini_api_keys",
         "openrouter_api_keys",
