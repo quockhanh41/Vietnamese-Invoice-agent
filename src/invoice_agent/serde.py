@@ -28,8 +28,15 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 ALLOWED_MSGPACK_MODULES: list[tuple[str, str]] = [
     ("invoice_agent.domain.findings", "Finding"),
     ("invoice_agent.extraction.models", "InvoiceData"),
-    # Nested inside InvoiceData, and msgpack registers types individually —
-    # allowlisting the container is not enough.
+    # Belt and braces, NOT a requirement. The M3-C plan claimed "msgpack
+    # registers types individually — allowlisting the container is not enough".
+    # That was wrong, and measured wrong on 2026-07-29 during the exit review:
+    # with InvoiceLine removed from this list, a populated EnrichmentState
+    # still round-trips and `extracted.lines[0]` still arrives as InvoiceLine,
+    # because pydantic reconstructs nested models from the PARENT's payload —
+    # InvoiceLine never gets its own msgpack ext type. It is kept because it
+    # costs nothing and would matter if a line ever became a top-level state
+    # value, but no test can catch its removal, so none pretends to.
     ("invoice_agent.extraction.models", "InvoiceLine"),
     ("invoice_agent.llm.cost", "LLMCallRecord"),
 ]

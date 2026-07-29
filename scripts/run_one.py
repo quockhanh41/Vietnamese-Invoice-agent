@@ -11,6 +11,7 @@ import argparse
 import pathlib
 from typing import Any
 
+from scripts.generator import manifest
 from sqlalchemy import update
 
 from invoice_agent.db import models
@@ -18,7 +19,6 @@ from invoice_agent.db.engine import get_engine
 from invoice_agent.db.repositories import invoices as invoice_repo
 from invoice_agent.graphs.enrichment import build_enrichment_graph
 from invoice_agent.llm.gateway import LLMGateway
-from scripts.generator import manifest
 
 
 def run_one(

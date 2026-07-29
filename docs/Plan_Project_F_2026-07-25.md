@@ -452,13 +452,20 @@ Artefacts still owed: the terminal recording (deferred to M8 by the M1.5 spec �
 | 3.6 | ✅ **Done 2026-07-29 (M3-A)**. **Cost capture**: `calls` out-param trên gateway (`LLMCallRecord` list) → `llm/telemetry.py` → `llm_calls`. Ghi cả lần gọi thất bại + `shadow_cost_usd` | §2.9 |
 | 3.7 | ✅ **Done 2026-07-29 (M3-A)**. **`LLM_MODE=replay`** — `llm/cache.py` fixture cache khóa theo `sha256(model, messages, params)` với 64-bit key verification trên `load()` | §11.4 |
 
-**Gate M3 status (2026-07-29)** — 4/4, Milestone 3 fully closed:
+**Gate M3 status (2026-07-29)** — 4/4, Milestone 3 closed **after an independent exit review the
+same day**. The review found the closing commit `097388b` was **RED** — `make check` failed with 4
+ruff errors and the replay gate reported **2 failed, 453 passed**, with both fixes sitting
+uncommitted in the working tree. One of those failures,
+`test_run_one_links_cost_to_the_invoice`, passed **exactly once per database**: a fixed
+`invoice_number` plus `ON CONFLICT DO NOTHING … RETURNING` returns `None` on the second run. All
+fixed and re-measured at **455 passed** both ways; the evidence below is the post-review state.
+Details in the note's §7.
 - **Cost linking**: `scripts/run_one.py` runs one invoice end to end, records cost rows inline during `vision_extract` via `_persist_cost` (`thread_id="enrich:{invoice_id}"`), and backfills `llm_calls.invoice_id` upon database insertion (`tests/test_run_one.py` green).
 - **Reducer trap guard**: `test_error_history_grows_LINEARLY_not_quadratically` in `tests/test_enrichment_graph.py` verifies 3 vision retries leave exactly 3 `error_history` entries (catching `operator.add` list returning trap).
 - **Escalation & fallback**: Unparseable XML escalates to `vision_extract` when `pdf_path` twin exists (`TestExtractionFailed`), vision findings retry up to `MAX_VISION_ATTEMPTS = 3`, and broken PDF reaches `manual_queue` without invoking model (`test_a_truncated_pdf_reaches_manual_queue_without_spending_a_token`).
 - **Replay hermeticity**: Entire test suite passes under `LLM_MODE=replay` with no API keys (`455 passed in 13.85s`).
 - **Artefacts**: Committed Mermaid graph `docs/diagrams/enrichment_graph.mmd` + automated drift test `test_the_committed_diagram_matches_the_graph`.
-- **M3 Owed Debts**: Vision fixture & baseline accuracy benchmark (spec §8.1), git history purge for binary test samples, ADR `0001-three-graphs-not-one.md`.
+- **M3 Owed Debts**: vision fixture & the first real accuracy number — the vision branch currently has **no accuracy measurement of any kind**, synthetic or real, and no vision-capable API key is configured (spec M3-B §8.1, M3-C §8.1); **git history purge of the six PII-carrying vendor PDFs** (real names, tax codes, QR lookup codes — a *privacy* debt, not a file-size one) alongside the M1 MST leak; ADR `0001-three-graphs-not-one.md`. Also open for M4: `thread_id` is `enrich:{invoice_id}` and therefore stable across re-runs, so batch needs a per-run component (M3-C §8.5).
 
 
 ---

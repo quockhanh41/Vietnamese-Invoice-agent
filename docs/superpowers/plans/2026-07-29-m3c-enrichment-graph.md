@@ -202,8 +202,14 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 ALLOWED_MSGPACK_MODULES: list[tuple[str, str]] = [
     ("invoice_agent.domain.findings", "Finding"),
     ("invoice_agent.extraction.models", "InvoiceData"),
-    # Nested inside InvoiceData, and msgpack registers types individually —
-    # allowlisting the container is not enough.
+    # Belt and braces, NOT a requirement. An earlier draft of this plan claimed
+    # "msgpack registers types individually — allowlisting the container is not
+    # enough". That was WRONG, measured 2026-07-29: with this line removed a
+    # populated EnrichmentState still round-trips and `extracted.lines[0]` still
+    # arrives as InvoiceLine, because pydantic reconstructs nested models from
+    # the PARENT's payload. Keep it (it costs nothing and would matter if a line
+    # became a top-level state value), but no test can catch its removal — see
+    # the correction to mutation 7 below.
     ("invoice_agent.extraction.models", "InvoiceLine"),
     ("invoice_agent.llm.cost", "LLMCallRecord"),
 ]
@@ -1334,7 +1340,7 @@ Apply, run the named test, record the result, then `git checkout --` the file. *
 | 4 | Drop the `extraction_attempts < MAX_VISION_ATTEMPTS` bound | `pytest tests/test_enrichment_graph.py::test_error_history_grows_LINEARLY_not_quadratically` |
 | 5 | `manual_queue_node` also writes `invoices.status` | `pytest tests/test_enrichment_nodes.py::TestManualQueue::test_sets_status_and_writes_nothing_else` |
 | 6 | `build_checkpointer` stops assigning `build_serde()` | `pytest tests/test_serde.py::test_checkpointer_carries_the_allowlist` |
-| 7 | Remove `("invoice_agent.extraction.models", "InvoiceLine")` from the allowlist | `pytest tests/test_serde.py::test_a_populated_enrichment_state_round_trips_with_every_type_intact` |
+| 7 | ~~Remove `InvoiceLine` from the allowlist~~ → **remove `("invoice_agent.domain.findings", "Finding")` instead**. Corrected 2026-07-29: removing `InvoiceLine` has **no behavioural effect** (pydantic rebuilds nested models from the parent payload), so that mutation is un-catchable and any test that appears to catch it is asserting the list contains itself. `Finding` is a top-level state value and its removal really does degrade the round-trip | `pytest tests/test_serde.py::test_a_populated_enrichment_state_round_trips_with_every_type_intact` |
 | 8 | `_persist_cost` becomes a no-op and `run_one` records from state instead | `pytest tests/test_run_one.py::test_cost_row_exists_before_the_graph_finishes` |
 | 9 | `run_one` skips the backfill `UPDATE` | `pytest tests/test_run_one.py::test_run_one_links_cost_to_the_invoice` |
 | 10 | Edit one character in `docs/diagrams/enrichment_graph.mmd` | `pytest tests/test_enrichment_graph.py::test_the_committed_diagram_matches_the_graph` |

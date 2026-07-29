@@ -5,6 +5,9 @@ import pathlib
 from decimal import Decimal
 
 import pytest
+from scripts.generator import pdf as pdf_gen
+from tests.helpers.fake_llm import ok_response
+from tests.helpers.invoice_specs import make_spec
 
 from invoice_agent.config import Settings
 from invoice_agent.graphs.enrichment import (
@@ -12,9 +15,6 @@ from invoice_agent.graphs.enrichment import (
     build_enrichment_graph,
 )
 from invoice_agent.llm.gateway import LLMGateway
-from scripts.generator import pdf as pdf_gen
-from tests.helpers.fake_llm import ok_response
-from tests.helpers.invoice_specs import make_spec
 
 REAL_XML = pathlib.Path("tests/fixtures/real_samples/viettelpost_gtgt_2.1.0.xml")
 
