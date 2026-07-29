@@ -100,7 +100,9 @@ def test_a_populated_enrichment_state_round_trips_with_every_type_intact():
     unregistered type and this fails here, not in a checkpoint."""
     from invoice_agent.graphs.enrichment import EnrichmentState
 
+    assert ("invoice_agent.extraction.models", "InvoiceLine") in ALLOWED_MSGPACK_MODULES
     objects = sample_objects()
+
     state: EnrichmentState = {
         "invoice_id": "INV-0001",
         "source_path": "corpus/INV-0001.xml",
