@@ -90,3 +90,34 @@ def test_checkpointer_carries_the_allowlist(requires_postgres):
         obj = findings.make(findings.NEW_VENDOR)
         back = saver.serde.loads_typed(saver.serde.dumps_typed(obj))
         assert type(back) is findings.Finding
+
+
+def test_a_populated_enrichment_state_round_trips_with_every_type_intact():
+    """The guard that actually matters: not "the list has four entries" but
+    "every value in a real state survives". Add a state field of an
+    unregistered type and this fails here, not in a checkpoint."""
+    from invoice_agent.graphs.enrichment import EnrichmentState
+
+    objects = sample_objects()
+    state: EnrichmentState = {
+        "invoice_id": "INV-0001",
+        "source_path": "corpus/INV-0001.xml",
+        "pdf_path": None,
+        "source_type": "xml",
+        "strategy": "xml",
+        "extracted": objects["InvoiceData"],
+        "extraction_attempts": 1,
+        "current_errors": ["ARITHMETIC_MISMATCH: total_amount=1"],
+        "error_history": ["ARITHMETIC_MISMATCH: total_amount=1"],
+        "findings": [objects["Finding"]],
+        "llm_calls": [objects["LLMCallRecord"]],
+        "status": "received",
+    }
+    serde = build_serde()
+    back = serde.loads_typed(serde.dumps_typed(state))
+    assert type(back["extracted"]) is type(objects["InvoiceData"])
+    assert type(back["extracted"].lines[0]) is type(objects["InvoiceData"].lines[0])
+    assert type(back["findings"][0]) is type(objects["Finding"])
+    assert type(back["llm_calls"][0]) is type(objects["LLMCallRecord"])
+    assert back == state
+
