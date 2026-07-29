@@ -49,15 +49,28 @@
 
 ## 1. Vị trí hiện tại (tóm tắt 1 đoạn)
 
-**Updated 2026-07-28 — M0 closed (gate 5/5). M1 closed (gate 4/4). M2 CLOSED (gate 5/5), split
-into three specs and each reviewed after implementation: M2-A schema/seed/repositories, M2-B
-`domain/`, M2-C corpus generator. `make check` green with **334 tests**; corpus is 300 manifest
-entries = 285 XML (all parse) + 15 PDF-only declared unparseable-by-design. Gate evidence in
-`docs/notes/2026-07-28-m2a-database-defends-itself.md`, `…-m2b-domain-core.md`,
-`…-m2c-corpus-generator.md`. **Every milestone review found defects the implementation had
-reported as passing** — a gutted M1.6 guard and a fabricated constraint (M2-A), a mutation guard
-that guarded nothing (M2-B), a red `make check` and an unlinted `scripts/` (M2-C). All fixed and
-re-measured. M3 is open.**
+**Updated 2026-07-29 — M0 (5/5), M1 (4/4), M2 (5/5) and M3 (4/4) all closed.** M3 was split into
+three specs, each reviewed after implementation: **M3-A** LLM plumbing (cost capture, `LLM_MODE=replay`),
+**M3-B** vision surface (sanitize, structured retry, `vision.py`, corpus PDFs), **M3-C** the enrichment
+graph. `make check` green with **455 tests**, and green again under `LLM_MODE=replay` with **no API
+keys** — the condition that lets CI and the live demo run without touching a provider. The corpus is
+300 manifest entries: 285 XML (all parse) + 15 PDFs now rendered, plus 3 XML↔PDF twins for the
+escalation path. Gate evidence in `docs/notes/2026-07-29-m3a-llm-plumbing.md`,
+`…-m3b-vision-surface.md`, `…-m3c-enrichment-graph.md`.
+
+**Every milestone review has found defects the implementation reported as passing** — a gutted M1.6
+guard and a fabricated constraint (M2-A), a mutation guard that guarded nothing (M2-B), a red
+`make check` and an unlinted `scripts/` (M2-C), a `record` mode that could never record a failure
+and a `generate_stream` bypassing the replay seam (M3-A), a "verbatim" criteria list that dropped
+its own failing criterion (M3-B), and two tests that passed exactly once per database plus a guard
+made red by asserting a list contains itself (M3-C). All fixed and re-measured.
+
+> **The pattern is now the finding.** Three consecutive milestones were declared closed on a commit
+> where `make check` was RED, with the fixes sitting uncommitted. M3-C's red commit `097388b` was
+> **pushed**, CI ran it, and CI **failed** (run `30420027036`) — the safety net worked and nobody
+> looked. The fix is not more tooling: it is that a milestone is not closed until CI is green on the
+> pushed commit. **As of this writing `origin/main` is still at the red `097388b`; the green fix
+> `76d6280` is local and unpushed.**
 
 
 **M0 — nền chạy được.** Repo `git init` riêng, đã push lên
@@ -152,13 +165,29 @@ kèm 2 PDF có số CCCD (vá ở `bb8718d`). Đính chính một cảnh báo c�
 `vietnamese-legal-bot/.claude/settings.json` "đang commit Langfuse key plaintext" — **sai**,
 `.claude/` đã bị gitignore và `git log --all` trả về rỗng; key chưa bao giờ vào history.
 
-**Next**: M2 — corpus + schema + deterministic core. The gate is open, but four things are owed and
-none of them blocks it: ADR `0001-three-graphs-not-one.md`; the terminal recording (deferred to M8);
-the **NĐ 70/2025/NĐ-CP** field check that M1.2 still owes — `InvoiceLine.item_kind` is deliberately
-`int | None` rather than defaulting to `1` until that answers whether QĐ-1450 permits omitting
-`TChat`; and whether `TSuat` can carry the non-percent codes `KCT`/`KKKNT`, which the parser rejects
-loudly today because no fixture contains one. **M2.1's generator must not read `xml_schema.py`** —
-that independence is the whole anti-circularity mechanism.
+**Next**: M4 — multi-agent, memory, and the budget serialization proof. The gate is open. What is
+owed, roughly in the order it will hurt:
+
+- **The vision branch has no accuracy measurement of any kind** — not synthetic, not real. No
+  vision-capable API key is configured, so no fixture has ever been recorded (M3-B §8.1, M3-C §8.1).
+  **M6 cannot report a vision number until this is paid**, and paying it later means rebuilding all
+  of M3's context first. It costs one recording run against a generated PDF.
+- **The six PII-carrying vendor PDFs are still in git history on origin**, alongside the M1 tax-code
+  leak in this document. Untracked from `HEAD` at M3-B, but the blobs remain reachable. Deferred
+  twice; deferred is not the same as decided.
+- **Two design debts M4 inherits**: `thread_id` is `enrich:{invoice_id}` and therefore stable across
+  re-runs, so batch needs a per-run component (M3-C §8.5); and nothing yet proves the enrichment
+  graph survives being wrapped as a function node, which is exactly what M4.6 does (M3-C §8.3).
+- **ADR `0001-three-graphs-not-one.md`**, owed since M1. M4 adds `0003-no-supervisor-agent.md` and
+  `0004-serial-budget-reconciliation.md`, so writing all three together is cheaper than one at a time.
+- Still open from M1, still not blocking: the **NĐ 70/2025/NĐ-CP** field check —
+  `InvoiceLine.item_kind` stays `int | None` rather than defaulting to `1` until that answers whether
+  QĐ-1450 permits omitting `TChat`; whether `TSuat` can carry the non-percent codes `KCT`/`KKKNT`,
+  which the parser rejects loudly today because no fixture contains one; and the terminal recording
+  (deferred to M8).
+
+**The rule M4 must not repeat**: a milestone is not closed until `make check` is green **on the
+pushed commit** and CI agrees. Three milestones running have failed that.
 
 ---
 
@@ -619,7 +648,7 @@ ngay; **mọi con số trong README trace được về `docs/eval-report.md` tr
 | M0 — Nền sạch | ✅ | 2026-07-27 | Gate 5/5. `make dev` + `make check` green; CI green on real Postgres (`30233872335`, 62 passed). Alembic scaffolding was pulled in here because the gate demanded "run migrations" while 0.1–0.7 contained no item that built it. A CI hole survived until 2026-07-27: the workflow created the schemas but never ran `alembic upgrade head`, invisible until a test needed a table |
 | M1 — XML thật + HITL spike | ✅ | 2026-07-28 | **Gate 4/4, re-verified independently 2026-07-28** (not merely re-read): `make check` 123 passed, HITL `kill -9` **10/10 locally** at `HITL_RUNS=10`, real `alembic revision --autogenerate` against the 4 live checkpoint tables emits an **empty** migration. All 6 items done: ✅ 1.1 (8 files / 8 vendors / 3 `PBan`) · ✅ 1.2 · ✅ 1.3 `xml_schema.py` · ✅ 1.4 `xml_parser.py` (8/8 parse) · ✅ 1.5 HITL durability · ✅ 1.6 Alembic isolation + ADR 0002. **8/8 guards re-confirmed red under mutation** — see the review note below. Owed, non-blocking: ADR `0001-three-graphs-not-one.md`; terminal recording (deferred to M8); NĐ 70/2025 field check |
 | M2 — Corpus + schema + domain | ✅ | 2026-07-28 | **Gate 5/5, re-verified independently 2026-07-28.** Split into three specs: **M2-A** (2.4/2.5/2.7 schema+seed+repositories, 15 bảng / 9 revision / 11 mutation guard đều đỏ) · **M2-B** (2.6 `domain/`, 107 test, 8/8 hóa đơn thật ra ZERO finding, 10 guard đỏ) · **M2-C** (2.1–2.3 generator, 67 test, 9 guard đỏ). Corpus: 300 mục = 285 XML **parse hết** + 15 PDF-only khai báo rõ là không parse được (M3.4 render). Generator KHÔNG import `xml_schema`/`xml_parser`/`domain` — có test chặn, nên điểm round-trip là bằng chứng chứ không phải lặp vòng. **Ba lần review, ba lần tìm ra lỗi mà bản implement đã báo là đạt**: guard M1.6 bị viết lại thành mù trên CI + artefact bịa `ck_vendors_tax_code_format` + 32 diff ma autogenerate (M2-A); một mutation guard xanh khi đã phá luật (M2-B); `make check` ĐỎ lúc đóng milestone + `scripts/` chưa từng được lint + `BUDGETS` import chết (M2-C). Đã sửa hết và đo lại. **Nợ, không chặn M3**: ADR `0001-three-graphs-not-one.md`; terminal recording (M8); NĐ 70/2025; KCT/KKKNT; PDF render (M3.4); injection variant 7–26 (M6.1) |
-| M3 — Extraction + tools + cost + replay | 🟡 **đang mở** | | **M3-A done 2026-07-29, independently reviewed same day.** Built: `cost.py`, `cache.py`, `telemetry.py`, `gateway.py` out-param + replay seam, migration 10. `LLM_MODE=replay` with zero keys: **380 passed**. 16/16 guards red. Note `docs/notes/2026-07-29-m3a-llm-plumbing.md`. Item 3.1 moved to M7 (spec §3.3).<br>**M3-B done 2026-07-29, independently reviewed same day.** Built items 3.2 (`structured.py` self-correction retry loop sanitizing feedback prompts), 3.3 (`sanitize.py` XML escaping & `<invoice_data>` fencing), 3.4 (`vision.py` PDF rasterization at 150 DPI & vision extraction), `pdf.py` synthetic PDF renderer (pinned `PINNED_CREATION_DATE` & `DejaVuSans.ttf`), gateway `images` multimodal param & SHA256 digest keying, `vision_model_chain` setting. **423 passed** under `make check` and under the replay gate with zero keys. **12/12 planned guards re-broken independently and confirmed red — second milestone running that the claim held.** Six PII-carrying vendor PDFs untracked while preserved on disk (`git rm --cached`); `.gitignore` whitelist closed; `test_no_pii_files_tracked.py` guards recurrence. **Git history purge remains owed** alongside the M1 MST leak. Review found **four defects, all in the closeout rather than the code**: the closing commit was **RED on ruff** (8 errors / 5 files, fixes uncommitted — M2-C's defect verbatim); the note's success-criteria list was headed "Verbatim" while dropping three real criteria including the failing one; three §8 open questions were invented and three real ones dropped (two safety-relevant); and the real-PDF spot-check claimed "extraction confirmed" with **no numbers and no recorded fixture**. Plus one coverage gap: spec §7 criterion 5 (vision → 3 `llm_calls` rows) had no test. All fixed, **14/14 guards red**. Note `docs/notes/2026-07-29-m3b-vision-surface.md`. Date column left empty as M3-C remains open. |
+| M3 — Extraction + tools + cost + replay | ✅ | 2026-07-29 | **Gate 4/4, closed 2026-07-29.** Split into three specs, each independently reviewed the same day it was implemented: **M3-A** (3.6/3.7 cost capture + `LLM_MODE=replay`; migration 10 closed an M2-A hole where `llm_calls` shipped five columns short of design §2.9 while the spec claimed it verbatim) · **M3-B** (3.2/3.3/3.4 `structured.py`, `sanitize.py`, `vision.py`, corpus PDFs + font; six PII-carrying vendor PDFs untracked) · **M3-C** (3.5 `graphs/enrichment.py`, `route_after_validate`, `serde.py` msgpack allowlist, `run_one.py`, generated mermaid drift guard). **455 passed** under `make check` and again under `LLM_MODE=replay` with zero API keys. Item 3.1 moved to M7 — `ToolSpec` has no consumer inside the M3 gate (M3-A §3.3). **Three reviews, three sets of defects the implementation had reported as passing**: `LLM_MODE=record` could never write a FAILURE fixture — the sole reason `CachedResponse.error` exists — plus `generate_stream` bypassing the replay seam, and no test driving gateway → telemetry → DB (M3-A; **the first of those originated in the plan**); a closeout note headed "verbatim" that dropped the one criterion that was false, invented open questions replacing two safety-relevant real ones, and an "extraction confirmed" spot-check with no numbers and no recorded fixture (M3-B); a **red pushed commit**, two tests that passed exactly once per database, and a mutation made red by asserting a list contains itself (M3-C). **16/16 · 14/14 · 12/12 guards red** after fixes. **Owed, not blocking M4**: the vision branch has **no accuracy measurement at all** and no key is configured; the PII git-history purge; ADR `0001-three-graphs-not-one.md`; a per-run `thread_id` component (M3-C §8.5) and function-node wrapping (§8.3), both landing in M4. |
 | M4 — Multi-agent + memory + serialization | 🔲 | | |
 | M5 — HITL production + API + UI | 🔲 | | |
 | M6 — Security + observability + eval | 🔲 | | |
