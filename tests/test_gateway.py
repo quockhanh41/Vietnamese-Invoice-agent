@@ -17,8 +17,10 @@ def make_gateway(**overrides) -> LLMGateway:
         "gemini_api_keys": ["gem1"],
         "openrouter_api_keys": ["or1"],
         "openai_api_key": "",
+        "llm_mode": "live",
     }
     return LLMGateway(Settings(_env_file=None, **{**defaults, **overrides}))
+
 
 
 @pytest.fixture
@@ -252,4 +254,142 @@ class TestCallRecording:
         gw = make_gateway(llm_model_chain=["groq/llama-3.3-70b-versatile"])
         gw.generate("xin chào", calls=calls)
         assert calls[0].latency_ms >= 0
+
+
+class TestReplayMode:
+    """The M3 gate condition this spec owns: the suite runs with LLM_MODE=replay
+    and NO API KEY."""
+
+    def _record_fixture(self, tmp_path, *, model, prompt="xin chào", text="ok", error=None):
+        from invoice_agent.llm import cache
+
+        messages = [{"role": "user", "content": prompt}]
+        key = cache.make_key(
+            model=model, messages=messages, temperature=0.1, max_tokens=2048,
+            json_mode=False, reasoning_effort=None,
+        )
+        cache.save(
+            tmp_path, key, model=model, messages=messages,
+            response=cache.CachedResponse(
+                text=text, prompt_tokens=812, completion_tokens=97, error=error
+            ),
+        )
+
+    def test_replay_runs_with_no_api_keys(self, tmp_path, monkeypatch):
+        """Measured 2026-07-29: with zero keys _usable_models returns [] — not a
+        shorter chain. Without the replay bypass NOTHING runs on a CI runner."""
+        from invoice_agent.llm import gateway as gw_module
+
+        def explode(**kwargs):
+            raise AssertionError("replay must never reach the network")
+
+        monkeypatch.setattr(gw_module.litellm, "completion", explode)
+        model = "gemini/gemini-3.5-flash"
+        self._record_fixture(tmp_path, model=model, text="DỊCH VỤ VẬN CHUYỂN")
+
+        gw = make_gateway(
+            groq_api_keys=[], gemini_api_keys=[], openrouter_api_keys=[], openai_api_key="",
+            llm_mode="replay", llm_cache_dir=str(tmp_path), llm_model_chain=[model],
+        )
+        calls = []
+        assert gw.generate("xin chào", calls=calls) == "DỊCH VỤ VẬN CHUYỂN"
+        assert calls[0].prompt_tokens == 812, "replay must supply usage, or CI records no cost"
+
+    def test_replay_walks_the_model_chain(self, tmp_path, monkeypatch):
+        """A fixture recorded for the SECOND model must still be found — which
+        only works if the seam sits inside the model loop."""
+        from invoice_agent.llm import gateway as gw_module
+
+        monkeypatch.setattr(
+            gw_module.litellm, "completion",
+            lambda **kwargs: (_ for _ in ()).throw(AssertionError("no network in replay")),
+        )
+        second = "gemini/gemini-3.5-flash"
+        self._record_fixture(tmp_path, model=second, text="từ model thứ hai")
+
+        gw = make_gateway(
+            groq_api_keys=[], gemini_api_keys=[], openrouter_api_keys=[], openai_api_key="",
+            llm_mode="replay", llm_cache_dir=str(tmp_path),
+            llm_model_chain=["groq/llama-3.3-70b-versatile", second],
+        )
+        text, used = gw.generate_with_model("xin chào")
+        assert (text, used) == ("từ model thứ hai", second)
+
+    def test_replay_miss_raises_and_never_calls_litellm(self, tmp_path, monkeypatch):
+        from invoice_agent.llm import gateway as gw_module
+        from invoice_agent.llm.cache import LLMReplayMiss
+
+        monkeypatch.setattr(
+            gw_module.litellm, "completion",
+            lambda **kwargs: (_ for _ in ()).throw(AssertionError("no network in replay")),
+        )
+        gw = make_gateway(
+            groq_api_keys=[], llm_mode="replay", llm_cache_dir=str(tmp_path),
+            llm_model_chain=["groq/llama-3.3-70b-versatile"],
+        )
+        with pytest.raises(LLMReplayMiss) as excinfo:
+            gw.generate("một prompt chưa từng được ghi")
+        assert "LLM_MODE=record" in str(excinfo.value), "the error must say how to fix it"
+
+    def test_a_replay_miss_records_no_attempt(self, tmp_path):
+        """Nothing happened — no tokens burned, so no llm_calls row."""
+        from invoice_agent.llm.cache import LLMReplayMiss
+
+        gw = make_gateway(
+            groq_api_keys=[], llm_mode="replay", llm_cache_dir=str(tmp_path),
+            llm_model_chain=["groq/llama-3.3-70b-versatile"],
+        )
+        calls = []
+        with pytest.raises(LLMReplayMiss):
+            gw.generate("chưa ghi bao giờ", calls=calls)
+        assert calls == []
+
+    def test_a_recorded_failure_replays_as_a_raise(self, tmp_path, monkeypatch):
+        """M3-C replays the escalation path, where a failing call is the point."""
+        from invoice_agent.llm import gateway as gw_module
+
+        monkeypatch.setattr(
+            gw_module.litellm, "completion",
+            lambda **kwargs: (_ for _ in ()).throw(AssertionError("no network in replay")),
+        )
+        model = "groq/llama-3.3-70b-versatile"
+        self._record_fixture(tmp_path, model=model, text="", error="RateLimitError: 429 quota")
+
+        gw = make_gateway(
+            groq_api_keys=[], llm_mode="replay", llm_cache_dir=str(tmp_path),
+            llm_model_chain=[model],
+        )
+        calls = []
+        with pytest.raises(RuntimeError):
+            gw.generate("xin chào", calls=calls)
+        assert calls and calls[0].succeeded is False
+
+    def test_record_mode_writes_a_fixture(self, tmp_path, monkeypatch):
+        from invoice_agent.llm import gateway as gw_module
+
+        monkeypatch.setattr(
+            gw_module.litellm, "completion",
+            lambda **kwargs: _ok_response("đã ghi", prompt=11, completion=3),
+        )
+        gw = make_gateway(
+            llm_mode="record", llm_cache_dir=str(tmp_path),
+            llm_model_chain=["groq/llama-3.3-70b-versatile"],
+        )
+        assert gw.generate("xin chào") == "đã ghi"
+        assert list(tmp_path.glob("*.json")), "record mode wrote no fixture"
+
+    def test_live_mode_ignores_the_cache(self, tmp_path, monkeypatch):
+        from invoice_agent.llm import gateway as gw_module
+
+        model = "groq/llama-3.3-70b-versatile"
+        self._record_fixture(tmp_path, model=model, text="giá trị cũ trong cache")
+        monkeypatch.setattr(
+            gw_module.litellm, "completion",
+            lambda **kwargs: _ok_response("giá trị trực tiếp", prompt=1, completion=1),
+        )
+        gw = make_gateway(
+            llm_mode="live", llm_cache_dir=str(tmp_path), llm_model_chain=[model]
+        )
+        assert gw.generate("xin chào") == "giá trị trực tiếp"
+
 

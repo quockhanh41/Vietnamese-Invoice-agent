@@ -19,6 +19,7 @@ from typing import Any
 import litellm
 
 from invoice_agent.config import Settings, get_settings
+from invoice_agent.llm import cache
 from invoice_agent.llm.cost import LLMCallRecord
 
 # Configure LiteLLM
@@ -36,6 +37,12 @@ class LLMGateway:
         self.gemini_keys = list(s.gemini_api_keys)
         self.openrouter_keys = list(s.openrouter_api_keys)
         self.openai_key = s.openai_api_key
+        # Replay is not a test convenience wrapped around a working gateway:
+        # measured 2026-07-29 (spec §2.1), with no API keys _usable_models
+        # drops all six models, so on a CI runner this mode is the only thing
+        # that makes the gateway run at all.
+        self.mode = s.llm_mode
+        self.cache_dir = s.llm_cache_dir
 
     def _record_attempt(
         self,
@@ -149,7 +156,82 @@ class LLMGateway:
             models_to_try = [model] + [m for m in self.model_chain if m != model]
         else:
             models_to_try = list(self.model_chain)
+        if self.mode == "replay":
+            # No keys are needed to read a fixture, and _usable_models would
+            # filter the whole chain away — `_keys_for("groq/…")` returns [''],
+            # and `any([''])` is False. `record` and `live` keep the filter:
+            # both make real calls and need real keys.
+            return models_to_try
         return self._usable_models(models_to_try)
+
+    def _complete(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        json_mode: bool,
+        reasoning_effort: str | None,
+        api_key: str,
+        model_kwargs: dict[str, Any],
+    ) -> tuple[str, int, int]:
+        """The one point where a request becomes a network call — or does not.
+
+        Returns (text, prompt_tokens, completion_tokens), normalised so the
+        caller does not care which mode produced it.
+
+        The seam is HERE, inside the model loop, rather than around generate():
+        with no API keys the chain resolves to EMPTY (measured 2026-07-29, spec
+        §2.1), so anything placed above chain resolution would be testing a
+        code path CI can never reach.
+        """
+        key = cache.make_key(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            json_mode=json_mode,
+            reasoning_effort=reasoning_effort,
+        )
+
+        if self.mode == "replay":
+            hit = cache.load(self.cache_dir, key)
+            if hit is None:
+                raise cache.LLMReplayMiss(
+                    f"No fixture for model={model} key={key[:16]}. "
+                    f"Re-record with LLM_MODE=record, or check whether the prompt changed."
+                )
+            if hit.error:
+                # A recorded failure replays as a raise. RuntimeError rather
+                # than the original class because only the message survives
+                # recording — and _is_rate_limit matches on the message anyway.
+                raise RuntimeError(hit.error)
+            return hit.text, hit.prompt_tokens, hit.completion_tokens
+
+        response = litellm.completion(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            api_key=api_key,
+            **model_kwargs,
+        )
+        usage = getattr(response, "usage", None)
+        text = self._clean_thinking(response.choices[0].message.content)
+        prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+
+        if self.mode == "record":
+            cache.save(
+                self.cache_dir, key, model=model, messages=messages,
+                response=cache.CachedResponse(
+                    text=text,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                ),
+            )
+        return text, prompt_tokens, completion_tokens
 
     def generate(
         self,
@@ -255,6 +337,7 @@ class LLMGateway:
         # Try each model in chain; within a model, rotate API keys on rate-limit
         last_error = None
         attempt_no = 0
+        replay_misses: list[Exception] = []
         for attempt_model in models_to_try:
             model_kwargs = dict(extra_kwargs)
             if reasoning_effort is not None and self._is_thinking_model(attempt_model):
@@ -265,29 +348,34 @@ class LLMGateway:
                     attempt_model, reasoning_effort
                 )
 
-            for api_key in self._keys_for(attempt_model):
+            # Replay must make exactly one pass per model, whatever the key
+            # situation. `_keys_for` returns [] for a provider with no key, so
+            # keeping it here would mean a keyless CI runner never enters this
+            # loop at all — the §2.1 measurement biting a second time, one
+            # level down. There is also nothing to rotate: API keys are
+            # deliberately not in the cache key, so every key maps to the same
+            # fixture.
+            api_keys = [""] if self.mode == "replay" else self._keys_for(attempt_model)
+            for api_key in api_keys:
                 attempt_no += 1
                 started = time.perf_counter()
                 try:
-                    response = litellm.completion(
+                    text, prompt_tokens, completion_tokens = self._complete(
                         model=attempt_model,
                         messages=messages,
                         temperature=temperature,
                         max_tokens=max_tokens,
+                        json_mode=json_mode,
+                        reasoning_effort=reasoning_effort,
                         api_key=api_key,
-                        **model_kwargs,
+                        model_kwargs=model_kwargs,
                     )
-                    usage = getattr(response, "usage", None)
-                    self._record_attempt(
-                        calls, attempt_model,
-                        started=started, attempt=attempt_no, messages=messages,
-                        prompt_tokens=getattr(usage, "prompt_tokens", None),
-                        completion_tokens=getattr(usage, "completion_tokens", None),
-                    )
-                    return (
-                        self._clean_thinking(response.choices[0].message.content),
-                        attempt_model,
-                    )
+                except cache.LLMReplayMiss as miss:
+                    # No fixture is not a failed call: nothing was sent, no
+                    # tokens burned, so no record. Move to the next model —
+                    # a later one in the chain may have been recorded.
+                    replay_misses.append(miss)
+                    break
                 except Exception as e:
                     last_error = e
                     self._record_attempt(
@@ -295,10 +383,23 @@ class LLMGateway:
                         started=started, attempt=attempt_no, messages=messages, error=e,
                     )
                     if self._is_rate_limit(e):
-                        continue  # rotate to the next key for the same model
-                    break  # non-rate-limit failure — try the next model
+                        continue
+                    break
+                self._record_attempt(
+                    calls, attempt_model,
+                    started=started, attempt=attempt_no, messages=messages,
+                    prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                )
+                return text, attempt_model
 
+        if replay_misses:
+            raise cache.LLMReplayMiss(
+                "LLM_MODE=replay and no fixture matched any model in the chain "
+                f"{models_to_try}. Re-record with LLM_MODE=record. "
+                f"First miss: {replay_misses[0]}"
+            )
         raise RuntimeError(f"All models failed. Last error: {last_error}")
+
 
 
     def _clean_thinking(self, text: str | None) -> str:
