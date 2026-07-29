@@ -160,7 +160,61 @@ def test_an_unparseable_xml_with_a_pdf_twin_climbs_to_vision(tmp_path, monkeypat
     assert final["extracted"].total_amount == Decimal("1194544")
 
 
+def test_retry_success_clears_findings_and_ends(tmp_path, monkeypatch):
+    """Spec correction #1 test: attempt 1 has findings, attempt 2 succeeds.
+
+    If `findings` uses `operator.add`, attempt 2's empty findings list appends
+    to attempt 1's findings, keeping `findings` non-empty so the graph loops to
+    max attempts and ends in manual_queue instead of clean completion.
+    """
+    good = json.dumps(
+        {
+            "template_no": "1",
+            "invoice_series": "C26TAA",
+            "invoice_number": "00000123",
+            "issue_date": "2026-07-01",
+            "seller_tax_code": "0100000003",
+            "total_amount": "1194544",
+            "lines": [
+                {
+                    "line_no": 1,
+                    "item_kind": 1,
+                    "description": "Dịch vụ",
+                    "amount": "1194544",
+                }
+            ],
+        }
+    )
+    responses = [ALWAYS_INVALID, good]
+
+    def sequential_completion(**kw):
+        reply = responses.pop(0) if responses else good
+        return ok_response(reply, prompt=900, completion=120)
+
+    from invoice_agent.llm import gateway as gw_module
+
+    monkeypatch.setattr(gw_module.litellm, "completion", sequential_completion)
+    gw = LLMGateway(
+        Settings(
+            _env_file=None,
+            gemini_api_keys=["gem1"],
+            vision_model_chain=["gemini/gemini-3.5-flash"],
+            llm_mode="live",
+        )
+    )
+    pdf_path = tmp_path / "invoice.pdf"
+    pdf_path.write_bytes(pdf_gen.render_pdf(make_spec()))
+
+    final = build_enrichment_graph(gateway=gw).invoke(
+        initial(source_path=str(pdf_path), source_type="pdf", strategy="vision")
+    )
+    assert final["extraction_attempts"] == 2
+    assert final["findings"] == []
+    assert final["status"] != "manual_queue"
+
+
 def test_the_committed_diagram_matches_the_graph():
+
     """The artefact is a drift guard, not decoration — which is the one thing a
     committed PNG could never be. Regenerate with:
         .venv/bin/python -m scripts.render_graph
