@@ -6,9 +6,9 @@ these are input strings, not a rule being validated against its own generator.
 """
 
 import pytest
+from scripts.generator.defects import INJECTION_PAYLOADS
 
 from invoice_agent.extraction import sanitize
-from scripts.generator.defects import INJECTION_PAYLOADS
 
 
 class TestEscaping:

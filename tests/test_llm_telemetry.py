@@ -179,3 +179,74 @@ def test_gateway_records_reach_the_database_unchanged(runtime_conn, monkeypatch)
     # Free tier: paid nothing, and the reference price says what that is worth.
     assert rows[2]["cost_usd"] == Decimal(0)
     assert rows[2]["shadow_cost_usd"] == Decimal("0.00027")
+
+
+def test_vision_self_correction_records_every_attempt(runtime_conn, monkeypatch):
+    """Spec M3-B §7 criterion 5, which no test covered until now.
+
+    A vision extraction that fails schema validation twice and succeeds on the
+    third attempt must leave THREE `llm_calls` rows. `test_three_attempts_
+    record_three_calls` asserts an in-memory list against a toy model; nothing
+    drove a real rasterize-and-extract into the database. Found 2026-07-29 by
+    the M3-B exit review.
+    """
+    import json
+
+    from scripts.generator import pdf as pdf_gen
+    from tests.helpers.fake_llm import ok_response
+    from tests.helpers.invoice_specs import make_spec
+
+    from invoice_agent.config import Settings
+    from invoice_agent.extraction import vision
+    from invoice_agent.llm import gateway as gw_module
+    from invoice_agent.llm.gateway import LLMGateway
+
+    good = json.dumps(
+        {
+            "template_no": "1",
+            "invoice_series": "C26TAA",
+            "invoice_number": "00000123",
+            "issue_date": "2026-07-01",
+            "total_amount": "1290107.52",
+            "lines": [],
+        }
+    )
+    # Two failures the loop must distinguish: a schema violation, then
+    # unparseable output. Both are retryable; neither is a transport failure.
+    replies = ['{"total_amount": "không đọc được"}', "đây không phải JSON", good]
+
+    seen: list[int] = []
+
+    def counting_completion(**kwargs):
+        response = ok_response(replies[len(seen)], prompt=900, completion=120)
+        seen.append(1)
+        return response
+
+    monkeypatch.setattr(gw_module.litellm, "completion", counting_completion)
+    gateway = LLMGateway(
+        Settings(
+            _env_file=None,
+            gemini_api_keys=["gem1"],
+            vision_model_chain=["gemini/gemini-3.5-flash"],
+            # Pinned, as make_gateway() does: without it the ambient
+            # LLM_MODE=replay leaks in under the gate command and this looks
+            # for a fixture instead of exercising the recording path.
+            llm_mode="live",
+        )
+    )
+
+    calls: list[LLMCallRecord] = []
+    data = vision.extract(
+        pdf_gen.render_pdf(make_spec()), gateway=gateway, calls=calls
+    )
+    assert data.total_amount == Decimal("1290107.52")
+    assert len(calls) == 3, "each self-correction attempt is a billed LLM call"
+
+    invoice_id = _make_invoice(runtime_conn)
+    telemetry.record(runtime_conn, calls, node="vision_extract", invoice_id=invoice_id)
+
+    rows = sorted(_rows_for(runtime_conn, invoice_id), key=lambda r: r["attempt"])
+    assert len(rows) == 3
+    assert all(r["node"] == "vision_extract" for r in rows)
+    assert all(r["prompt_tokens"] == 900 for r in rows), "every attempt sent the image"
+    assert all(r["shadow_cost_usd"] > Decimal(0) for r in rows)

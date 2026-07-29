@@ -41,7 +41,7 @@ class StructuredOutputError(RuntimeError):
     """
 
 
-def call_structured(
+def call_structured[ModelT: BaseModel](
     gateway: LLMGateway,
     *,
     response_model: type[ModelT],

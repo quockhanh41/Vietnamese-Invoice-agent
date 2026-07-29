@@ -17,7 +17,6 @@ import pathlib
 from decimal import Decimal
 
 from fpdf import FPDF
-
 from scripts.generator.templates import InvoiceSpec
 
 FONT_PATH = (
@@ -31,7 +30,7 @@ FONT_PATH = (
 # property. Measured 2026-07-29 (spec §2.3): two unpinned renders 2.2s apart
 # differ (D:20260729014047Z vs D:20260729014049Z); pinned, they are identical.
 # The value is the roadmap's date and carries no meaning beyond being fixed.
-PINNED_CREATION_DATE = datetime.datetime(2026, 7, 25, tzinfo=datetime.timezone.utc)
+PINNED_CREATION_DATE = datetime.datetime(2026, 7, 25, tzinfo=datetime.UTC)
 
 _FONT = "dejavu"
 

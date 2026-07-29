@@ -5,11 +5,12 @@ Byte-stability matters as much as legibility here — M2-C established that
 corpus that embeds a clock.
 """
 
+import json
+import pathlib
 import time
 
 import pypdfium2
 import pytest
-
 from scripts.generator import pdf
 from tests.helpers.invoice_specs import make_spec
 
@@ -73,10 +74,6 @@ class TestBrokenVariants:
         degraded = pdf.render_degraded(make_spec())
         assert len(pypdfium2.PdfDocument(degraded)) == 1
         assert degraded != pdf.render_pdf(make_spec())
-
-
-import json
-import pathlib
 
 
 def _read_manifest(out: pathlib.Path) -> list[dict]:

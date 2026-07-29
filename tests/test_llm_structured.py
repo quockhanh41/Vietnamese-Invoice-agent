@@ -26,8 +26,9 @@ def make_gateway(**overrides) -> LLMGateway:
 
 def scripted(monkeypatch, replies: list[str]) -> list[dict]:
     """Feed the gateway canned completions; capture the prompts it sent."""
-    from invoice_agent.llm import gateway as gw_module
     from tests.helpers.fake_llm import ok_response
+
+    from invoice_agent.llm import gateway as gw_module
 
     seen: list[dict] = []
 
