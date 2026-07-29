@@ -437,21 +437,29 @@ Artefacts still owed: the terminal recording (deferred to M8 by the M1.5 spec �
 
 ### M3 — Extraction pipeline: vòng leo thang, tools, cost, replay *(tuần 3)*
 
+> **Sub-milestones status (2026-07-29)**:
+> - ✅ **M3-A (LLM Plumbing)** done 2026-07-29. `LLMCallRecord`, `calls` out-param, `telemetry.py` recording to `llm_calls` table, `LLM_MODE=replay` with `sha256` key cache & 64-bit verification. Spec `docs/superpowers/specs/2026-07-29-m3a-llm-plumbing-design.md`, Note `docs/notes/2026-07-29-m3a-llm-plumbing.md`.
+> - ✅ **M3-B (Vision Surface)** done 2026-07-29. `call_structured()` self-correction retry loop in `structured.py`, `sanitize.py` (`escape` + `wrap`), `vision.py` (`rasterize` PDF to PNG at 150 DPI), `vision_model_chain` config. Spec `docs/superpowers/specs/2026-07-29-m3b-vision-surface-design.md`, Note `docs/notes/2026-07-29-m3b-vision-surface.md`.
+> - ✅ **M3-C (Enrichment Graph)** done 2026-07-29. `src/invoice_agent/serde.py` msgpack allowlist, `src/invoice_agent/graphs/enrichment.py` (state, 5 nodes, `route_after_validate` extraction-vs-data error router), `scripts/render_graph.py` + `docs/diagrams/enrichment_graph.mmd` drift guard, `scripts/run_one.py` end-to-end runner & `llm_calls.invoice_id` backfill. Spec `docs/superpowers/specs/2026-07-29-m3c-enrichment-graph-design.md`, Note `docs/notes/2026-07-29-m3c-enrichment-graph.md`.
+
 | # | Việc | Tham chiếu |
 |---|---|---|
 | 3.1 | `tools/registry.py` — **moved to M7** (spec M3-A §3.3). Reason: `ToolSpec` has **no consumer inside the M3 gate** — the gate names cost, the reducer trap, escalation and replay, none of which route through a tool. Its real consumers are M7 (`mcp_exposed`, plus `test_no_write_tools_in_mcp.py`, one of the six portfolio tests) and M4's memory reads. What M3 **does** need from item 3.2 is the retry taxonomy → `llm/structured.py` in M3-B | §8.1 |
 | 3.2 | ✅ **Done 2026-07-29 (M3-B)**. `src/invoice_agent/llm/structured.py` — `call_structured()` self-correction retry loop for schema validation errors, sanitizing error feedback prompts to defeat model-echoed injection attacks | §8.1 |
 | 3.3 | ✅ **Done 2026-07-29 (M3-B)**. `src/invoice_agent/extraction/sanitize.py` — `escape()` (`&` before `<` and `>`) and `wrap()` fencing untrusted invoice text in `<invoice_data>` blocks | §9.2 |
 | 3.4 | ✅ **Done 2026-07-29 (M3-B)**. `src/invoice_agent/extraction/vision.py` — `rasterize()` PDF to PNG (`RASTER_DPI = 150`), `extract()` via `call_structured()`, `vision_model_chain` in `config.py` | §3.2 |
-| 3.5 | `graphs/enrichment.py` — **`route_after_validate` phân biệt lỗi EXTRACTION vs lỗi DATA**. Đây là nội dung thật của self-correction, không phải cái vòng lặp | §3.3 |
+| 3.5 | ✅ **Done 2026-07-29 (M3-C)**. `src/invoice_agent/graphs/enrichment.py` — `EnrichmentState`, 5 nodes, **`route_after_validate` phân biệt lỗi EXTRACTION vs lỗi DATA** (XML findings end; vision findings retry; XML parsing failure climbs to vision if `pdf_path` twin exists). | §3.3 |
 | 3.6 | ✅ **Done 2026-07-29 (M3-A)**. **Cost capture**: `calls` out-param trên gateway (`LLMCallRecord` list) → `llm/telemetry.py` → `llm_calls`. Ghi cả lần gọi thất bại + `shadow_cost_usd` | §2.9 |
 | 3.7 | ✅ **Done 2026-07-29 (M3-A)**. **`LLM_MODE=replay`** — `llm/cache.py` fixture cache khóa theo `sha256(model, messages, params)` với 64-bit key verification trên `load()` | §11.4 |
 
-**Gate M3**: một hóa đơn chạy end-to-end có cost ghi vào `llm_calls`; test vòng lặp **3 iteration**
-khẳng định `len(error_history) == 3` (bắt bug reducer `operator.add` trả cả list → tăng trưởng bậc
-hai); hóa đơn XML lỗi extraction leo lên vision, hóa đơn vision hỏng rơi xuống manual_queue; toàn bộ
-test chạy được với `LLM_MODE=replay` **không cần API key**.
-**Artefact**: ảnh render `enrichment_graph` + trace một hóa đơn leo thang chiến lược qua 3 tầng.
+**Gate M3 status (2026-07-29)** — 4/4, Milestone 3 fully closed:
+- **Cost linking**: `scripts/run_one.py` runs one invoice end to end, records cost rows inline during `vision_extract` via `_persist_cost` (`thread_id="enrich:{invoice_id}"`), and backfills `llm_calls.invoice_id` upon database insertion (`tests/test_run_one.py` green).
+- **Reducer trap guard**: `test_error_history_grows_LINEARLY_not_quadratically` in `tests/test_enrichment_graph.py` verifies 3 vision retries leave exactly 3 `error_history` entries (catching `operator.add` list returning trap).
+- **Escalation & fallback**: Unparseable XML escalates to `vision_extract` when `pdf_path` twin exists (`TestExtractionFailed`), vision findings retry up to `MAX_VISION_ATTEMPTS = 3`, and broken PDF reaches `manual_queue` without invoking model (`test_a_truncated_pdf_reaches_manual_queue_without_spending_a_token`).
+- **Replay hermeticity**: Entire test suite passes under `LLM_MODE=replay` with no API keys (`455 passed in 13.85s`).
+- **Artefacts**: Committed Mermaid graph `docs/diagrams/enrichment_graph.mmd` + automated drift test `test_the_committed_diagram_matches_the_graph`.
+- **M3 Owed Debts**: Vision fixture & baseline accuracy benchmark (spec §8.1), git history purge for binary test samples, ADR `0001-three-graphs-not-one.md`.
+
 
 ---
 
