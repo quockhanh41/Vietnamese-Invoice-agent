@@ -19,7 +19,7 @@ from datetime import date
 from decimal import Decimal
 from random import Random
 
-from scripts.generator import defects, manifest, templates, vendors
+from scripts.generator import defects, manifest, pdf, templates, vendors
 from scripts.generator.manifest import ManifestRecord
 from scripts.generator.templates import InvoiceSpec, LineSpec
 from scripts.seed_reference import BUDGETS  # the one allowed dependency (M2-A §7)
@@ -186,8 +186,8 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
         s, d, meta = specs[idx]
         specs[idx] = (defects.seed_wrong_vat_rate(s), d + ["wrong_vat_rate"], meta)
 
-    # remaining budget_overrun (12 - 3 = 9)
-    for idx in _allocate_indices(counts["budget_overrun"] - 3):
+    # remaining budget_overrun (12 - 3 = 9 at count=300)
+    for idx in _allocate_indices(max(0, counts["budget_overrun"] - 3)):
         s, d, meta = specs[idx]
         # Make line amount 60_000_000 to breach the 50_000_000 MKT limit
         overrun_line = LineSpec(
@@ -265,6 +265,15 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
         s, d, meta = specs[idx]
         specs[idx] = (s, d + ["unreadable_pdf"], meta)
 
+    # Three XML invoices also get a PDF, for M3-C's escalation path. Drawn from
+    # the same rng as every other choice so `--seed 42` stays reproducible;
+    # hardcoding invoice ids would drift the moment --count changes.
+    xml_indices = [
+        i for i, (_, defect_list, _) in enumerate(specs)
+        if "pdf_only" not in defect_list and "unreadable_pdf" not in defect_list
+    ]
+    twin_indices = set(rng.sample(xml_indices, min(3, len(xml_indices))))
+
     # Now write XML files and build manifest records
     for i, (spec, defect_list, meta) in enumerate(specs):
         inv_id = f"INV-{i + 1:04d}"
@@ -281,14 +290,34 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
                 if code not in expected_findings:
                     expected_findings.append(code)
 
+        pdf_rel_path: str | None = None
         if is_pdf:
-            rel_path = None
+            pdf_filename = f"{inv_id}.pdf"
+            if "unreadable_pdf" in defect_list:
+                # Three different failures on purpose (spec §5.1): truncated
+                # never reaches a model, blank and degraded do and fail on
+                # content. `i % 3` distributes them deterministically.
+                variant = i % 3
+                if variant == 0:
+                    blob = pdf.render_truncated(spec)
+                elif variant == 1:
+                    blob = pdf.render_blank()
+                else:
+                    blob = pdf.render_degraded(spec)
+            else:
+                blob = pdf.render_pdf(spec)
+            (out / pdf_filename).write_bytes(blob)
+            rel_path = f"corpus/{pdf_filename}"
             source_type = "pdf_vision"
         else:
             rel_path = f"corpus/{xml_filename}"
             source_type = "xml"
             rendered = templates.render(spec)
             xml_path.write_text(rendered, encoding="utf-8")
+            if i in twin_indices:
+                twin_filename = f"{inv_id}.pdf"
+                (out / twin_filename).write_bytes(pdf.render_pdf(spec))
+                pdf_rel_path = f"corpus/{twin_filename}"
 
         # Department logic
         dept = "MKT" if "budget_overrun" in defect_list or i < 3 else DEPARTMENTS[i % len(DEPARTMENTS)]
@@ -297,6 +326,7 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
         rec = ManifestRecord(
             invoice_id=inv_id,
             path=rel_path,
+            pdf_path=pdf_rel_path,
             source_type=source_type,
             seller_tax_code=spec.seller_tax_code,
             template_no=spec.template_no,

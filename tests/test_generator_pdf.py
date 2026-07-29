@@ -73,3 +73,60 @@ class TestBrokenVariants:
         degraded = pdf.render_degraded(make_spec())
         assert len(pypdfium2.PdfDocument(degraded)) == 1
         assert degraded != pdf.render_pdf(make_spec())
+
+
+import json
+import pathlib
+
+
+def _read_manifest(out: pathlib.Path) -> list[dict]:
+    with (out / "manifest.jsonl").open(encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle]
+
+
+class TestCorpusWiring:
+    """The 15 pdf_vision entries carried `path: None` from M2-C, deliberately
+    labelled 'rendered at M3.4'. This is M3.4."""
+
+    def test_every_pdf_entry_has_a_file_on_disk(self, tmp_path):
+        from scripts.generate_invoices import generate
+
+        generate(count=60, seed=42, out=tmp_path)
+        rows = _read_manifest(tmp_path)
+
+        pdf_rows = [r for r in rows if r["source_type"] == "pdf_vision"]
+        assert pdf_rows, "the 60-invoice slice produced no PDF entries"
+        for row in pdf_rows:
+            assert row["path"] is not None, f"{row['invoice_id']} still has path=None"
+            assert (tmp_path.parent / row["path"]).exists() or (
+                tmp_path / pathlib.Path(row["path"]).name
+            ).exists(), f"{row['path']} named in the manifest but not on disk"
+
+    def test_exactly_three_xml_entries_carry_a_pdf_twin(self, tmp_path):
+        """M3-C's gate needs 'an XML invoice with an extraction error escalates
+        to vision', and no M2-C entry had both."""
+        from scripts.generate_invoices import generate
+
+        generate(count=300, seed=42, out=tmp_path)
+        rows = _read_manifest(tmp_path)
+        twins = [r for r in rows if r.get("pdf_path")]
+        assert len(twins) == 3
+        for row in twins:
+            assert row["source_type"] == "xml"
+            assert (tmp_path / pathlib.Path(row["pdf_path"]).name).exists()
+
+    def test_regenerating_is_byte_identical_including_pdfs(self, tmp_path):
+        """M2-C's property, extended to the format that embeds a clock."""
+        from scripts.generate_invoices import generate
+
+        first, second = tmp_path / "a", tmp_path / "b"
+        generate(count=60, seed=42, out=first)
+        time.sleep(1.2)
+        generate(count=60, seed=42, out=second)
+
+        names = sorted(p.name for p in first.iterdir())
+        assert names == sorted(p.name for p in second.iterdir())
+        for name in names:
+            assert (first / name).read_bytes() == (second / name).read_bytes(), name
+        assert any(n.endswith(".pdf") for n in names), "no PDF was compared"
+

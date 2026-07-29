@@ -51,6 +51,10 @@ class ManifestRecord:
     department: str
     category: str
     total_amount: Decimal
+    # A PDF beside an XML invoice. Exactly three entries carry one, so M3-C's
+    # escalation path ("XML extraction fails -> climb to vision") has real
+    # input; no M2-C entry had both representations.
+    pdf_path: str | None = None
     defects: list[str] = field(default_factory=list)
     expected_finding_codes: list[str] = field(default_factory=list)
     twin_of: str | None = None

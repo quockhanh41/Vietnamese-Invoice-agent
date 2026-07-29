@@ -21,11 +21,11 @@ def test_manifest_accounts_for_every_entry(tmp_path):
     PDF-only entries carry no XML by design."""
     out, records = build(tmp_path)
     assert len(records) == 300
-    with_xml = [r for r in records if r["path"] is not None]
-    pdf_only = [r for r in records if r["path"] is None]
+    with_xml = [r for r in records if r["source_type"] == "xml"]
+    pdf_only = [r for r in records if r["source_type"] == "pdf_vision"]
     assert len(with_xml) + len(pdf_only) == 300
     assert len(pdf_only) == 15
-    assert all(r["source_type"] == "pdf_vision" for r in pdf_only)
+    assert all(r["path"] is not None and r["path"].endswith(".pdf") for r in pdf_only)
 
 
 def test_every_generated_xml_parses(tmp_path):
@@ -35,7 +35,7 @@ def test_every_generated_xml_parses(tmp_path):
     out, records = build(tmp_path)
     failures = []
     for record in records:
-        if record["path"] is None:
+        if record["source_type"] != "xml":
             continue
         path = out.parent / record["path"]
         try:
