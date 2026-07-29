@@ -87,9 +87,11 @@ def test_checkpointer_carries_the_allowlist(requires_postgres):
     from invoice_agent.checkpointer import build_checkpointer
 
     with build_checkpointer() as saver:
+        assert saver.serde._allowed_msgpack_modules == ALLOWED_MSGPACK_MODULES
         obj = findings.make(findings.NEW_VENDOR)
         back = saver.serde.loads_typed(saver.serde.dumps_typed(obj))
         assert type(back) is findings.Finding
+
 
 
 def test_a_populated_enrichment_state_round_trips_with_every_type_intact():
