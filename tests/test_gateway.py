@@ -445,3 +445,109 @@ class TestReplayMode:
             list(gw.generate_stream("xin chào"))
 
 
+class TestImages:
+    """M3-A built `image_digests` into the cache key and never passed it. Only
+    a direct unit test covered it, so nothing caught the gap."""
+
+    def _fixture_for(self, tmp_path, *, model, images, text):
+        import hashlib
+
+        from invoice_agent.llm import cache
+
+        messages = [{"role": "user", "content": "đọc hóa đơn"}]
+        key = cache.make_key(
+            model=model,
+            messages=messages,
+            temperature=0.1,
+            max_tokens=2048,
+            json_mode=False,
+            reasoning_effort=None,
+            image_digests=[hashlib.sha256(b).hexdigest() for b in images],
+        )
+        cache.save(
+            tmp_path,
+            key,
+            model=model,
+            messages=messages,
+            response=cache.CachedResponse(
+                text=text, prompt_tokens=900, completion_tokens=30
+            ),
+        )
+
+    def test_two_invoices_do_not_share_one_vision_fixture(self, tmp_path, monkeypatch):
+        """Without digests in the key, both PDFs hash to one entry and replay
+        returns the FIRST invoice's answer for the second invoice."""
+        from invoice_agent.llm import gateway as gw_module
+
+        monkeypatch.setattr(
+            gw_module.litellm,
+            "completion",
+            lambda **kwargs: (_ for _ in ()).throw(
+                AssertionError("no network in replay")
+            ),
+        )
+        model = "gemini/gemini-3.5-flash"
+        self._fixture_for(
+            tmp_path, model=model, images=[b"page-of-invoice-A"], text="HÓA ĐƠN A"
+        )
+        self._fixture_for(
+            tmp_path, model=model, images=[b"page-of-invoice-B"], text="HÓA ĐƠN B"
+        )
+
+        gw = make_gateway(
+            groq_api_keys=[],
+            gemini_api_keys=[],
+            openrouter_api_keys=[],
+            openai_api_key="",
+            llm_mode="replay",
+            llm_cache_dir=str(tmp_path),
+            llm_model_chain=[model],
+        )
+        assert gw.generate("đọc hóa đơn", images=[b"page-of-invoice-A"]) == "HÓA ĐƠN A"
+        assert gw.generate("đọc hóa đơn", images=[b"page-of-invoice-B"]) == "HÓA ĐƠN B"
+
+    def test_live_call_sends_a_multimodal_content_block(self, monkeypatch):
+        """MEASURED 2026-07-29 (spec §2.2): LiteLLM's real Gemini transformer
+        turns `image_url` with a data: URI into inline_data/image/png."""
+        from invoice_agent.llm import gateway as gw_module
+
+        seen = {}
+
+        def fake_completion(**kwargs):
+            seen.update(kwargs)
+            return _ok_response("ok", prompt=900, completion=30)
+
+        monkeypatch.setattr(gw_module.litellm, "completion", fake_completion)
+        gw = make_gateway(
+            gemini_api_keys=["gem1"], llm_model_chain=["gemini/gemini-3.5-flash"]
+        )
+        gw.generate("đọc hóa đơn", images=[b"\x89PNG\r\n\x1a\n" + b"\x00" * 16])
+
+        content = seen["messages"][-1]["content"]
+        assert isinstance(
+            content, list
+        ), "images must produce a content BLOCK, not a string"
+        assert content[0]["type"] == "text"
+        assert content[1]["type"] == "image_url"
+        assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+    def test_a_call_without_images_still_sends_a_plain_string(self, monkeypatch):
+        """Every existing caller sends `content` as a string. Turning that into
+        a one-element list for all calls would change every cache key in the
+        repo and silently invalidate every fixture."""
+        from invoice_agent.llm import gateway as gw_module
+
+        seen = {}
+
+        def fake_completion(**kwargs):
+            seen.update(kwargs)
+            return _ok_response("ok", prompt=10, completion=2)
+
+        monkeypatch.setattr(gw_module.litellm, "completion", fake_completion)
+        make_gateway(llm_model_chain=["groq/llama-3.3-70b-versatile"]).generate(
+            "xin chào"
+        )
+        assert seen["messages"][-1]["content"] == "xin chào"
+
+
+

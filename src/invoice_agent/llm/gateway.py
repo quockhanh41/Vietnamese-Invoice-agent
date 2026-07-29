@@ -11,6 +11,8 @@ Hai phần mở rộng đã lên lịch, CHƯA làm ở M0:
 - M4.1 `exclude_model` để Auditor không chấm bài của chính model đã sinh ra
 """
 
+import base64
+import hashlib
 import re
 import time
 from collections.abc import Generator
@@ -175,6 +177,7 @@ class LLMGateway:
         reasoning_effort: str | None,
         api_key: str,
         model_kwargs: dict[str, Any],
+        images: list[bytes] | None = None,
     ) -> tuple[str, int, int]:
         """The one point where a request becomes a network call — or does not.
 
@@ -186,6 +189,7 @@ class LLMGateway:
         §2.1), so anything placed above chain resolution would be testing a
         code path CI can never reach.
         """
+        digests = [hashlib.sha256(blob).hexdigest() for blob in images] if images else []
         key = cache.make_key(
             model=model,
             messages=messages,
@@ -193,6 +197,7 @@ class LLMGateway:
             max_tokens=max_tokens,
             json_mode=json_mode,
             reasoning_effort=reasoning_effort,
+            image_digests=digests,
         )
 
         if self.mode == "replay":
@@ -209,10 +214,26 @@ class LLMGateway:
                 raise RuntimeError(hit.error)
             return hit.text, hit.prompt_tokens, hit.completion_tokens
 
+        request_messages = messages
+        if images:
+            # Measured 2026-07-29 (spec §2.2): LiteLLM's Gemini transformer
+            # converts this data: URI into inline_data/mime_type=image/png.
+            # Only the LAST message is rewritten — a system prompt stays text.
+            blocks: list[dict[str, Any]] = [
+                {"type": "text", "text": messages[-1]["content"]}
+            ]
+            for blob in images:
+                encoded = base64.b64encode(blob).decode("ascii")
+                blocks.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{encoded}"},
+                })
+            request_messages = [*messages[:-1], {"role": "user", "content": blocks}]
+
         try:
             response = litellm.completion(
                 model=model,
-                messages=messages,
+                messages=request_messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 api_key=api_key,
@@ -265,6 +286,7 @@ class LLMGateway:
         json_mode: bool = False,
         reasoning_effort: str | None = None,
         calls: list[LLMCallRecord] | None = None,
+        images: list[bytes] | None = None,
     ) -> str:
         """Generate a response.
 
@@ -285,6 +307,11 @@ class LLMGateway:
                 hold the last, silently dropping the failures. This is the same
                 out-param idiom as `used_model` in `generate_stream`, and the
                 same shape as `EnrichmentState.llm_calls` in design doc §3.1.
+            images: Raw image bytes (PNG) for a vision call. Sent as a
+                multimodal content block and hashed into the replay cache key.
+                Kept OUT of `messages` deliberately: fixtures store messages in
+                the clear, and embedding base64 pages would put megabytes of
+                unreadable data in git — `image_digests` exists for exactly this.
 
         Returns:
             Generated text
@@ -298,6 +325,7 @@ class LLMGateway:
             json_mode,
             reasoning_effort,
             calls,
+            images,
         )
         return text
 
@@ -311,6 +339,7 @@ class LLMGateway:
         json_mode: bool = False,
         reasoning_effort: str | None = None,
         calls: list[LLMCallRecord] | None = None,
+        images: list[bytes] | None = None,
     ) -> tuple[str, str]:
         """Same as `generate()`, but also returns which model in the chain
         actually produced the answer — so a caller can tell which model to
@@ -329,6 +358,7 @@ class LLMGateway:
             json_mode,
             reasoning_effort,
             calls,
+            images,
         )
 
     def _generate_impl(
@@ -341,6 +371,7 @@ class LLMGateway:
         json_mode: bool,
         reasoning_effort: str | None,
         calls: list[LLMCallRecord] | None = None,
+        images: list[bytes] | None = None,
     ) -> tuple[str, str]:
         messages = []
         if system_prompt:
@@ -391,6 +422,7 @@ class LLMGateway:
                         reasoning_effort=reasoning_effort,
                         api_key=api_key,
                         model_kwargs=model_kwargs,
+                        images=images,
                     )
                 except cache.LLMReplayMiss as miss:
                     # No fixture is not a failed call: nothing was sent, no
