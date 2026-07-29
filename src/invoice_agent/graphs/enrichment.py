@@ -156,6 +156,41 @@ def manual_queue_node(state: EnrichmentState) -> dict[str, Any]:
     return {"status": "manual_queue"}
 
 
+def route_after_validate(state: EnrichmentState) -> str:
+    """Tell an extraction error from a data error — design doc §3.3.
+
+    The split is PER-STRATEGY, not per-finding-code, and it falls out of one
+    property: the XML parser is a pure function and vision is not.
+
+      * XML + findings  -> a DATA error. The invoice is wrong, we read it
+        correctly, and retrying a deterministic parser three times yields three
+        identical results. Carry the flags to the human.
+      * vision + findings -> possibly an EXTRACTION error: the same
+        ARITHMETIC_MISMATCH may be misread digits. Retry with the concrete
+        error in the prompt, which §3.3 says is the retry that actually works.
+    """
+    if state.get("extracted") is None:
+        # Nothing was read. Escalate a strategy at a time.
+        if state["strategy"] == "xml" and state.get("pdf_path"):
+            return "vision_extract"
+        if (
+            state["strategy"] == "vision"
+            and state.get("extraction_attempts", 0) < MAX_VISION_ATTEMPTS
+        ):
+            return "vision_extract"
+        return "manual_queue"
+
+    if not state.get("findings"):
+        return END
+
+    if state["strategy"] == "xml":
+        return END
+
+    if state.get("extraction_attempts", 0) < MAX_VISION_ATTEMPTS:
+        return "vision_extract"
+    return "manual_queue"
+
+
 def build_enrichment_graph(
     *, gateway: LLMGateway | None = None, checkpointer: Any = None
 ) -> Any:
@@ -180,9 +215,12 @@ def build_enrichment_graph(
     )
     builder.add_edge("parse_xml", "validate")
     builder.add_edge("vision_extract", "validate")
-    # Task 3 replaces this straight edge with the conditional that is the whole
-    # point of the milestone.
-    builder.add_edge("validate", END)
+    builder.add_conditional_edges(
+        "validate",
+        route_after_validate,
+        {"vision_extract": "vision_extract", "manual_queue": "manual_queue", END: END},
+    )
     builder.add_edge("manual_queue", END)
 
     return builder.compile(checkpointer=checkpointer)
+
