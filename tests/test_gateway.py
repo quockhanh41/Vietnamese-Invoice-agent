@@ -5,7 +5,10 @@ Port từ Project A `tests/test_gateway.py`. Khác một điểm: gateway ở đ
 hermetic thật sự, không còn phải `monkeypatch.delenv` để chống `.env` rò vào.
 """
 
+import json
+
 import pytest
+from tests.helpers.fake_llm import ok_response as _ok_response
 
 from invoice_agent.config import Settings
 from invoice_agent.llm.gateway import LLMGateway
@@ -128,35 +131,6 @@ class TestRateLimitDetection:
     def test_other_errors_do_not(self, gateway):
         # Model chết thì phải sang model KHÁC, không phải xoay key vô ích.
         assert gateway._is_rate_limit(Exception("404 model not found")) is False
-
-
-class _FakeUsage:
-    def __init__(self, prompt: int, completion: int):
-        self.prompt_tokens = prompt
-        self.completion_tokens = completion
-
-
-class _FakeMessage:
-    def __init__(self, content: str):
-        self.content = content
-
-
-class _FakeChoice:
-    def __init__(self, content: str):
-        self.message = _FakeMessage(content)
-
-
-class _FakeResponse:
-    """Just enough of a litellm ModelResponse for the gateway's two accesses:
-    `.choices[0].message.content` and `.usage`."""
-
-    def __init__(self, content: str, prompt: int, completion: int):
-        self.choices = [_FakeChoice(content)]
-        self.usage = _FakeUsage(prompt, completion)
-
-
-def _ok_response(content: str, *, prompt: int, completion: int) -> _FakeResponse:
-    return _FakeResponse(content, prompt, completion)
 
 
 class TestCallRecording:
@@ -391,5 +365,83 @@ class TestReplayMode:
             llm_mode="live", llm_cache_dir=str(tmp_path), llm_model_chain=[model]
         )
         assert gw.generate("xin chào") == "giá trị trực tiếp"
+
+    def test_record_mode_writes_a_fixture_for_a_FAILED_call(self, tmp_path, monkeypatch):
+        """The one thing CachedResponse.error exists for (spec §5.2): M3-C
+        replays the escalation path, where a FAILING vision call is the point.
+        Found 2026-07-29 by review — `cache.save` was reachable only from the
+        success path, so those fixtures would have had to be hand-written JSON,
+        i.e. the feature was half-built and its justification undeliverable.
+        """
+        from invoice_agent.llm import gateway as gw_module
+
+        def always_429(**kwargs):
+            raise RuntimeError("429 rate limit exceeded")
+
+        monkeypatch.setattr(gw_module.litellm, "completion", always_429)
+        gw = make_gateway(
+            groq_api_keys=["gk1"], llm_mode="record", llm_cache_dir=str(tmp_path),
+            llm_model_chain=["groq/llama-3.3-70b-versatile"],
+        )
+        with pytest.raises(RuntimeError):
+            gw.generate("Hóa đơn giá trị gia tăng số 00000123")
+
+        fixtures = list(tmp_path.glob("*.json"))
+        assert fixtures, "record mode saved nothing for a failed call"
+        doc = json.loads(fixtures[0].read_text(encoding="utf-8"))
+        assert "429" in doc["error"]
+        assert doc["usage"]["prompt_tokens"] > 0, "the failed attempt burned these"
+
+    def test_a_failure_recorded_then_replayed_raises_the_same_way(self, tmp_path, monkeypatch):
+        """Record and replay compose without a human editing JSON in between.
+        This is the M3-C escalation path end to end."""
+        from invoice_agent.llm import gateway as gw_module
+
+        def always_429(**kwargs):
+            raise RuntimeError("429 rate limit exceeded")
+
+        monkeypatch.setattr(gw_module.litellm, "completion", always_429)
+        recorder = make_gateway(
+            groq_api_keys=["gk1"], llm_mode="record", llm_cache_dir=str(tmp_path),
+            llm_model_chain=["groq/llama-3.3-70b-versatile"],
+        )
+        with pytest.raises(RuntimeError):
+            recorder.generate("xin chào")
+
+        monkeypatch.setattr(
+            gw_module.litellm, "completion",
+            lambda **kwargs: (_ for _ in ()).throw(AssertionError("no network in replay")),
+        )
+        replayer = make_gateway(
+            groq_api_keys=[], llm_mode="replay", llm_cache_dir=str(tmp_path),
+            llm_model_chain=["groq/llama-3.3-70b-versatile"],
+        )
+        calls = []
+        with pytest.raises(RuntimeError) as excinfo:
+            replayer.generate("xin chào", calls=calls)
+        assert "429" in str(excinfo.value)
+        assert calls and calls[0].succeeded is False
+
+    def test_generate_stream_refuses_replay_rather_than_calling_the_network(
+        self, tmp_path, monkeypatch
+    ):
+        """`litellm.completion` has two call sites and only `_complete` sits
+        behind the seam — found 2026-07-29 by review. Streaming has no fixture
+        format yet (spec §8.1), so refusing keeps "replay never touches the
+        network" true of the CLASS rather than only of `generate()`.
+        """
+        from invoice_agent.llm import gateway as gw_module
+        from invoice_agent.llm.cache import LLMReplayMiss
+
+        monkeypatch.setattr(
+            gw_module.litellm, "completion",
+            lambda **kwargs: (_ for _ in ()).throw(AssertionError("no network in replay")),
+        )
+        gw = make_gateway(
+            groq_api_keys=[], llm_mode="replay", llm_cache_dir=str(tmp_path),
+            llm_model_chain=["groq/llama-3.3-70b-versatile"],
+        )
+        with pytest.raises(LLMReplayMiss):
+            list(gw.generate_stream("xin chào"))
 
 

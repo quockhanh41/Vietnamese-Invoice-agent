@@ -128,3 +128,54 @@ def test_context_columns_are_optional(runtime_conn):
         node="eval_harness",
     )
     assert len(ids) == 1
+
+
+def test_gateway_records_reach_the_database_unchanged(runtime_conn, monkeypatch):
+    """Spec §7 criterion 3, which no single test covered until now.
+
+    The gateway half asserted three RECORDS and the telemetry half asserted two
+    ROWS; nothing drove one into the other. Found 2026-07-29 by review. A
+    stubbed fallback — two rate-limited keys, then a success — must land as
+    THREE rows, two of them failed with non-zero prompt_tokens.
+    """
+    from tests.helpers.fake_llm import ok_response
+
+    from invoice_agent.config import Settings
+    from invoice_agent.llm import gateway as gw_module
+    from invoice_agent.llm.gateway import LLMGateway
+
+    attempts: list[str] = []
+
+    def fake_completion(**kwargs):
+        attempts.append(kwargs["api_key"])
+        if len(attempts) <= 2:
+            raise RuntimeError("429 rate limit exceeded")
+        return ok_response("VĂN PHÒNG PHẨM", prompt=1000, completion=200)
+
+    monkeypatch.setattr(gw_module.litellm, "completion", fake_completion)
+    gateway = LLMGateway(
+        Settings(
+            _env_file=None,
+            groq_api_keys=["gk1", "gk2", "gk3"],
+            llm_model_chain=["groq/llama-3.3-70b-versatile"],
+            # Pinned, exactly as make_gateway() in tests/test_gateway.py pins it.
+            # Without this the ambient LLM_MODE leaks in, and under the gate
+            # command (`LLM_MODE=replay …`) this test would look for a fixture
+            # instead of exercising the recording path it exists to test.
+            llm_mode="live",
+        )
+    )
+    calls: list[LLMCallRecord] = []
+    gateway.generate("Hóa đơn giá trị gia tăng số 00000123", calls=calls)
+
+    invoice_id = _make_invoice(runtime_conn)
+    telemetry.record(runtime_conn, calls, node="classify", invoice_id=invoice_id)
+
+    rows = sorted(_rows_for(runtime_conn, invoice_id), key=lambda r: r["attempt"])
+    assert len(rows) == 3
+    assert [r["succeeded"] for r in rows] == [False, False, True]
+    assert all(r["prompt_tokens"] > 0 for r in rows), "failed attempts burned input tokens"
+    assert rows[0]["completion_tokens"] == 0
+    # Free tier: paid nothing, and the reference price says what that is worth.
+    assert rows[2]["cost_usd"] == Decimal(0)
+    assert rows[2]["shadow_cost_usd"] == Decimal("0.00027")

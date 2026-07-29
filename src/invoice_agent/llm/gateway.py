@@ -209,14 +209,36 @@ class LLMGateway:
                 raise RuntimeError(hit.error)
             return hit.text, hit.prompt_tokens, hit.completion_tokens
 
-        response = litellm.completion(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            api_key=api_key,
-            **model_kwargs,
-        )
+        try:
+            response = litellm.completion(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                api_key=api_key,
+                **model_kwargs,
+            )
+        except Exception as e:
+            if self.mode == "record":
+                # A failure is a fixture too. Without this, `CachedResponse.error`
+                # could be READ but never WRITTEN, so M3-C's escalation replay —
+                # the sole reason that field exists (spec §5.2) — would need
+                # hand-written JSON. Found 2026-07-29 by review of M3-A.
+                #
+                # Note what this means with key rotation: every key for a model
+                # shares one cache key, so if a later key succeeds it overwrites
+                # this fixture. That is correct — replay reproduces the OUTCOME
+                # of a model, not the retry dance that got there.
+                cache.save(
+                    self.cache_dir, key, model=model, messages=messages,
+                    response=cache.CachedResponse(
+                        text="",
+                        prompt_tokens=self._count_tokens(model, messages),
+                        completion_tokens=0,
+                        error=f"{type(e).__name__}: {e}"[:500],
+                    ),
+                )
+            raise
         usage = getattr(response, "usage", None)
         text = self._clean_thinking(response.choices[0].message.content)
         prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
@@ -443,6 +465,19 @@ class LLMGateway:
         Yields:
             Text tokens one at a time
         """
+        if self.mode == "replay":
+            # `litellm.completion` has two call sites and only `_complete` sits
+            # behind the replay seam — found 2026-07-29 by review of M3-A.
+            # Streaming has no fixture format yet (spec §8.1 records that as an
+            # open question), so falling through would let LLM_MODE=replay make
+            # a real network call, destroying the one property this mode exists
+            # to guarantee. Refusing is the honest behaviour until a streaming
+            # fixture format is designed.
+            raise cache.LLMReplayMiss(
+                "generate_stream() has no replay support (spec §8.1). Use generate() "
+                "under LLM_MODE=replay, or design a streaming fixture format first."
+            )
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})

@@ -2,7 +2,8 @@
 
 > **Date**: 2026-07-29
 > **Milestone**: M3-A (`src/invoice_agent/llm/`)
-> **Status**: Completed · 376 total project tests passing
+> **Status**: Completed, then hardened by exit review the same day · **380 tests passing**
+> (376 at implementation; the 4 added are the review's guards — see §6)
 
 ---
 
@@ -46,22 +47,105 @@ All 12 source code mutations were executed and verified to turn target test case
 | 11 | Delete `doc.get("key") != key` check in `cache.load` | `test_a_truncated_filename_collision_is_a_miss_not_a_wrong_answer` | **RED** |
 | 12 | Replace `api_keys = [""] if self.mode == "replay"` with `self._keys_for(...)` | `test_replay_runs_with_no_api_keys` | **RED** |
 
+**Re-verified independently 2026-07-29 (exit review).** All 12 were re-broken from scratch rather
+than re-read — 11 by script against `gateway.py` / `cache.py` / `cost.py`, and #10 by a real
+`alembic downgrade -1`. **12/12 red.** The migration also round-trips: `downgrade -1` turns the guard
+red, `upgrade head` turns it green again.
+
+The exit review then added four more, for defects the table above could not have caught because no
+test covered the behaviour at all (see §6):
+
+| # | Mutation Applied | Target Test Case | Result |
+|---|---|---|---|
+| 13 | Stop saving a fixture when `litellm.completion` raises in `record` mode | `test_record_mode_writes_a_fixture_for_a_FAILED_call` | **RED** |
+| 14 | Same mutation, against the record→replay round trip | `test_a_failure_recorded_then_replayed_raises_the_same_way` | **RED** |
+| 15 | Let `generate_stream` fall through to `litellm` under `LLM_MODE=replay` | `test_generate_stream_refuses_replay_rather_than_calling_the_network` | **RED** |
+| 16 | Make `telemetry.record` skip records with `succeeded=False` | `test_gateway_records_reach_the_database_unchanged` | **RED** |
+
+**16/16.**
+
 ---
 
 ## 4. Spec Success Criteria Verification
 
-- [x] **Criterion 1 (Replay Gate):** Test suite passes cleanly under `LLM_MODE=replay` with zero API keys.
-- [x] **Criterion 2 (Attempt Recording):** Every attempt (including 429 rate limit failures) records prompt tokens, completion tokens, latency, attempt index, error string, and dual costs.
-- [x] **Criterion 3 (Dual Pricing):** `cost_usd` records $0 for free-tier calls, while `shadow_cost_usd` records non-zero reference pricing.
-- [x] **Criterion 4 (Clean Autogenerate):** `alembic revision --autogenerate` produces zero diff operations against `db/models.py`.
-- [x] **Criterion 5 (Runtime Role Grants):** DB recording tests run under non-privileged `runtime_conn` role.
-- [x] **Criterion 6 (Mutation Guards):** All 12 mutation guards verified RED.
+Stated in spec §7's own words and order. (An earlier draft of this note substituted six
+differently-named criteria — dropping the "three rows" number from criterion 3 and replacing
+criterion 6 with "Runtime Role Grants", which §7 does not contain. All six were in fact met, but
+reporting against renamed criteria is the mechanism that produced M2-A's fabricated
+`ck_vendors_tax_code_format` artefact, so the list is restored verbatim.)
+
+- [x] **1.** `make check` green with `LLM_MODE=replay` and **no API keys in the environment** —
+  measured 2026-07-29: **380 passed**, zero skips, with all seven key variables unset.
+- [x] **2.** `alembic upgrade head` applies migration 10; `--autogenerate` afterwards emits an
+  **empty** migration — `test_autogenerate_emits_an_empty_migration` green, and the M1.6 guard holds.
+- [x] **3.** A **stubbed** fallback (live mode, `litellm.completion` monkeypatched to raise 429 twice
+  then succeed) produces **three** `llm_calls` rows, two with `succeeded=false` and non-zero
+  `prompt_tokens` — `test_gateway_records_reach_the_database_unchanged`, added by the exit review
+  because nothing previously drove the gateway's records into the database (§6, finding 3).
+- [x] **4.** A Groq call records `cost_usd = 0` and `shadow_cost_usd > 0`; a `gpt-4o-mini` call
+  records both equal — `test_free_tier_records_zero_cost_and_a_non_zero_shadow` and
+  `test_gpt4o_mini_actual_equals_shadow`.
+- [x] **5.** Mutations verified red one at a time — **16**, up from the ten the spec asked for and
+  the twelve the plan listed.
+- [x] **6.** `ruff` and `mypy` clean over `src/`, `tests/`, `scripts/`, `migrations/` — the four
+  directories `make lint` covers, per the M2-C exit finding that `scripts/` had never been linted.
 
 ---
 
-## 5. Recorded Open Technical Questions (Spec §8)
+## 5. Open Questions Carried Forward (Spec §8)
 
-1. **Streaming Replay Coverage:** `generate_stream` currently does not record or replay fixtures. (Non-blocking for M3-A; deferred).
-2. **Cache Lifecycle Strategy:** Fixture cache files are immutable; re-recording when prompts change requires explicit `LLM_MODE=record`.
-3. **Monotonic Attempt Indexing:** Attempt counter increases monotonically `1, 2, 3...` across model chain fallbacks.
-4. **Token Counter Offline Behavior for Future Models:** `litellm.token_counter` is offline for current 6 models; future additions must be re-tested before adoption.
+These are **open**, not settled. An earlier draft of this note restated three of them as
+descriptions of current behaviour, which quietly converts a question into an answer and removes the
+reason anyone would revisit it.
+
+1. **Does replay need to cover streaming?** `generate_stream` has no fixture format. Nothing in the
+   repo calls it (M5's SSE is per-node progress, not tokens). The exit review made it **raise**
+   under `LLM_MODE=replay` rather than fall through to the network (§6, finding 2), so the hole is
+   now closed *by refusal* — but the question of whether to build streaming replay is still open,
+   and returns if M8's demo streams.
+2. **Cache invalidation still has no story.** A changed prompt silently misses and raises
+   `LLMReplayMiss`. That is the right failure but a noisy one during M3-B/M3-C development. If it
+   becomes friction the answer is a `make record` target — *not* a softer miss.
+3. **`attempt` numbering across a chain.** This milestone chose monotonic-per-call (1, 2, 3) so
+   `COUNT(*) GROUP BY` over a call's rows equals its attempt count. Whether M6's cost report wants
+   per-model retry rates instead is **unanswered**; that is the trigger to revisit.
+4. **Whether `token_counter` stays offline for models added later.** Measured true for all six today.
+   The pricing half of this is guarded by `test_every_configured_model_is_priced`; the **tokenizer
+   half is not guarded at all**.
+
+---
+
+## 6. Exit Review — 2026-07-29
+
+The implementation reported 12/12 mutations red. Re-broken independently, that claim **held** — the
+first milestone in this repo where it did. M1 shipped four tests that passed while guarding nothing,
+and M2 found one such defect in each of its three sub-specs.
+
+Three real gaps were found, all in behaviour no mutation could have caught because no test covered
+it. All three are fixed above.
+
+1. **`LLM_MODE=record` could never produce a failure fixture.** `cache.save` was reachable only from
+   the success path of `_complete`. But spec §5.2's sole surviving justification for
+   `CachedResponse.error` is M3-C replaying the escalation path, where a *failing* vision call is
+   the point — so those fixtures would have had to be hand-written JSON, i.e. the feature was
+   half-built and its stated purpose undeliverable. **This originated in the plan**, which had the
+   same shape; the implementation reproduced it faithfully. `_complete` now saves on the failure
+   path too. Note the interaction with key rotation, which is deliberate: every key for a model
+   shares one cache key, so a later successful key overwrites the failure fixture — replay
+   reproduces a model's *outcome*, not the retry dance that reached it.
+2. **`generate_stream` bypassed the replay seam entirely.** `litellm.completion` has two call sites;
+   only `_complete` sat behind the seam. "Replay never touches the network" was therefore true of
+   `generate()` but not of the class, with nothing stopping M5 or M8 from adding a caller and
+   silently breaking it on a keyless runner. It now raises `LLMReplayMiss` under replay.
+3. **Nothing exercised gateway → telemetry → database.** The gateway half asserted three *records*,
+   the telemetry half asserted two *rows*, and no test joined them — so spec §7 criterion 3 was
+   unmet as written. Low severity, since the shared dataclass makes a mismatch mypy-visible, but
+   the criterion is a criterion. Closed by `test_gateway_records_reach_the_database_unchanged`.
+
+**One defect in the review's own first fix, worth recording.** That new test initially failed under
+the gate command while passing under `make check`: it built `Settings(_env_file=None, …)` without
+pinning `llm_mode`, so the ambient `LLM_MODE=replay` leaked in and the test looked for a fixture
+instead of exercising the recording path. `make_gateway()` in `tests/test_gateway.py` already pins
+`"llm_mode": "live"` for exactly this reason. **A test that behaves differently under the gate
+command than under `make check` is not hermetic** — and the only reason it surfaced is that both
+commands were run, which is why the success criteria list them separately.

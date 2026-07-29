@@ -40,6 +40,7 @@
 | `tests/test_gateway.py` | **Modify.** New classes for the out-param and the replay seam. |
 | `tests/test_migrations.py` | **Modify.** Column-existence assertion for `llm_calls`. |
 | `docs/notes/2026-07-29-m3a-llm-plumbing.md` | **Create** in Task 7. Mutation evidence. |
+| `docs/Plan_Project_F_2026-07-25.md` | **Modify** in Task 7. Mark 3.6/3.7 done, record 3.1's move to M7. |
 
 ---
 
