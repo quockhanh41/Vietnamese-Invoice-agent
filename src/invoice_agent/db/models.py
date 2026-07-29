@@ -422,6 +422,15 @@ llm_calls = Table(
     Column("model", sa.Text, nullable=False),
     Column("provider", sa.Text, nullable=False),
     Column("node", sa.Text, nullable=False),
+    # Design doc §2.9 context. All nullable: a call from scripts/run_one.py has
+    # no invoice yet, and an eval-harness call has neither invoice nor batch.
+    # `trace_id` is written by nothing until M6.5 wires Langfuse — the column
+    # ships now because one migration is cheaper than two.
+    Column("invoice_id", sa.Uuid(as_uuid=True), sa.ForeignKey("invoices.id")),
+    Column("batch_id", sa.Uuid(as_uuid=True), sa.ForeignKey("batches.id")),
+    Column("thread_id", sa.Text),
+    Column("agent", sa.Text),
+    Column("trace_id", sa.Text),
     Column("prompt_tokens", sa.Integer, nullable=False),
     Column("completion_tokens", sa.Integer, nullable=False),
     Column("cost_usd", sa.Numeric, nullable=False, server_default="0"),

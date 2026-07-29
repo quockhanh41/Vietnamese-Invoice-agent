@@ -79,3 +79,40 @@ class TestSpikeCounterTable:
                 )
             }
         assert {"id", "thread_id", "created_at"} <= cols
+
+
+class TestLlmCallsContextColumns:
+    """Design doc §2.9 names the context columns; migration 09 shipped without
+    five of them. The M3 gate — 'cost for ONE INVOICE' — is not expressible in
+    a table that cannot name an invoice."""
+
+    def test_has_every_column_in_design_2_9(self, requires_postgres):
+        with psycopg.connect(requires_postgres) as conn:
+            cols = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema='app' AND table_name='llm_calls'"
+                )
+            }
+        assert {
+            "invoice_id", "batch_id", "thread_id", "node", "agent",
+            "model", "provider", "prompt_tokens", "completion_tokens",
+            "cost_usd", "shadow_cost_usd", "latency_ms", "attempt",
+            "succeeded", "error", "trace_id", "occurred_at",
+        } <= cols
+
+    def test_context_columns_are_nullable(self, requires_postgres):
+        """A call made by scripts/run_one.py before any invoice row exists has
+        no invoice_id. NOT NULL here would force callers to invent an identity,
+        which is how telemetry tables fill up with sentinel rows."""
+        with psycopg.connect(requires_postgres) as conn:
+            nullable = dict(
+                conn.execute(
+                    "SELECT column_name, is_nullable FROM information_schema.columns "
+                    "WHERE table_schema='app' AND table_name='llm_calls'"
+                ).fetchall()
+            )
+        for col in ("invoice_id", "batch_id", "thread_id", "agent", "trace_id"):
+            assert nullable[col] == "YES", f"{col} must be nullable"
+
