@@ -20,11 +20,18 @@ from decimal import Decimal
 from random import Random
 
 from scripts.generator import (
-    defects, descriptions, gate_batch, manifest, pdf, templates, vendors,
+    defects,
+    descriptions,
+    gate_batch,
+    manifest,
+    pdf,
+    templates,
+    vendors,
 )
 from scripts.generator.manifest import ManifestRecord
 from scripts.generator.templates import InvoiceSpec, LineSpec
-from scripts.seed_reference import BUDGETS, DEPARTMENTS as _SEEDED_DEPARTMENTS
+from scripts.seed_reference import BUDGETS
+from scripts.seed_reference import DEPARTMENTS as _SEEDED_DEPARTMENTS
 
 DEFECT_RATIOS: dict[str, float] = {
     "arithmetic_error": 0.06,

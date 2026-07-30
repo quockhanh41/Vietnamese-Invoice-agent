@@ -11,7 +11,8 @@ See spec 2026-07-31-m4a §1.1 D1.
 
 from scripts import generate_invoices
 from scripts.generator import manifest
-from scripts.seed_reference import BUDGETS, DEPARTMENTS as SEEDED
+from scripts.seed_reference import BUDGETS
+from scripts.seed_reference import DEPARTMENTS as SEEDED
 
 BUDGET_PERIOD = "2026-07"
 

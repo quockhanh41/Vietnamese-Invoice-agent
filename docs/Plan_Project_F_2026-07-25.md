@@ -191,13 +191,13 @@ kèm 2 PDF có số CCCD (vá ở `bb8718d`). Đính chính một cảnh báo c�
 `vietnamese-legal-bot/.claude/settings.json` "đang commit Langfuse key plaintext" — **sai**,
 `.claude/` đã bị gitignore và `git log --all` trả về rỗng; key chưa bao giờ vào history.
 
-**Next**: M4 — multi-agent, memory, and the budget serialization proof. The gate is open. What is
-owed, roughly in the order it will hurt:
+**Next**: M4 — multi-agent, memory, and the budget serialization proof. M4-A corpus & reference alignment done 2026-07-31 (found five defects in M2/M3 outputs before any M4 code was written, including unjoinable departments and reverse canonical rank). The gate is open. What is owed, roughly in the order it will hurt:
 
 - **The vision branch has no accuracy measurement of any kind** — not synthetic, not real. No
   vision-capable API key is configured, so no fixture has ever been recorded (M3-B §8.1, M3-C §8.1).
+  Re-declared at M4-A: Task 9 step 1 precondition check confirmed no key configured.
   **M6 cannot report a vision number until this is paid**, and paying it later means rebuilding all
-  of M3's context first. It costs one recording run against a generated PDF.
+  of M3's context first.
 - **The six PII-carrying vendor PDFs are still in git history on origin**, alongside the M1 tax-code
   leak in this document. Untracked from `HEAD` at M3-B, but the blobs remain reachable. Deferred
   twice; deferred is not the same as decided.
@@ -529,6 +529,7 @@ Details in the note's §7.
 
 | # | Việc | Tham chiếu |
 |---|---|---|
+| 4-A | ✅ **Done 2026-07-31.** Corpus & reference alignment — generator departments derived from seed (fixes 194/300 unjoinable FK failure), `canonical_budget_rank` in canonical order, category-first generation (`TIER_MIX` tuned baseline 57.2%), alternative categories, and declared 30-invoice gate batch (`gate_batch.py` + `gate_batch.json`). Spec `2026-07-31-m4a-corpus-reference-alignment-design.md`, plan `2026-07-31-m4a-corpus-reference-alignment.md`. | §1.1 |
 | 4.1 | `ClassificationAgent` (tier rẻ) + `AuditorAgent` với **`exclude_model=model_used`** — mở rộng `generate_with_model` (`gateway.py:152`) | §6.3 |
 | 4.2 | Bất đồng → cờ `CLASSIFICATION_DISPUTED`, đưa người duyệt **cả hai ý kiến kèm lý do** | §6.4 |
 | 4.3 | `memory/vendor_profile.py` — upsert **transactional** + z-score price outlier + `rebuild_vendor_profiles.py` (lối thoát khi profile lệch) | §2.2, §7 |
@@ -536,10 +537,15 @@ Details in the note's §7.
 | 4.5 | `domain/anomaly.py` + `reconcile_budget` **SERIAL**, thứ tự canonical `(issue_date, invoice_series, invoice_number)`, ghi `budget_consumption` với `balance_before/after/sequence_no` | §4.3, §2.6 |
 | 4.6 | `graphs/batch.py` — `Send` fan-out, `enrich_one` là **wrapper function node** (map state tường minh + `try/except` mỗi task), `max_concurrency=4–6` | §4.1, §4.2 |
 
-**Gate M4**: batch 30 hóa đơn → ~26 auto, ~4 gắn cờ; **`test_budget_serialization.py` xanh** — xáo
-trộn thứ tự file đầu vào 10 lần, chuỗi `balance_after` byte-identical và **cùng một hóa đơn** vượt;
-một file hỏng trong batch không giết cả batch (rơi vào `failed`); Auditor override precision đo được
-(báo cáo dù xấu — dưới 50% là gây hại ròng).
+**Gate M4**: exact agreement between the declared gate batch
+(`scripts/generator/gate_batch.py`, 30 invoices) and what the batch actually
+flags — the auto/flag split is reported, not targeted, because the corpus's
+finding rate is 28% and `BUDGET_BREACH` is a property of the batch rather than
+of the invoice; **`test_budget_serialization.py` green** — shuffle input order
+10 times, `balance_after` chain byte-identical and the same invoice breaches;
+one corrupt file lands in `failed` without killing the batch; Auditor override
+precision measured and reported however it scores (below 50% is net harmful and
+gets said).
 **Artefact**: **log bất đồng Classifier vs Auditor** — tình huống multi-agent bất đồng thật, không
 dàn dựng. Cộng ADR `0003-no-supervisor-agent.md` + `0004-serial-budget-reconciliation.md`.
 
@@ -675,7 +681,7 @@ ngay; **mọi con số trong README trace được về `docs/eval-report.md` tr
 | M1 — XML thật + HITL spike | ✅ | 2026-07-28 | **Gate 4/4, re-verified independently 2026-07-28** (not merely re-read): `make check` 123 passed, HITL `kill -9` **10/10 locally** at `HITL_RUNS=10`, real `alembic revision --autogenerate` against the 4 live checkpoint tables emits an **empty** migration. All 6 items done: ✅ 1.1 (8 files / 8 vendors / 3 `PBan`) · ✅ 1.2 · ✅ 1.3 `xml_schema.py` · ✅ 1.4 `xml_parser.py` (8/8 parse) · ✅ 1.5 HITL durability · ✅ 1.6 Alembic isolation + ADR 0002. **8/8 guards re-confirmed red under mutation** — see the review note below. Owed, non-blocking: ADR `0001-three-graphs-not-one.md`; terminal recording (deferred to M8); NĐ 70/2025 field check |
 | M2 — Corpus + schema + domain | ✅ | 2026-07-28 | **Gate 5/5, re-verified independently 2026-07-28.** Split into three specs: **M2-A** (2.4/2.5/2.7 schema+seed+repositories, 15 bảng / 9 revision / 11 mutation guard đều đỏ) · **M2-B** (2.6 `domain/`, 107 test, 8/8 hóa đơn thật ra ZERO finding, 10 guard đỏ) · **M2-C** (2.1–2.3 generator, 67 test, 9 guard đỏ). Corpus: 300 mục = 285 XML **parse hết** + 15 PDF-only khai báo rõ là không parse được (M3.4 render). Generator KHÔNG import `xml_schema`/`xml_parser`/`domain` — có test chặn, nên điểm round-trip là bằng chứng chứ không phải lặp vòng. **Ba lần review, ba lần tìm ra lỗi mà bản implement đã báo là đạt**: guard M1.6 bị viết lại thành mù trên CI + artefact bịa `ck_vendors_tax_code_format` + 32 diff ma autogenerate (M2-A); một mutation guard xanh khi đã phá luật (M2-B); `make check` ĐỎ lúc đóng milestone + `scripts/` chưa từng được lint + `BUDGETS` import chết (M2-C). Đã sửa hết và đo lại. **Nợ, không chặn M3**: ADR `0001-three-graphs-not-one.md`; terminal recording (M8); NĐ 70/2025; KCT/KKKNT; PDF render (M3.4); injection variant 7–26 (M6.1) |
 | M3 — Extraction + tools + cost + replay | ✅ | 2026-07-29 | **Gate 4/4, closed 2026-07-29.** Split into three specs, each independently reviewed the same day it was implemented: **M3-A** (3.6/3.7 cost capture + `LLM_MODE=replay`; migration 10 closed an M2-A hole where `llm_calls` shipped five columns short of design §2.9 while the spec claimed it verbatim) · **M3-B** (3.2/3.3/3.4 `structured.py`, `sanitize.py`, `vision.py`, corpus PDFs + font; six PII-carrying vendor PDFs untracked) · **M3-C** (3.5 `graphs/enrichment.py`, `route_after_validate`, `serde.py` msgpack allowlist, `run_one.py`, generated mermaid drift guard). **455 passed** under `make check` and again under `LLM_MODE=replay` with zero API keys. Item 3.1 moved to M7 — `ToolSpec` has no consumer inside the M3 gate (M3-A §3.3). **Three reviews, three sets of defects the implementation had reported as passing**: `LLM_MODE=record` could never write a FAILURE fixture — the sole reason `CachedResponse.error` exists — plus `generate_stream` bypassing the replay seam, and no test driving gateway → telemetry → DB (M3-A; **the first of those originated in the plan**); a closeout note headed "verbatim" that dropped the one criterion that was false, invented open questions replacing two safety-relevant real ones, and an "extraction confirmed" spot-check with no numbers and no recorded fixture (M3-B); a **red pushed commit**, two tests that passed exactly once per database, and a mutation made red by asserting a list contains itself (M3-C). **16/16 · 14/14 · 12/12 guards red** after fixes. **Owed, not blocking M4**: the vision branch has **no accuracy measurement at all** and no key is configured; the PII git-history purge; ADR `0001-three-graphs-not-one.md`; a per-run `thread_id` component (M3-C §8.5) and function-node wrapping (§8.3), both landing in M4. |
-| M4 — Multi-agent + memory + serialization | 🔲 | | |
+| M4 — Multi-agent + memory + serialization | 🚧 | | Split into four specs: **M4-A** corpus & reference alignment (new — not in the original six items) · **M4-B** memory + `signals` · **M4-C** agents · **M4-D** batch graph + serial reconciliation. **M4-A done 2026-07-31.** Planning found **five defects in M2/M3 outputs**, all before any M4 code was written, and three of them made M4's own gate unmeasurable: generator departments `(MKT,IT,HR,LOG,ADM,SAL)` did not join the seeded `(MKT,ADMIN,OPS,IT,SALES)`, so **194 of 300 invoices could not satisfy `invoices.department`** and four departments had no budget to reconcile against; `canonical_budget_rank` held construction order, which `defects.py:163` deliberately makes the **reverse** of canonical order; the corpus **did not encode `category` in its text** — baseline agreement **5/285 = 1.8%**, below the 16.7% chance rate, with 249/285 matching no keyword at all, and `INV-0001/0002/0003` carrying one identical description under three different labels; `AMBIGUOUS_DESCRIPTIONS` already paired each description with `(primary, alternative)` and line 313 read it as `desc, _`; and `BUDGET_BREACH` was treated as a per-invoice property when 59 MKT invoices total 993,010,000 against a 50,000,000 limit. Baseline after the fix: **57.2%** with `TIER_MIX` recorded. Held-out real-fixture check: **2/5**. Evidence `docs/notes/2026-07-31-m4a-corpus-labels.md`. **These were found by planning, not by implementation** — the first milestone in this project where that is true |
 | M5 — HITL production + API + UI | 🔲 | | |
 | M6 — Security + observability + eval | 🔲 | | |
 | M7 — MCP + Next.js | 🔲 | | Quy tắc dừng: 4 ngày cho Next.js |
