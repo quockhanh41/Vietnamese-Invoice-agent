@@ -81,3 +81,40 @@ def test_canonical_order_differs_from_invoice_number_order():
     by_number = sorted(built, key=lambda s: s.invoice_number)
     canonical = sorted(built, key=lambda s: (s.issue_date, s.invoice_series, s.invoice_number))
     assert [s.invoice_number for s in by_number] != [s.invoice_number for s in canonical]
+
+
+def test_canonical_budget_rank_is_canonical_position(tmp_path):
+    """The field name says canonical; the value was file order.
+
+    Measured 2026-07-30: rank was assigned by `enumerate` over construction
+    order (generate_invoices.py:164), which for this case is invoice-number
+    order — and defects.py:163 DELIBERATELY makes invoice-number order the
+    reverse of canonical order, so shuffling can tell a sorted implementation
+    from an unsorted one. So rank=1 was INV-0001, which is THIRD in canonical
+    order and the one that breaches. M4-D reading this field as canonical
+    position would have got exactly the wrong answer, and passed.
+    See spec 2026-07-31-m4a §1.1 D2.
+    """
+    import json
+
+    from scripts import generate_invoices
+
+    out = tmp_path / "corpus"
+    generate_invoices.generate(count=300, seed=42, out=out)
+    rows = [json.loads(line) for line in (out / "manifest.jsonl").open(encoding="utf-8")]
+
+    ranked = [r for r in rows if r["canonical_budget_rank"] is not None]
+    assert len(ranked) == 3, f"expected the 3-invoice budget case, got {len(ranked)}"
+
+    canonical = sorted(
+        ranked, key=lambda r: (r["issue_date"], r["invoice_series"], r["invoice_number"])
+    )
+    for position, record in enumerate(canonical, start=1):
+        assert record["canonical_budget_rank"] == position, (
+            f"{record['invoice_id']} issued {record['issue_date']} is #{position} in "
+            f"canonical order but carries rank {record['canonical_budget_rank']}"
+        )
+
+    # The one that breaches is LAST in canonical order, not first in file order.
+    assert canonical[-1]["canonical_budget_rank"] == 3
+    assert canonical[-1]["issue_date"].endswith("-20")

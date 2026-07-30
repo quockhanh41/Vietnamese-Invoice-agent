@@ -200,8 +200,20 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
             f"never breach. Re-tune defects._BUDGET_CASE_AMOUNTS against seed_reference.BUDGETS."
         )
 
-    for rank, bspec in enumerate(budget_case_specs, start=1):
-        specs.append((bspec, ["budget_overrun"], {"rank": rank, "category": "MARKETING"}))
+    # Rank by CANONICAL order (issue_date, series, number), not by construction
+    # order. defects.py:163 deliberately makes invoice-number order the reverse
+    # of canonical order so that shuffling arrival order can distinguish a
+    # sorted implementation from an unsorted one; ranking by construction order
+    # therefore stored precisely the reverse of what the field name promises.
+    canonical_case = sorted(
+        budget_case_specs,
+        key=lambda s: (s.issue_date, s.invoice_series, s.invoice_number),
+    )
+    ranks = {id(spec): rank for rank, spec in enumerate(canonical_case, start=1)}
+    for bspec in budget_case_specs:
+        specs.append(
+            (bspec, ["budget_overrun"], {"rank": ranks[id(bspec)], "category": "MARKETING"})
+        )
 
     # 2. Build prompt injection carriers and their negative-control twins (6 pairs)
     for i, (_name, payload) in enumerate(defects.INJECTION_PAYLOADS):
