@@ -1,0 +1,35 @@
+sequenceDiagram
+    autonumber
+    participant CLI as scripts/run_one.py
+    participant MF as generator/manifest.py
+    participant G as graphs/enrichment.py
+    participant X as extraction/xml_parser.py
+    participant V as extraction/vision.py
+    participant S as llm/structured.py
+    participant GW as llm/gateway.py
+    participant D as domain/validation.py
+    participant T as llm/telemetry.py
+    participant R as db/repositories/
+
+    CLI->>MF: read_manifest(path) -> list[dict]
+    CLI->>G: build_enrichment_graph(gateway=…).invoke(state)
+
+    G->>G: route_source(state) -> {"strategy": …}
+
+    alt strategy == "xml"
+        G->>X: parse_invoice_xml(bytes) -> InvoiceData
+    else strategy == "vision"
+        G->>V: extract(pdf_bytes, gateway=, current_errors=, calls=)
+        V->>S: call_structured(gateway, response_model=InvoiceData, …)
+        S->>GW: generate(prompt, json_mode=True, images=, calls=) -> str
+        GW-->>S: raw JSON
+        S-->>V: InvoiceData
+        G->>T: record(conn, calls, node="vision_extract", thread_id="enrich:…")
+    end
+
+    G->>D: validate(InvoiceData) -> list[Finding]
+    G->>G: route_after_validate(state) -> "vision_extract" | "manual_queue" | END
+    G-->>CLI: final state (dict)
+
+    CLI->>R: invoices.insert_with_lines(conn, extracted, …) -> UUID | None
+    CLI->>R: UPDATE llm_calls SET invoice_id WHERE thread_id = "enrich:…"

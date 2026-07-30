@@ -1,15 +1,18 @@
-# Đọc thế nào — hướng dẫn cho `Architecture.md` + `Workflow.md`
+# Đọc thế nào — hướng dẫn cho `Architecture.md` + `Workflow.md` + `Function-Map.md`
 
-Hai tài liệu này **được viết để đọc xen kẽ**, không phải đọc hết cái này rồi mới sang cái kia.
+Ba tài liệu này **được viết để đọc xen kẽ**, không phải đọc hết cái này rồi mới sang cái kia.
 
 | Tài liệu | Trả lời | Cấu trúc |
 |---|---|---|
 | [`Architecture.md`](Architecture.md) | *"Hệ thống được **cấu tạo** thế nào?"* | 16 mục theo **tầng** — module, graph, extraction, domain, LLM, data, bảo mật |
 | [`Workflow.md`](Workflow.md) | *"Cái gì **xảy ra**, theo thứ tự nào, ai quyết định, hỏng thì sao?"* | 22 flow theo **thời gian** — A nghiệp vụ, B ngang, C vận hành, D phát triển |
+| [`Function-Map.md`](Function-Map.md) | *"Hàm nào **gọi** hàm nào, vào cái gì, ra cái gì?"* | 9 mục theo **đường dây** — 6 workflow có mã chạy được, + §8 hàm chưa ai gọi, + §9 bảng tra ngược |
 
 > **Quy tắc chung**: Architecture cho bạn **danh từ** (module này là gì, bảng này có cột gì).
 > Workflow cho bạn **động từ** (bước này chạy khi nào, nó dừng ở đâu).
+> Function-Map cho bạn **đường dây** (bước đó thực ra là hàm nào, nhận gì, trả gì).
 > Đọc danh từ trước một nhịp, rồi lập tức xem nó **chuyển động** ở Workflow — kiến thức mới dính.
+> Khi nào mở editor lên sửa code thì mới cần tới Function-Map.
 
 ---
 
@@ -21,6 +24,7 @@ Hai tài liệu này **được viết để đọc xen kẽ**, không phải đ
 | **~25 phút** | [Lộ trình nhanh](#lộ-trình-nhanh--25-phút) — đủ để nói chuyện về dự án |
 | **~100 phút** | [Lộ trình đầy đủ](#lộ-trình-đầy-đủ--6-chặng) — 6 chặng, mỗi chặng trả lời một câu hỏi |
 | **Đang tìm một thứ cụ thể** | [Bảng tra chéo](#bảng-tra-chéo) |
+| **Sắp sửa code** | [`Function-Map.md`](Function-Map.md) §9 (bảng tra ngược file → hàm) rồi §8 (hàm chưa ai gọi) |
 
 ---
 
@@ -157,6 +161,26 @@ Khi bạn đã biết mình đang tìm gì.
 | MCP | — | C5 |
 | Trạng thái & nợ kỹ thuật | §15 | E |
 
+### …và khi câu hỏi là "hàm nào?"
+
+Hai cột trên trả lời ở mức module và mức bước. Khi bạn cần **chữ ký cụ thể**, đây là chỗ
+[`Function-Map.md`](Function-Map.md) tiếp lời:
+
+| Chủ đề | Function-Map |
+|---|---|
+| Chuỗi gọi đầy đủ của một hóa đơn | §1 (11 mục con, có sequence diagram) |
+| `EnrichmentState` — field nào, reducer nào, node nào ghi | §1.3 |
+| 5 node: đọc field gì, trả field gì | §1.4 · router ở §1.5 |
+| Parse XML — từng helper của `xml_schema` | §1.6 |
+| Vision → structured → gateway, xuống tận `litellm.completion` | §1.7 |
+| Validate — 10 mã finding và ngưỡng của chúng | §1.8 |
+| Chi phí: từ `LLMCallRecord` tới hai cột tiền trong DB | §1.9 |
+| Ghi `invoices` + backfill `llm_calls` qua `thread_id` | §1.10 |
+| Sinh corpus · seed · migration · render graph · HITL spike | §2–§6 |
+| `get_settings()` → 6 property DSN → ai dùng cái nào | §7 |
+| **Hàm đã có nhưng chưa ai gọi** (10 repository, 3 domain, 6 hạ tầng) | **§8** |
+| Mở một file bất kỳ và hỏi "nó nối vào đâu?" | **§9** |
+
 ---
 
 ## Ba mẹo đọc
@@ -179,6 +203,7 @@ Khi bạn đã biết mình đang tìm gì.
 
 | Câu hỏi | Tài liệu |
 |---|---|
+| Hàm nào gọi hàm nào, input/output là gì | [`Function-Map.md`](Function-Map.md) |
 | Thiết kế đầy đủ, gồm cả phần chưa làm | [`project-f-system-design.md`](project-f-system-design.md) |
 | Milestone, gate, trạng thái từng hạng mục | [`Plan_Project_F_2026-07-25.md`](Plan_Project_F_2026-07-25.md) §3, §7 |
 | Chuyện gì đã xảy ra ở mỗi milestone | [`notes/`](notes/) — 6 file |
