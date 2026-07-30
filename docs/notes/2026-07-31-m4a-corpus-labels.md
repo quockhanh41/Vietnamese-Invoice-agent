@@ -33,3 +33,10 @@
 - **Correct Predictions:** `lienket_gtgt_7dong_2.1.0.xml` (`GOODS`), `viettelpost_gtgt_2.1.0.xml` (`LOGISTICS`)
 - **Unmatched Predictions:** `dienluc_gtgt_cccd_2.1.0.xml` (`UTILITIES`), `newimage_gtgt_pban2.0.1.xml` (`GOODS`), `phongvu_gtgt_tdiep_2.0.0.xml` (`TOOLS`)
 - **Gap & Distribution Note:** The synthetic baseline accuracy is 57.2% while real-fixture accuracy is 40.0% (2/5). The real fixture set skews toward `GOODS`, which is the one seeded category the synthetic corpus does not use (spec §10 open question 1). Excluding `UNLABELABLE` fixtures ensures we do not fabricate held-out accuracy numbers.
+
+## Vision Accuracy Measurement Status (Debt Re-declaration)
+
+- **Status:** DEFERRED / RE-DECLARED (Task 9 Step 1 Precondition check)
+- **Precondition Check Date:** 2026-07-31
+- **Findings:** `s.gemini_api_keys` count = 0, `s.groq_api_keys` count = 0. No vision-capable API key (`GEMINI_API_KEY`) is configured in the environment.
+- **Action:** Per Task 9 Precondition stop-rule, execution stopped after step 1 without fabricating fixtures or creating dummy replay files. The vision accuracy measurement debt remains outstanding and is re-declared explicitly in the roadmap (`docs/Plan_Project_F_2026-07-25.md`).
