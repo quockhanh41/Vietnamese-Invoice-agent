@@ -53,9 +53,16 @@ DEFECT_RATIOS: dict[str, float] = {
 # had drifted to ("MKT","IT","HR","LOG","ADM","SAL") here against
 # ("MKT","ADMIN","OPS","IT","SALES") in the seed, so 194 of 300 invoices could
 # not satisfy the invoices.department foreign key and four departments had no
-# budget to reconcile against. Deriving makes that class of drift
-# unrepresentable rather than merely fixed. seed_reference is the ONE allowed
-# dependency (M2-A §7) and already supplies BUDGETS.
+# budget to reconcile against. seed_reference is the ONE allowed dependency
+# (M2-A §7) and already supplies BUDGETS.
+#
+# THIS TUPLE NO LONGER PRODUCES ANYTHING ON ITS OWN. Departments reach the
+# manifest through CATEGORY_TO_DEPARTMENT / SECONDARY_DEPARTMENT below; what
+# keeps it load-bearing is the check under those maps. Measured 2026-07-31 by
+# the M4-A review: with only the derivation, mutating this tuple back to the
+# old literal left `test_every_manifest_department_is_seeded_and_budgeted`
+# GREEN, because nothing read it — a guard that was genuinely red at the
+# commit that introduced it and had gone blind two commits later.
 DEPARTMENTS = tuple(code for code, _name in _SEEDED_DEPARTMENTS)
 CATEGORIES = ("MARKETING", "IT_SERVICES", "OFFICE_SUPPLIES", "LOGISTICS", "UTILITIES", "TOOLS")
 
@@ -78,6 +85,33 @@ SECONDARY_DEPARTMENT: dict[str, str] = {
 }
 
 DEPARTMENT_NOISE_RATE = 0.15
+
+# The two maps above are the ACTUAL source of every department in the manifest,
+# so they are what must join the seed. Checked at import rather than only in a
+# test: the end-to-end guard has to build a 300-invoice corpus to see the
+# failure, while a bad edit here is a typo that should not survive `import`.
+#
+# ValueError, NOT SystemExit — measured 2026-07-31: SystemExit raised at module
+# scope escapes pytest's collection handler and aborts the whole session with
+# INTERNALERROR, hiding every other result. SystemExit is right inside
+# `generate()`, which runs under `main()`; it is wrong here. And `raise` not
+# `assert`, because `python -O` strips asserts and this must not be strippable.
+_MAPPED_DEPARTMENTS = set(CATEGORY_TO_DEPARTMENT.values()) | set(SECONDARY_DEPARTMENT.values())
+_UNSEEDED_DEPARTMENTS = _MAPPED_DEPARTMENTS - set(DEPARTMENTS)
+if _UNSEEDED_DEPARTMENTS:
+    raise ValueError(
+        f"CATEGORY_TO_DEPARTMENT/SECONDARY_DEPARTMENT name departments that "
+        f"scripts.seed_reference does not seed: {sorted(_UNSEEDED_DEPARTMENTS)}. "
+        f"Every generated invoice would fail the invoices.department foreign "
+        f"key (spec 2026-07-31-m4a §1.1 D1)."
+    )
+# Every category must be routable, or `_pick_department` raises KeyError
+# mid-generation on whichever invoice happens to draw the missing one.
+if set(CATEGORY_TO_DEPARTMENT) != set(CATEGORIES) or set(SECONDARY_DEPARTMENT) != set(CATEGORIES):
+    raise ValueError(
+        "CATEGORY_TO_DEPARTMENT and SECONDARY_DEPARTMENT must both cover "
+        f"exactly {sorted(CATEGORIES)}"
+    )
 
 
 def _pick_department(category: str, rng: Random) -> str:

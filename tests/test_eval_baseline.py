@@ -44,3 +44,28 @@ def test_ties_break_by_declaration_order():
 
 def test_empty_text_is_none_not_a_crash():
     assert baseline.classify("", KEYWORDS) is None
+
+
+def test_load_keywords_reads_the_seeded_rows(runtime_conn):
+    """The only DB-touching function M4-A added, and nothing exercised it.
+
+    Its first real execution would otherwise be inside M4-C's agent comparison
+    or M6.7's eval — i.e. the moment a headline number depends on it. What is
+    actually checked here is the shape the classifier needs: a mapping of
+    category code to a LIST of terms. `keywords_vi` is a Postgres TEXT[], and a
+    driver returning it as a string would make every `term in haystack` a
+    per-character substring test that silently matches almost anything.
+    """
+    from scripts.seed_reference import CATEGORIES, seed
+
+    seed(runtime_conn)
+    loaded = baseline.load_keywords(runtime_conn)
+
+    seeded = {code: list(keywords) for code, _n, _d, _v, _c, keywords in CATEGORIES}
+    assert set(loaded) == set(seeded)
+    for code, terms in loaded.items():
+        assert isinstance(terms, list), f"{code}: {type(terms)} — not a list of terms"
+        assert terms == seeded[code]
+
+    # And it composes with the classifier it exists to feed.
+    assert baseline.classify("Mua giấy A4 cho văn phòng", loaded) == "OFFICE_SUPPLIES"

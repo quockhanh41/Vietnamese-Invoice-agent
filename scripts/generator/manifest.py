@@ -76,7 +76,20 @@ class ManifestRecord:
     pdf_path: str | None = None
     defects: list[str] = field(default_factory=list)
     expected_finding_codes: list[str] = field(default_factory=list)
+    # ⚠️ THESE TWO REFERENCE FIELDS USE DIFFERENT IDENTIFIER SPACES. Measured
+    # 2026-07-31 by the M4-A review: `twin_of` resolves 6/6 against
+    # `invoice_id` and 0/6 against the doc_id; `duplicate_of` resolves 9/9
+    # against the doc_id and 0/9 against `invoice_id`. Joining one the way you
+    # joined the other yields an EMPTY join and no error, which is how this
+    # hides in eval code. `tests/test_generator_labels.py` pins both.
+    #
+    # `twin_of` — the §9.3 negative-control partner, as an `invoice_id`
+    # (`INV-0004`). The twin is a clean copy of an injection carrier.
     twin_of: str | None = None
+    # `duplicate_of` — the invoice this one duplicates, as a doc_id
+    # (`Id-C26TBB-00000060`), i.e. the NATURAL key. Deliberate: a duplicate is
+    # defined by repeating that key, which is what design §2.3's UNIQUE index
+    # is built on, so naming it by natural key is the honest reference.
     duplicate_of: str | None = None
     canonical_budget_rank: int | None = None
     # Set only for the `ambiguous_category` group: the OTHER defensible label.

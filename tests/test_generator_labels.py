@@ -123,3 +123,29 @@ def test_ambiguous_invoices_take_the_primary_of_their_pair(tmp_path):
             checked += 1
             assert record["category"] == expected, record["invoice_id"]
     assert checked, "no ambiguous invoices checked — the group is not being exercised"
+
+
+def test_the_two_reference_fields_resolve_in_their_declared_spaces(tmp_path):
+    """`twin_of` is an invoice_id; `duplicate_of` is a doc_id. Both, fully.
+
+    Measured 2026-07-31 by the M4-A review: they use DIFFERENT identifier
+    spaces, and neither said so. A consumer that joins one the way it joined
+    the other gets an empty join and no error — M6.2's negative control and
+    M4-D's duplicate detection are both such consumers.
+
+    This test does not argue that the split is right. It makes it LOUD: unify
+    the two later and this goes red, which is the difference between a
+    deliberate change and a silent one.
+    """
+    _out, records = build(tmp_path)
+    invoice_ids = {r["invoice_id"] for r in records}
+    doc_ids = {f"Id-{r['invoice_series']}-{r['invoice_number']}" for r in records}
+
+    twins = [r["twin_of"] for r in records if r.get("twin_of")]
+    dups = [r["duplicate_of"] for r in records if r.get("duplicate_of")]
+    assert twins and dups, "neither reference field is populated — nothing is pinned"
+
+    assert all(t in invoice_ids for t in twins), "twin_of must resolve as invoice_id"
+    assert not any(t in doc_ids for t in twins), "twin_of must NOT be a doc_id"
+    assert all(d in doc_ids for d in dups), "duplicate_of must resolve as doc_id"
+    assert not any(d in invoice_ids for d in dups), "duplicate_of must NOT be an invoice_id"

@@ -541,6 +541,16 @@ Temporarily replace the `DEPARTMENTS` assignment with the old literal
 
 Expected: RED on both department tests. Restore the derivation and confirm green. Record the mutation result in the task note; a guard that cannot be shown red is the M1/M2/M3 pattern this project keeps finding.
 
+> **⚠️ THIS MUTATION EXPIRES AT TASK 4 — re-run it afterwards.** Measured
+> 2026-07-31: it turns **both** tests red here, and only the static one red once
+> Task 4 routes departments through `CATEGORY_TO_DEPARTMENT` /
+> `SECONDARY_DEPARTMENT` instead of `DEPARTMENTS[i % len(...)]`. After Task 4
+> the correct mutation is breaking a **map value** (`"MARKETING": "MKT"` →
+> `"HR"`), and `DEPARTMENTS` needs an import-time check that the maps' values
+> are a subset of it or it becomes dead code. A mutation result is only valid
+> for as long as the mutated code is still the producer — nothing in this
+> process re-checks that, so it is written down here.
+
 - [ ] **Step 6: Confirm nothing else broke**
 
 Run: `.venv/bin/python -m pytest tests/test_generator_cli.py -v`
