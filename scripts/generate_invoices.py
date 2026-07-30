@@ -19,7 +19,9 @@ from datetime import date
 from decimal import Decimal
 from random import Random
 
-from scripts.generator import defects, descriptions, manifest, pdf, templates, vendors
+from scripts.generator import (
+    defects, descriptions, gate_batch, manifest, pdf, templates, vendors,
+)
 from scripts.generator.manifest import ManifestRecord
 from scripts.generator.templates import InvoiceSpec, LineSpec
 from scripts.seed_reference import BUDGETS, DEPARTMENTS as _SEEDED_DEPARTMENTS
@@ -482,6 +484,12 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
         records.append(rec)
 
     manifest.write_manifest(out / "manifest.jsonl", records)
+    # Read back rather than passing `records` directly: the manifest encodes
+    # Decimal as str, and the gate batch must be computed from exactly the bytes
+    # on disk so the two artifacts cannot disagree about an amount.
+    gate_batch.write_gate_batch(
+        out / "gate_batch.json", manifest.read_manifest(out / "manifest.jsonl")
+    )
 
 
 def main() -> None:
