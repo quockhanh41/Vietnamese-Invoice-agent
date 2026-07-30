@@ -88,6 +88,7 @@ dropped.
 
 1. `src/invoice_agent/memory/vendor_profile.py` — incremental transactional
    update of the profile's **statistical** fields, plus `stats_for`.
+   Includes Alembic migration **11** adding `vendors.sum_sq_amount` (§3.1).
 2. `scripts/rebuild_vendor_profiles.py` — the escape hatch, **with a drift check**.
 3. The `signals` node in `graphs/enrichment.py` — `NEW_VENDOR` + `PRICE_OUTLIER`.
 4. Generator fix: break the `price_outlier` ∧ `new_vendor` collision; make the
@@ -143,9 +144,28 @@ def stats_for(conn, tax_code: str) -> anomaly.VendorStats | None: ...
 
 `apply_invoice` accumulates incrementally — it reads the current row and folds in
 one invoice — so cost is O(1) per invoice rather than a re-aggregation over
-history. Variance is accumulated in a numerically stable form (Welford), not as
-`sum(x^2) - n*mean^2`, which loses precision catastrophically on VND amounts in
-the tens of millions where the two terms nearly cancel.
+history.
+
+**The persisted state is `(invoice_count, total_amount, sum_sq_amount)`, and
+`stddev_amount` is derived from it** as `sqrt((sum_sq - total^2/n)/(n-1))`.
+`sum_sq_amount` is a new column and needs a migration (11, on head
+`b23d0a366d02`).
+
+> **Corrected 2026-07-31, before the plan was written.** An earlier draft of this
+> section called for Welford accumulation and rejected the `sum(x^2)` form as
+> "catastrophically imprecise". That is true of **floating point** and false
+> here: Postgres `NUMERIC` and Python `Decimal` are exact decimal arithmetic, so
+> cancellation does not occur. Measured — the accumulator form and the two-pass
+> form return **bit-identical** results
+> (`43993644.37602409504841441727` from both).
+>
+> This matters for more than tidiness. Because both the incremental path and the
+> rebuild derive `stddev_amount` from the same exact triple by the same
+> expression, **criterion 3's "zero drift" is achievable exactly rather than
+> within a tolerance** — and an exact criterion is one a test can assert without
+> a fudge factor that later hides a real divergence. Welford would have made the
+> incremental path a different computation from the rebuild, and zero drift
+> would then have been unachievable by construction.
 
 **`category` and `department` arrive only at M4-C.** They are produced by
 `classify`, which does not exist yet, so at M4-B both parameters are `None` and
@@ -271,7 +291,7 @@ measurement is how the next reader ends up retuning against the wrong report.
 | `test_signals_sees_no_intra_batch_sibling` | make the profile update run inside `enrich_one` |
 | `test_incremental_profile_matches_rebuild` | perturb one accumulator in `apply_invoice` |
 | `test_rebuild_check_exits_nonzero_on_drift` | make `--check` always return 0 |
-| `test_variance_is_numerically_stable` | swap Welford for `sum(x^2) - n*mean^2` |
+| `test_incremental_stddev_equals_two_pass_exactly` | compute the accumulator in `float` instead of `Decimal` |
 | `test_price_outlier_group_is_detectable_in_principle` | restore the `new_vendor` ∧ `price_outlier` overlap |
 | `test_signals_node_calls_no_model` | give `signals` a gateway and call it |
 
