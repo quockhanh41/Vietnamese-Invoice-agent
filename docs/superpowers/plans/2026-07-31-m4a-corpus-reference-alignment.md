@@ -1785,18 +1785,29 @@ FIELDS = ("invoice_number", "invoice_series", "seller_tax_code", "total_amount")
 
 
 @pytest.mark.skipif(not CORPUS.exists(), reason="corpus not generated")
-def test_vision_extraction_matches_its_xml_twin():
-    """Records per-field agreement. Replay-backed, so it costs no tokens."""
+def test_vision_extraction_matches_its_xml_twin(monkeypatch):
+    """Records per-field agreement. Replay-backed, so it costs no tokens.
+
+    REPLAY IS PINNED HERE, NOT INHERITED. `pyproject.toml` sets only
+    `addopts = "-q"` and `config.py` defaults `llm_mode` to "live", so a test
+    that built its gateway from the ambient environment would make a real API
+    call on every `make check` once a vision key is configured — turning the
+    one recording run this task is meant to cost into an unbounded bill.
+    """
+    monkeypatch.setenv("LLM_MODE", "replay")
+
+    from invoice_agent.config import Settings  # TEST-ONLY
     from invoice_agent.extraction import vision  # TEST-ONLY
     from invoice_agent.llm.gateway import LLMGateway  # TEST-ONLY
 
+    gateway = LLMGateway(Settings())
     rows = [json.loads(line) for line in (CORPUS / "manifest.jsonl").open(encoding="utf-8")]
     record = next(r for r in rows if r["invoice_id"] == TWIN_ID)
     truth = parse_invoice_xml((CORPUS.parent / record["path"]).read_bytes())
 
     extracted = vision.extract(
         (CORPUS.parent / record["pdf_path"]).read_bytes(),
-        gateway=LLMGateway(),
+        gateway=gateway,
         current_errors=None,
         calls=[],
     )
