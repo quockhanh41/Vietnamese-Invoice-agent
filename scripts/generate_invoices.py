@@ -19,7 +19,7 @@ from datetime import date
 from decimal import Decimal
 from random import Random
 
-from scripts.generator import defects, manifest, pdf, templates, vendors
+from scripts.generator import defects, descriptions, manifest, pdf, templates, vendors
 from scripts.generator.manifest import ManifestRecord
 from scripts.generator.templates import InvoiceSpec, LineSpec
 from scripts.seed_reference import BUDGETS, DEPARTMENTS as _SEEDED_DEPARTMENTS
@@ -50,6 +50,36 @@ DEFECT_RATIOS: dict[str, float] = {
 DEPARTMENTS = tuple(code for code, _name in _SEEDED_DEPARTMENTS)
 CATEGORIES = ("MARKETING", "IT_SERVICES", "OFFICE_SUPPLIES", "LOGISTICS", "UTILITIES", "TOOLS")
 
+CATEGORY_TO_DEPARTMENT: dict[str, str] = {
+    "MARKETING": "MKT",
+    "IT_SERVICES": "IT",
+    "OFFICE_SUPPLIES": "ADMIN",
+    "UTILITIES": "ADMIN",
+    "LOGISTICS": "OPS",
+    "TOOLS": "OPS",
+}
+
+SECONDARY_DEPARTMENT: dict[str, str] = {
+    "MARKETING": "SALES",
+    "IT_SERVICES": "ADMIN",
+    "OFFICE_SUPPLIES": "SALES",
+    "UTILITIES": "OPS",
+    "LOGISTICS": "SALES",
+    "TOOLS": "IT",
+}
+
+DEPARTMENT_NOISE_RATE = 0.15
+
+
+def _pick_department(category: str, rng: Random) -> str:
+    if rng.random() < DEPARTMENT_NOISE_RATE:
+        return SECONDARY_DEPARTMENT[category]
+    return CATEGORY_TO_DEPARTMENT[category]
+
+
+def _pick_category(index: int) -> str:
+    return CATEGORIES[index % len(CATEGORIES)]
+
 
 def _inherited_body_defects(
     source_defects: list[str], source_meta: dict, target_defects: list[str]
@@ -78,7 +108,9 @@ def _inherited_body_defects(
     ]
 
 
-def _make_base_spec(index: int, vendor: vendors.Vendor, rng: Random) -> InvoiceSpec:
+def _make_base_spec(
+    index: int, vendor: vendors.Vendor, rng: Random, category: str
+) -> InvoiceSpec:
     inv_num = f"{index + 1:08d}"
     series = "C26TAA" if index % 2 == 0 else "C26TBB"
     template_no = "1" if index % 4 != 0 else "2"
@@ -94,7 +126,7 @@ def _make_base_spec(index: int, vendor: vendors.Vendor, rng: Random) -> InvoiceS
     line = LineSpec(
         line_no=1,
         item_kind=1,
-        description=f"Dịch vụ tư vấn và hỗ trợ kỹ thuật {index + 1}",
+        description=descriptions.draw(category, rng),
         unit="Gói",
         quantity=qty,
         unit_price=unit_price,
@@ -148,7 +180,7 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
     specs: list[tuple[InvoiceSpec, list[str], dict]] = []
 
     # 1. First, build the budget overrun case (3 items)
-    base_template = _make_base_spec(0, established_vendors[0], rng)
+    base_template = _make_base_spec(0, established_vendors[0], rng, "MARKETING")
     budget_case_specs = defects.build_budget_overrun_case(base_template, rng)
 
     # The seeded limit is read from scripts.seed_reference — the ONE allowed
@@ -169,25 +201,32 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
         )
 
     for rank, bspec in enumerate(budget_case_specs, start=1):
-        specs.append((bspec, ["budget_overrun"], {"rank": rank}))
+        specs.append((bspec, ["budget_overrun"], {"rank": rank, "category": "MARKETING"}))
 
     # 2. Build prompt injection carriers and their negative-control twins (6 pairs)
     for i, (_name, payload) in enumerate(defects.INJECTION_PAYLOADS):
         v = established_vendors[i % len(established_vendors)]
-        carrier_base = _make_base_spec(len(specs), v, rng)
+        category = _pick_category(len(specs))
+        carrier_base = _make_base_spec(len(specs), v, rng, category)
+        carrier_inv_id = f"INV-{len(specs) + 1:04d}"
         carrier_spec = defects.seed_injection(carrier_base, payload)
-        specs.append((carrier_spec, ["prompt_injection"], {}))
+        specs.append((carrier_spec, ["prompt_injection"], {"category": category}))
 
         # Twin control: clean invoice differing only in description payload
-        twin_spec = defects.strip_injection(carrier_spec)
-        specs.append((twin_spec, [], {"twin_of": carrier_spec.doc_id}))
+        twin_spec = defects.strip_injection(
+            carrier_spec, clean_description=carrier_base.lines[0].description
+        )
+        specs.append(
+            (twin_spec, [], {"twin_of": carrier_inv_id, "category": category})
+        )
 
     # 3. Fill up to `count` base specs
     curr_idx = len(specs)
     while len(specs) < count:
         v = established_vendors[curr_idx % len(established_vendors)]
-        base = _make_base_spec(curr_idx, v, rng)
-        specs.append((base, [], {}))
+        category = _pick_category(curr_idx)
+        base = _make_base_spec(curr_idx, v, rng, category)
+        specs.append((base, [], {"category": category}))
         curr_idx += 1
 
     # Now apply remaining defect quotas to clean specs (indices >= 15)
@@ -234,7 +273,7 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
             s, lines=[overrun_line], subtotal=None, vat_total=None,
             total_amount=Decimal("60000000"), total_in_words=None, template_no="2",
         )
-        specs[idx] = (bspec, d + ["budget_overrun"], meta)
+        specs[idx] = (bspec, d + ["budget_overrun"], {**meta, "category": "MARKETING"})
 
     # exact_duplicate (9)
     for idx in _allocate_indices(counts["exact_duplicate"]):
@@ -247,6 +286,7 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
             specs[idx][1] + ["exact_duplicate"],
             {
                 "duplicate_of": orig_spec.doc_id,
+                "category": specs[target_idx][2]["category"],
                 "inherited_defects": _inherited_body_defects(
                     specs[target_idx][1], specs[target_idx][2], specs[idx][1]
                 ),
@@ -262,9 +302,10 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
             near_spec,
             specs[idx][1] + ["near_duplicate"],
             {
+                "category": specs[target_idx][2]["category"],
                 "inherited_defects": _inherited_body_defects(
                     specs[target_idx][1], specs[target_idx][2], specs[idx][1]
-                )
+                ),
             },
         )
 
@@ -317,10 +358,16 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
     # ambiguous_category (9)
     for i, idx in enumerate(_allocate_indices(counts["ambiguous_category"])):
         s, d, meta = specs[idx]
-        desc, _ = defects.AMBIGUOUS_DESCRIPTIONS[i % len(defects.AMBIGUOUS_DESCRIPTIONS)]
+        desc, (primary, alternative) = defects.AMBIGUOUS_DESCRIPTIONS[
+            i % len(defects.AMBIGUOUS_DESCRIPTIONS)
+        ]
         line = dataclasses.replace(s.lines[0], description=desc)
         ambig_spec = dataclasses.replace(s, lines=[line])
-        specs[idx] = (ambig_spec, d + ["ambiguous_category"], meta)
+        specs[idx] = (
+            ambig_spec,
+            d + ["ambiguous_category"],
+            {**meta, "category": primary, "alternative_category": alternative},
+        )
 
     # pdf_only (12)
     pdf_only_indices = _allocate_indices(counts["pdf_only"])
@@ -394,9 +441,11 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
                 (out / twin_filename).write_bytes(pdf.render_pdf(spec))
                 pdf_rel_path = f"corpus/{twin_filename}"
 
-        # Department logic
-        dept = "MKT" if "budget_overrun" in defect_list or i < 3 else DEPARTMENTS[i % len(DEPARTMENTS)]
-        cat = CATEGORIES[i % len(CATEGORIES)]
+        # Department logic. `category` was decided when the spec was built and
+        # the description was drawn FROM it — reading it back here is what makes
+        # the label a function of the invoice (spec 2026-07-31-m4a §1.1 D3).
+        cat = meta["category"]
+        dept = "MKT" if "budget_overrun" in defect_list else _pick_department(cat, rng)
 
         rec = ManifestRecord(
             invoice_id=inv_id,
@@ -416,6 +465,7 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
             twin_of=meta.get("twin_of"),
             duplicate_of=meta.get("duplicate_of"),
             canonical_budget_rank=meta.get("rank"),
+            alternative_category=meta.get("alternative_category"),
         )
         records.append(rec)
 

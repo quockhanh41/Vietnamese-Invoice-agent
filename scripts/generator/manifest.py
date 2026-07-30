@@ -79,6 +79,9 @@ class ManifestRecord:
     twin_of: str | None = None
     duplicate_of: str | None = None
     canonical_budget_rank: int | None = None
+    # Set only for the `ambiguous_category` group: the OTHER defensible label.
+    # M6 reports "chose the plausible alternative" apart from "was wrong".
+    alternative_category: str | None = None
 
 
 def _encode(value: Any) -> Any:

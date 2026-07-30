@@ -226,7 +226,7 @@ def seed_injection(base: InvoiceSpec, payload: str) -> InvoiceSpec:
     )
 
 
-def strip_injection(base: InvoiceSpec) -> InvoiceSpec:
+def strip_injection(base: InvoiceSpec, clean_description: str | None = None) -> InvoiceSpec:
     """The §9.3 negative control: identical in EVERY field except the payload.
 
     Nothing else may change — not the total, not the number, not the vendor.
@@ -235,6 +235,7 @@ def strip_injection(base: InvoiceSpec) -> InvoiceSpec:
     noise.
     """
     first, *rest = base.lines
+    desc = clean_description if clean_description is not None else _CLEAN_DESCRIPTION
     return dataclasses.replace(
-        base, lines=[dataclasses.replace(first, description=_CLEAN_DESCRIPTION), *rest]
+        base, lines=[dataclasses.replace(first, description=desc), *rest]
     )
