@@ -1,0 +1,11 @@
+{
+  "_provenance": "Hand-labelled 2026-07-31 (plan 2026-07-31-m4a Task 8) by reading line descriptions against the categories seeded in scripts/seed_reference.py. UNLABELABLE means no seeded category covers the spend; those are excluded from the score rather than guessed.",
+  "dienluc_gtgt_cccd_2.1.0.xml": "UTILITIES",
+  "hokinhdoanh_banhang_qrcode_2.1.0.xml": "UNLABELABLE",
+  "ktx_banhang_cccd_2.1.0.xml": "UNLABELABLE",
+  "lienket_gtgt_7dong_2.1.0.xml": "GOODS",
+  "newimage_gtgt_pban2.0.1.xml": "GOODS",
+  "phongvu_gtgt_tdiep_2.0.0.xml": "TOOLS",
+  "viettelpost_gtgt_2.1.0.xml": "LOGISTICS",
+  "vnpt_hoadon_banhang_2.1.0.xml": "UNLABELABLE"
+}
