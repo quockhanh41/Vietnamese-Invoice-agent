@@ -22,7 +22,7 @@ from random import Random
 from scripts.generator import defects, manifest, pdf, templates, vendors
 from scripts.generator.manifest import ManifestRecord
 from scripts.generator.templates import InvoiceSpec, LineSpec
-from scripts.seed_reference import BUDGETS  # the one allowed dependency (M2-A §7)
+from scripts.seed_reference import BUDGETS, DEPARTMENTS as _SEEDED_DEPARTMENTS
 
 DEFECT_RATIOS: dict[str, float] = {
     "arithmetic_error": 0.06,
@@ -40,7 +40,14 @@ DEFECT_RATIOS: dict[str, float] = {
     "ambiguous_category": 0.03,
 }
 
-DEPARTMENTS = ("MKT", "IT", "HR", "LOG", "ADM", "SAL")
+# Derived from the seed, not written twice. Measured 2026-07-30: the two lists
+# had drifted to ("MKT","IT","HR","LOG","ADM","SAL") here against
+# ("MKT","ADMIN","OPS","IT","SALES") in the seed, so 194 of 300 invoices could
+# not satisfy the invoices.department foreign key and four departments had no
+# budget to reconcile against. Deriving makes that class of drift
+# unrepresentable rather than merely fixed. seed_reference is the ONE allowed
+# dependency (M2-A §7) and already supplies BUDGETS.
+DEPARTMENTS = tuple(code for code, _name in _SEEDED_DEPARTMENTS)
 CATEGORIES = ("MARKETING", "IT_SERVICES", "OFFICE_SUPPLIES", "LOGISTICS", "UTILITIES", "TOOLS")
 
 
