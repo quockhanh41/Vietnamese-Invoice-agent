@@ -110,8 +110,9 @@ CATEGORY_POOLS: dict[str, tuple[Description, ...]] = {
     ),
 }
 
-# ⚠️ TUNED CONSTANT — set by Task 6 of plan 2026-07-31-m4a, measured against the
-# keywords_vi baseline and recorded in docs/notes/2026-07-31-m4a-corpus-labels.md.
+# ⚠️ TUNED CONSTANT — set by Task 6 of plan 2026-07-31-m4a, measured 2026-07-31
+# as 163/285 = 57.2% against the keywords_vi baseline and recorded in
+# docs/notes/2026-07-31-m4a-corpus-labels.md.
 # The keyword weight is approximately the baseline's accuracy, because keyword-tier
 # descriptions are the ones it can match. Target band 55-70%: high enough that the
 # baseline is a real competitor, low enough to leave the LLM >=15 points of headroom.
