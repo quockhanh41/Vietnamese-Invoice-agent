@@ -66,3 +66,19 @@ def runtime_conn(requires_postgres):
     finally:
         trans.rollback()
         conn.close()
+
+
+@pytest.fixture
+def sample_invoice():
+    """A parsed real fixture — the arbiter this project uses for anything that
+    must behave like a real invoice."""
+    import pathlib
+
+    from invoice_agent.extraction.xml_parser import parse_invoice_xml
+
+    return parse_invoice_xml(
+        pathlib.Path(
+            "tests/fixtures/real_samples/viettelpost_gtgt_2.1.0.xml"
+        ).read_bytes()
+    )
+

@@ -24,7 +24,7 @@ from typing import Annotated, Any, Literal, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from invoice_agent.db.engine import get_engine
-from invoice_agent.domain import validation
+from invoice_agent.domain import anomaly, validation
 from invoice_agent.domain.findings import Finding
 from invoice_agent.extraction import vision
 from invoice_agent.extraction.models import InvoiceData
@@ -34,6 +34,7 @@ from invoice_agent.llm import telemetry
 from invoice_agent.llm.cost import LLMCallRecord
 from invoice_agent.llm.gateway import LLMGateway
 from invoice_agent.llm.structured import StructuredOutputError
+from invoice_agent.memory import vendor_profile
 
 # Three vision attempts, from design doc §3.3. Termination is OURS, not the
 # framework's: LangGraph's recursion limit is never approached because this
@@ -55,6 +56,9 @@ class EnrichmentState(TypedDict):
     error_history: Annotated[list[str], operator.add]
     findings: list[Finding]
     llm_calls: Annotated[list[LLMCallRecord], operator.add]
+    # Entity-memory findings (M4-B). Accumulates: each entry records something
+    # observed and cannot un-happen. Nodes return DELTAS.
+    signals: Annotated[list[Finding], operator.add]
     status: str
 
 
@@ -156,6 +160,49 @@ def manual_queue_node(state: EnrichmentState) -> dict[str, Any]:
     return {"status": "manual_queue"}
 
 
+def signals_node(state: EnrichmentState, *, conn: Any = None) -> dict[str, Any]:
+    """Entity memory -> findings. No LLM, and no writes.
+
+    Reads the vendor profile as it stands at BATCH START, because M4-D persists
+    invoices in a serial node after the fan-out join and this runs inside the
+    fan-out. That ordering is what keeps the scored invoice out of its own
+    statistics — measured 2026-07-31, a single extreme point's z-score against a
+    sample containing itself is bounded by (n-1)/sqrt(n), which is 1.79 at n=5
+    and puts PRICE_OUTLIER below its own threshold at every realistic vendor
+    size. Persist before this runs and the finding silently stops firing.
+    """
+    data = state.get("extracted")
+    if data is None:
+        return {}
+
+    if conn is not None:
+        found = _signals_for(conn, data)
+    else:
+        with get_engine().begin() as owned:
+            found = _signals_for(owned, data)
+    return {"signals": found}
+
+
+def _signals_for(conn: Any, data: InvoiceData) -> list[Finding]:
+    # `seller_tax_code` is `str | None` on InvoiceData — M1 measured that a tax
+    # code has three ways of being absent ('0', empty element, missing element).
+    # Without a seller there is no vendor to have memory of, and raising
+    # NEW_VENDOR here would be wrong: the vendor may be well known, we just
+    # cannot identify it. `validation.TAX_CODE_MISSING` already carries that.
+    if not data.seller_tax_code:
+        return []
+    stats = vendor_profile.stats_for(conn, data.seller_tax_code)
+    out: list[Finding] = []
+    new = anomaly.new_vendor(stats)
+    if new is not None:
+        out.append(new)
+    if stats is not None:
+        outlier = anomaly.price_outlier(data.total_amount, stats)
+        if outlier is not None:
+            out.append(outlier)
+    return out
+
+
 def route_after_validate(state: EnrichmentState) -> str:
     """Tell an extraction error from a data error — design doc §3.3.
 
@@ -205,6 +252,7 @@ def build_enrichment_graph(
         "vision_extract", functools.partial(vision_extract_node, gateway=gw)
     )
     builder.add_node("validate", validate_node)
+    builder.add_node("signals", signals_node)
     builder.add_node("manual_queue", manual_queue_node)
 
     builder.add_edge(START, "route_source")
@@ -218,8 +266,16 @@ def build_enrichment_graph(
     builder.add_conditional_edges(
         "validate",
         route_after_validate,
-        {"vision_extract": "vision_extract", "manual_queue": "manual_queue", END: END},
+        {
+            "vision_extract": "vision_extract",
+            "manual_queue": "manual_queue",
+            # Until M4-C splices classify/audit in front, a clean invoice and a
+            # DATA-error invoice both land here. `route_after_validate` still
+            # returns END; this map sends that outcome to `signals` instead.
+            END: "signals",
+        },
     )
+    builder.add_edge("signals", END)
     builder.add_edge("manual_queue", END)
 
     return builder.compile(checkpointer=checkpointer)
