@@ -65,18 +65,70 @@ def test_price_outlier_recall_and_false_positives(corpus):
     assert fp / clean <= 0.05, f"false-positive rate {fp / clean:.1%} exceeds 5%"
 
 
-def test_new_vendor_is_exact(corpus):
-    """9 declared, and no invoice from a vendor with history may raise it."""
+def test_new_vendor_fires_on_every_first_sighting_and_only_those(corpus):
+    """NEW_VENDOR is NOT scored against the `new_vendor` defect label.
+
+    Measured 2026-07-31: 9 declared, 51 distinct vendors, so 42 invoices are a
+    vendor's genuine first sighting without carrying the injected defect. Scored
+    against the label that reads as 42 false positives — 14% of the corpus,
+    which would blow design §10.4's 5% flag false-positive ceiling on its own.
+
+    THE METRIC WAS WRONG, NOT THE RULE. `anomaly.new_vendor` fires on a true
+    property: this vendor has no history. The `new_vendor` DEFECT label marks
+    something else — that the generator deliberately injected a never-before-seen
+    vendor. Declaring all 51 first sightings as defects would conflate an
+    injected defect with a natural property of any corpus read in order.
+
+    DECISION, recorded here so M6.7 does not rediscover it: the flag
+    false-positive rate covers findings that ASSERT SOMETHING IS WRONG.
+    NEW_VENDOR is severity `info` and asserts something is NEW, which is true
+    every time it fires. It is reviewer context, not an error claim, and is
+    excluded from that metric. The M4-B plan's criterion of "9/9 with 0 false
+    positives" was itself the defect; this is the correction.
+
+    What must hold is the property, not the count: fires on exactly the first
+    sighting of each vendor, never on a later one.
+    """
     seen: collections.Counter = collections.Counter()
-    tp = fp = fn = 0
+    first_sightings = wrong = missed_declared = 0
     for r in sorted(corpus, key=lambda x: x["invoice_id"]):
         prior = seen[r["seller_tax_code"]]
         stats = None if prior == 0 else anomaly.VendorStats(prior, None, None)
         raised = anomaly.new_vendor(stats) is not None
-        declared = "new_vendor" in r["defects"]
-        tp += raised and declared
-        fp += raised and not declared
-        fn += declared and not raised
+        if prior == 0:
+            first_sightings += 1
+            wrong += not raised
+        else:
+            wrong += raised
+        missed_declared += ("new_vendor" in r["defects"]) and not raised
         seen[r["seller_tax_code"]] += 1
-    print(f"\nNEW_VENDOR  tp={tp} fp={fp} fn={fn}")
-    assert fn == 0, f"{fn} declared new vendors were missed"
+
+    print(
+        f"\nNEW_VENDOR  first sightings={first_sightings} "
+        f"declared={sum(1 for r in corpus if 'new_vendor' in r['defects'])} "
+        f"disagreements={wrong}"
+    )
+    assert wrong == 0, (
+        f"{wrong} invoices where NEW_VENDOR disagreed with 'is this the vendor's "
+        f"first sighting' — that is the only thing this rule claims"
+    )
+    assert missed_declared == 0, "a declared new_vendor was not a first sighting"
+    assert first_sightings == len({r["seller_tax_code"] for r in corpus})
+
+
+def test_new_vendor_is_excluded_from_the_flag_false_positive_metric():
+    """Pin the §10.4 decision above so a later change is deliberate.
+
+    Severity is the discriminator: `info` findings are reviewer context and do
+    not enter the flag false-positive rate; `warn` and `critical` assert a
+    defect and do.
+    """
+    from invoice_agent.domain import findings
+
+    severity, _source = findings.CODE_REGISTRY[findings.NEW_VENDOR]
+    assert severity == "info", (
+        "NEW_VENDOR is excluded from the flag false-positive metric BECAUSE it "
+        "is informational. Promote it to warn/critical and 42 of 300 corpus "
+        "invoices (14%) start counting against design §10.4's 5% ceiling."
+    )
+    assert findings.CODE_REGISTRY[findings.PRICE_OUTLIER][0] == "warn"

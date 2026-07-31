@@ -30,8 +30,27 @@ NEAR_DUP_WINDOW_DAYS = 7
 # sample containing itself is bounded by (n-1)/sqrt(n) = 1.79 at n=5, below this
 # threshold at every realistic vendor size), and a corpus that paired half the
 # group with new vendors having no history at all.
-PRICE_OUTLIER_Z = Decimal("3")
-PRICE_OUTLIER_MIN_INVOICES = 5
+#
+# CHOSEN BY THE SWEEP'S OWN RULE — highest recall, then FP <= 5% (design §10.4),
+# then the larger MIN_N because a bigger sample makes sigma less noisy. Eight
+# pairs tie at 6/6 recall; MIN_N=7 wins the tie-break at FP=2 (0.7%), against
+# FP=7 for MIN_N=5 at the same recall. Corrected 2026-07-31 by the M4-B exit
+# review, which found the sweep had been run and recorded honestly and then not
+# acted on: the values left in place were the pre-existing ones.
+#
+# Z=3.5 over Z=4.0 — both give FP=2 — on MARGIN, measured the same day. The
+# lowest declared outlier scores z=4.24, so Z=4.0 sits 0.24 from losing a true
+# positive while Z=3.5 has 0.74. Three times the headroom at identical cost.
+#
+# MIN_N=7 and not higher: the thinnest outlier vendor has 9 peers, so 7 leaves a
+# margin of 2. MIN_N=10 is what drops recall to 4/6.
+#
+# HONEST LIMIT: the two classes OVERLAP. The highest-scoring non-outlier reaches
+# z=5.82, above the lowest true outlier's 4.24, so NO threshold separates them.
+# FP=2 is the floor at full recall, not a tuning failure — and it is why chasing
+# 0 false positives here would cost real detections.
+PRICE_OUTLIER_Z = Decimal("3.5")
+PRICE_OUTLIER_MIN_INVOICES = 7
 
 
 @dataclass(frozen=True)

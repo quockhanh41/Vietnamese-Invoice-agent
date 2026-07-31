@@ -400,6 +400,14 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
             for j, (other, _od, _om) in enumerate(specs)
             if j != idx and other.seller_tax_code == s.seller_tax_code
         ]
+        # 4 peers at full size, relaxed to 1 on the smaller corpora some tests
+        # build. At count=300 every vendor has enough history for the guard to
+        # mean something (measured 2026-07-31: the thinnest outlier vendor has 9
+        # peers, against PRICE_OUTLIER_MIN_INVOICES = 7); below that the round
+        # robin cannot give every vendor four invoices, and an unconditional
+        # guard would fail the smoke tests rather than the corpus. The property
+        # is enforced where it is measured — `test_generator_price_outlier.py`
+        # builds at 300.
         min_peers = 4 if count >= 300 else 1
         if len(peers) < min_peers:
             raise ValueError(
