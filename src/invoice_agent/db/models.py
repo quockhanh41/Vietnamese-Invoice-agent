@@ -100,6 +100,14 @@ vendors = Table(
     Column("last_seen_at", sa.DateTime(timezone=True)),
     Column("invoice_count", sa.Integer, nullable=False, server_default="0"),
     Column("total_amount", sa.Numeric, nullable=False, server_default="0"),
+    # Sum of squared amounts. With `invoice_count` and `total_amount` this is
+    # the EXACT state of the profile; avg and stddev are derived from the three
+    # by `memory.vendor_profile.derive`. Stored rather than recomputed so the
+    # incremental update stays O(1) (design §2.2), and stored as the raw
+    # accumulator rather than as Welford's M2 so the rebuild can compute the
+    # identical value by the identical expression — which is what makes M4-B's
+    # zero-drift criterion exact instead of tolerance-based.
+    Column("sum_sq_amount", sa.Numeric, nullable=False, server_default="0"),
     Column("avg_amount", sa.Numeric),
     Column("stddev_amount", sa.Numeric),
     Column("category_histogram", postgresql.JSONB, nullable=False, server_default="{}"),
