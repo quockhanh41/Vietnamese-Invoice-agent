@@ -16,12 +16,20 @@ from decimal import Decimal
 
 from invoice_agent.domain import findings
 
-# ⚠️ PROVISIONAL AND UNMEASURED. CLAUDE.md requires every non-obvious constant
-# to carry date + measurement + report file name. These three cannot: the corpus
-# that would justify them is M2-C, and no measurement on the 8 real fixtures can
-# produce them. They are set at M6 from docs/eval-report.md. Saying so is the
-# honest option; inventing a justification is not.
+# NEAR_DUP_WINDOW_DAYS is still PROVISIONAL AND UNMEASURED: its only consumer is
+# M4-D's serial join, so measuring it here would be measuring nothing.
 NEAR_DUP_WINDOW_DAYS = 7
+
+# Measured 2026-07-31 across the 300-invoice corpus, scoring each invoice against
+# its vendor's OTHER invoices — which is what `signals` sees, because M4-D
+# persists after the fan-out join. Numbers and the full sweep are in
+# docs/notes/2026-07-31-m4b-vendor-memory.md.
+#
+# Before M4-B this rule detected 0 of 6. Two causes, both now fixed: statistics
+# that included the invoice being scored (a single extreme point's z against a
+# sample containing itself is bounded by (n-1)/sqrt(n) = 1.79 at n=5, below this
+# threshold at every realistic vendor size), and a corpus that paired half the
+# group with new vendors having no history at all.
 PRICE_OUTLIER_Z = Decimal("3")
 PRICE_OUTLIER_MIN_INVOICES = 5
 
