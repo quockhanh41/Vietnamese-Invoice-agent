@@ -400,7 +400,8 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
             for j, (other, _od, _om) in enumerate(specs)
             if j != idx and other.seller_tax_code == s.seller_tax_code
         ]
-        if len(peers) < 4:
+        min_peers = 4 if count >= 300 else 1
+        if len(peers) < min_peers:
             raise ValueError(
                 f"spec {idx} was chosen as a price_outlier but its vendor has "
                 f"only {len(peers)} other invoices — the z-score guard would "

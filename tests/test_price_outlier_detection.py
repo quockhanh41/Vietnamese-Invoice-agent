@@ -13,7 +13,6 @@ import collections
 from decimal import Decimal
 
 import pytest
-
 from scripts import generate_invoices
 from scripts.generator import manifest
 

@@ -14,8 +14,6 @@ below n=11, against a corpus median of 7. If anything ever persists before
 
 from decimal import Decimal
 
-import pytest
-
 from invoice_agent.db.repositories import vendors as vendor_repo
 from invoice_agent.domain import findings
 from invoice_agent.graphs import enrichment

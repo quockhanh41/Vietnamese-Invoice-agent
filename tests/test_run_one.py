@@ -40,6 +40,25 @@ def run_token() -> str:
     return uuid.uuid4().hex[:8]
 
 
+@pytest.fixture(autouse=True)
+def cleanup_run_one_db(run_token):
+    yield
+    from sqlalchemy import text
+
+    from invoice_agent.db.engine import get_owner_engine
+
+    inv_a, inv_b = _invoice_ids(run_token)
+    with get_owner_engine().begin() as conn:
+        conn.execute(
+            text("UPDATE app.llm_calls SET invoice_id = NULL WHERE thread_id IN (:ta, :tb)"),
+            {"ta": f"enrich:{inv_a}", "tb": f"enrich:{inv_b}"},
+        )
+        conn.execute(
+            text("DELETE FROM app.invoices WHERE invoice_number IN (:a, :b) OR seller_tax_code = :tc"),
+            {"a": inv_a, "b": inv_b, "tc": f"01{run_token[:8]}"},
+        )
+
+
 def _invoice_ids(run_token: str) -> tuple[str, str]:
     return f"INV-{run_token}-A", f"INV-{run_token}-B"
 
@@ -83,7 +102,7 @@ def stub_gateway(monkeypatch, run_token: str) -> LLMGateway:
             "invoice_number": f"9{run_token}",
             "issue_date": "2026-07-01",
             "total_amount": "1194544",
-            "seller_tax_code": "0100000003",
+            "seller_tax_code": f"01{run_token[:8]}",
             "lines": [
                 {
                     "line_no": 1,

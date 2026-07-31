@@ -11,7 +11,6 @@ import uuid
 from decimal import Decimal
 
 import pytest
-
 from scripts import rebuild_vendor_profiles as rebuild
 
 from invoice_agent.db.repositories import invoices as invoice_repo
