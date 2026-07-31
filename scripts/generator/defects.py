@@ -106,9 +106,18 @@ def seed_wrong_vat_rate(base: InvoiceSpec) -> InvoiceSpec:
     )
 
 
-# Price-outlier group (2%): 10x the vendor's usual amount, well beyond the
-# z-score threshold whatever M6 finally sets it to.
-OUTLIER_MULTIPLIER = Decimal("10")
+# How far above its vendor's OWN scale a price outlier sits. Measured
+# 2026-07-31 (docs/notes/2026-07-31-m4b-vendor-memory.md): the previous flat
+# 10x of the invoice's own amount left INV-0093 at z = 0.14 against its vendor,
+# because within-vendor amounts have a coefficient of variation of ~0.95 so the
+# product landed anywhere.
+#
+# ANTI-CIRCULARITY, and the reason this is a MEAN and not a z-score: the
+# detector uses the standard deviation. Sizing the corpus by the detector's own
+# statistic would manufacture agreement and make M6's recall number measure
+# nothing (design §10.1). Using a different statistic leaves the detector
+# something to discover.
+OUTLIER_VENDOR_MEAN_MULTIPLE = Decimal("8")
 
 # Ambiguous-category group (3%). Each genuinely fits TWO seeded categories —
 # they exist to make the Classifier and the Auditor disagree at M4, which is

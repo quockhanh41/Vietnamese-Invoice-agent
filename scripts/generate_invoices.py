@@ -354,7 +354,7 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
         orig_spec = specs[target_idx][0]
         near_spec = defects.near_duplicate_of(orig_spec, rng)
         specs[idx] = (
-            near_spec,
+    near_spec,
             specs[idx][1] + ["near_duplicate"],
             {
                 "category": specs[target_idx][2]["category"],
@@ -364,43 +364,22 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
             },
         )
 
-    # price_outlier (6)
-    for idx in _allocate_indices(counts["price_outlier"]):
-        s, d, meta = specs[idx]
-        line = s.lines[0]
-        new_amt = line.amount * defects.OUTLIER_MULTIPLIER
-        new_line = dataclasses.replace(
-            line,
-            amount=new_amt,
-            unit_price=line.unit_price * defects.OUTLIER_MULTIPLIER,
-            # Scale the LINE's VAT too. The header below is scaled in full
-            # (subtotal / vat_total / total_amount), so leaving TThue at its
-            # pre-outlier value keeps the header consistent while making the
-            # LINE arithmetic wrong — a *price* outlier silently becomes a VAT
-            # error as well. Measured 2026-07-29 (M3 exit audit): 4 invoices,
-            # deviations up to 5,040,000 đồng, e.g. 140,000 stated against
-            # 14,000,000 at 10%. `defects` is a LIST so each one stays
-            # attributable; a defect that drags an undeclared second defect
-            # along makes M6's eval unattributable.
-            vat_amount=(
-                line.vat_amount * defects.OUTLIER_MULTIPLIER
-                if line.vat_amount is not None
-                else None
-            ),
-        )
-        sub = s.subtotal * defects.OUTLIER_MULTIPLIER if s.subtotal else None
-        vat = s.vat_total * defects.OUTLIER_MULTIPLIER if s.vat_total else None
-        outlier_spec = dataclasses.replace(
-            s, lines=[new_line], subtotal=sub, vat_total=vat,
-            total_amount=s.total_amount * defects.OUTLIER_MULTIPLIER, total_in_words=None,
-        )
-        specs[idx] = (outlier_spec, d + ["price_outlier"], meta)
+    # price_outlier (6) — indices reserved here so the allocation order is
+    # unchanged; the amounts are set after new_vendor, below.
+    price_outlier_indices = _allocate_indices(counts["price_outlier"])
 
-    # new_vendor (9 total: 3 standalone + 3 on budget_overrun + 3 on price_outlier)
+    # new_vendor (9 total: 6 standalone + 3 on budget_overrun)
+    #
+    # Was 3 + 3 + 3, with the last 3 drawn from price_outlier. Measured
+    # 2026-07-31: a new vendor has no history, so `anomaly.price_outlier`
+    # rejects those 3 before any threshold applies and they are undetectable by
+    # construction — half the group, silently (spec 2026-07-31-m4b §1.1).
+    # The budget_overrun pairing STAYS: `defects.py` records that real invoices
+    # arrive as "new vendor AND over budget", and that co-occurrence is
+    # meaningful rather than pathological.
     new_vendor_indices = (
-        _allocate_indices(3)
+        _allocate_indices(6)
         + [idx for idx, (s, d, m) in enumerate(specs) if "budget_overrun" in d][:3]
-        + [idx for idx, (s, d, m) in enumerate(specs) if "price_outlier" in d][:3]
     )
     for i, idx in enumerate(new_vendor_indices):
         nv = new_vendors[i % len(new_vendors)]
@@ -408,7 +387,61 @@ def generate(*, count: int, seed: int, out: pathlib.Path) -> None:
         nv_spec = dataclasses.replace(
             s, seller_tax_code=nv.tax_code, seller_name=nv.name, seller_address=nv.address
         )
-        specs[idx] = (nv_spec, d + ["new_vendor"], meta)
+        if "new_vendor" not in d:
+            d = d + ["new_vendor"]
+        specs[idx] = (nv_spec, d, meta)
+
+    # price_outlier (6) — AFTER new_vendor, because that block reassigns vendors
+    # and the target below is relative to the vendor's own other invoices.
+    for idx in price_outlier_indices:
+        s, d, meta = specs[idx]
+        peers = [
+            other.total_amount
+            for j, (other, _od, _om) in enumerate(specs)
+            if j != idx and other.seller_tax_code == s.seller_tax_code
+        ]
+        if len(peers) < 4:
+            raise ValueError(
+                f"spec {idx} was chosen as a price_outlier but its vendor has "
+                f"only {len(peers)} other invoices — the z-score guard would "
+                f"reject it and the defect would be undetectable (spec "
+                f"2026-07-31-m4b §1.1)."
+            )
+        peer_mean = sum(peers, Decimal("0")) / len(peers)
+        target = peer_mean * defects.OUTLIER_VENDOR_MEAN_MULTIPLE
+        # INTEGER multiplier. Every amount in the spec is scaled by it, and an
+        # integer preserves `quantity * unit_price == amount` and the VAT
+        # relationships exactly. A fractional ratio would round them apart and
+        # raise LINE_AMOUNT_MISMATCH — an UNDECLARED finding, which
+        # `test_no_invoice_carries_an_UNDECLARED_finding` would catch as red.
+        multiplier = max(Decimal("2"), (target / s.total_amount).to_integral_value())
+
+        line = s.lines[0]
+        new_line = dataclasses.replace(
+            line,
+            amount=line.amount * multiplier,
+            unit_price=line.unit_price * multiplier,
+            # Scale the LINE's VAT too. The header below is scaled in full
+            # (subtotal / vat_total / total_amount), so leaving TThue at its
+            # pre-outlier value keeps the header consistent while making the
+            # LINE arithmetic wrong — a *price* outlier silently becomes a VAT
+            # error as well. Measured 2026-07-29 (M3 exit audit): 4 invoices,
+            # deviations up to 5,040,000 đồng. `defects` is a LIST so each one
+            # stays attributable; a defect that drags an undeclared second
+            # defect along makes M6's eval unattributable.
+            vat_amount=(
+                line.vat_amount * multiplier if line.vat_amount is not None else None
+            ),
+        )
+        outlier_spec = dataclasses.replace(
+            s,
+            lines=[new_line],
+            subtotal=s.subtotal * multiplier if s.subtotal else None,
+            vat_total=s.vat_total * multiplier if s.vat_total else None,
+            total_amount=s.total_amount * multiplier,
+            total_in_words=None,
+        )
+        specs[idx] = (outlier_spec, d + ["price_outlier"], meta)
 
     # ambiguous_category (9)
     for i, idx in enumerate(_allocate_indices(counts["ambiguous_category"])):
