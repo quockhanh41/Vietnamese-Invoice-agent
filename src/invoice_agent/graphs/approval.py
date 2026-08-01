@@ -328,6 +328,61 @@ def route_after_decision(state: ApprovalState) -> str:
     return "post_entry" if state["decision"] in ("approved", "edited") else "record_rejection"
 
 
+def learn_node(state: ApprovalState) -> dict[str, Any]:
+    """HITL feeds memory (design §5.4) — one mechanism, not two features.
+
+    Records an episode on EVERY decision, not only rejections. Design §5.4 names
+    the reject arrow, but `suggest` asks "what happened last time for this
+    vendor" and approvals are the majority answer; a memory holding only
+    refusals biases every suggestion it makes. Deliberate extension past the
+    design doc's literal wording (spec §4.6).
+    """
+    import uuid as _uuid
+    from decimal import Decimal as _Decimal
+
+    from invoice_agent.db.repositories import episodic, vendors
+
+    snapshot = state["snapshot"]
+    tax_code = snapshot.get("seller_tax_code")
+    if not tax_code:
+        return {"status": "learned"}
+
+    with get_engine().begin() as conn:
+        episodic.record_episode(
+            conn,
+            invoice_id=_uuid.UUID(state["invoice_id"]),
+            approval_id=_uuid.UUID(state["approval_id"]),
+            vendor_tax_code=tax_code,
+            amount=_Decimal(snapshot.get("total_amount") or "0"),
+            flags={"codes": [f["code"] for f in state.get("flags") or []]},
+            decision=state["decision"],
+            category=snapshot.get("category"),
+            department=snapshot.get("department"),
+            reason=state.get("reason"),
+        )
+
+        if state["decision"] == "rejected":
+            current = vendors.get_vendor(conn, tax_code) or {}
+            vendors.update_profile(
+                conn, tax_code, rejection_count=int(current.get("rejection_count") or 0) + 1
+            )
+
+        corrections = state.get("corrections")
+        if corrections:
+            # Appended, not overwritten: this field is a running log a reviewer
+            # writes to over time, and `classify` reads the whole thing.
+            current = vendors.get_vendor(conn, tax_code) or {}
+            previous = current.get("reviewer_notes") or ""
+            entry = f"[{state['decided_by']}] " + ", ".join(
+                f"{k}={v}" for k, v in sorted(corrections.items())
+            )
+            vendors.update_profile(
+                conn, tax_code, reviewer_notes=(previous + "\n" + entry).strip()
+            )
+
+    return {"status": "learned"}
+
+
 def build_approval_graph(*, checkpointer: Any = None) -> Any:
     from langgraph.graph import END, START, StateGraph
 
@@ -338,6 +393,7 @@ def build_approval_graph(*, checkpointer: Any = None) -> Any:
     builder.add_node("apply_decision", apply_decision_node)
     builder.add_node("post_entry", post_entry_node)
     builder.add_node("record_rejection", record_rejection_node)
+    builder.add_node("learn", learn_node)
 
     builder.add_edge(START, "load_snapshot")
     builder.add_edge("load_snapshot", "suggest")
@@ -348,9 +404,11 @@ def build_approval_graph(*, checkpointer: Any = None) -> Any:
         route_after_decision,
         {"post_entry": "post_entry", "record_rejection": "record_rejection"},
     )
-    builder.add_edge("post_entry", END)
-    builder.add_edge("record_rejection", END)
+    builder.add_edge("post_entry", "learn")
+    builder.add_edge("record_rejection", "learn")
+    builder.add_edge("learn", END)
 
     return builder.compile(checkpointer=checkpointer)
+
 
 

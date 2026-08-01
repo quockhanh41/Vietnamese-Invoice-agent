@@ -427,4 +427,74 @@ def test_a_guard_denial_in_post_entry_is_not_swallowed(committed_rows):
         approval.post_entry_node(state)
 
 
+def test_a_rejection_is_remembered_with_its_reason(committed_rows):
+    """Design §5.4. HITL and memory are one mechanism, not two features."""
+    from invoice_agent.db.engine import get_engine
+    from invoice_agent.db.repositories import episodic, vendors
+
+    db_id, approval_id = _persisted_invoice(committed_rows)
+    state = {
+        **_initial_state(db_id, approval_id),
+        "decision": "rejected",
+        "decided_by": "ketoan",
+        "reason": "sai số học",
+    }
+    state.update(approval.load_snapshot_node(state))
+    approval.learn_node(state)
+
+    tax_code = state["snapshot"]["seller_tax_code"]
+    with get_engine().begin() as conn:
+        episodes = episodic.similar_episodes(conn, vendor_tax_code=tax_code)
+        vendor = vendors.get_vendor(conn, tax_code)
+    assert [e["reason"] for e in episodes] == ["sai số học"]
+    assert vendor["rejection_count"] == 1
+
+
+def test_an_approval_is_remembered_too(committed_rows):
+    """Past design §5.4's literal wording, deliberately. `suggest` asks "what
+    happened last time for this vendor"; a memory holding only refusals biases
+    every suggestion it ever makes. Recorded as a decision, not a drift.
+    """
+    from invoice_agent.db.engine import get_engine
+    from invoice_agent.db.repositories import episodic, vendors
+
+    db_id, approval_id = _persisted_invoice(committed_rows)
+    state = {
+        **_initial_state(db_id, approval_id),
+        "decision": "approved",
+        "decided_by": "ketoan",
+    }
+    state.update(approval.load_snapshot_node(state))
+    approval.learn_node(state)
+
+    tax_code = state["snapshot"]["seller_tax_code"]
+    with get_engine().begin() as conn:
+        episodes = episodic.similar_episodes(conn, vendor_tax_code=tax_code)
+        vendor = vendors.get_vendor(conn, tax_code)
+    assert [e["decision"] for e in episodes] == ["approved"]
+    assert vendor["rejection_count"] == 0, "an approval is not a rejection"
+
+
+def test_field_corrections_reach_the_field_classify_reads(committed_rows):
+    """Design §5.4's second arrow: `field_corrections` → `vendors.reviewer_notes`
+    → what `classify` reads next time. Without this the loop is decorative."""
+    from invoice_agent.db.engine import get_engine
+    from invoice_agent.db.repositories import vendors
+
+    db_id, approval_id = _persisted_invoice(committed_rows)
+    state = {
+        **_initial_state(db_id, approval_id),
+        "decision": "edited",
+        "decided_by": "ketoan",
+        "corrections": {"category": "IT_SERVICES"},
+    }
+    state.update(approval.load_snapshot_node(state))
+    approval.learn_node(state)
+
+    with get_engine().begin() as conn:
+        vendor = vendors.get_vendor(conn, state["snapshot"]["seller_tax_code"])
+    assert "IT_SERVICES" in vendor["reviewer_notes"]
+
+
+
 
