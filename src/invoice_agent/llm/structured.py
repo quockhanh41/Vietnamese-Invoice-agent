@@ -41,6 +41,39 @@ class StructuredOutputError(RuntimeError):
     """
 
 
+def _schema_instruction(response_model: type[BaseModel]) -> str:
+    """Tell the model the shape it must return.
+
+    FOUND 2026-08-01, the first time a structured call ran live. Two defects,
+    both invisible until a provider key existed, and both fixed here rather than
+    in each caller because both are properties of asking for JSON at all:
+
+    1. `response_model` was used ONLY to validate the reply (line ~73). The
+       model was never told the field names, so it had to guess `confidence`
+       and `reasoning` from a prompt that never mentions them — three attempts,
+       three ValidationErrors, StructuredOutputError.
+
+    2. Groq (and every OpenAI-compatible endpoint) rejects
+       `response_format={"type":"json_object"}` unless the word "json" appears
+       in the messages:
+
+         GroqException - 'messages' must contain the word 'json' in some form,
+         to use 'response_format' of type 'json_object'.
+
+       So the FIRST model in the chain died on a BadRequest and the run fell
+       through to whatever came next. Emitting the schema satisfies this by
+       construction rather than by remembering to say "json" in every prompt.
+
+    Vietnamese, like the agent prompts: a model reads it, so CLAUDE.md's
+    product-language exception applies.
+    """
+    schema = json.dumps(response_model.model_json_schema(), ensure_ascii=False)
+    return (
+        "Chỉ trả về MỘT object JSON hợp lệ, không kèm giải thích hay markdown.\n"
+        f"JSON schema bắt buộc:\n{schema}"
+    )
+
+
 def call_structured[ModelT: BaseModel](
     gateway: LLMGateway,
     *,
@@ -58,7 +91,11 @@ def call_structured[ModelT: BaseModel](
     three rows and the cost of failed extraction is visible.
     """
     attempt_errors: list[str] = []
-    current_prompt = prompt
+    # Appended to the USER message, not the system prompt: each agent owns its
+    # own system prompt, and a caller that overrode it would otherwise silently
+    # drop the schema and reintroduce both defects `_schema_instruction` records.
+    schema_hint = _schema_instruction(response_model)
+    current_prompt = f"{prompt}\n\n{schema_hint}"
 
     for _ in range(max_attempts):
         raw = gateway.generate(
@@ -73,7 +110,9 @@ def call_structured[ModelT: BaseModel](
             return response_model.model_validate(json.loads(raw))
         except (json.JSONDecodeError, ValidationError) as exc:
             attempt_errors.append(str(exc))
-            current_prompt = _retry_prompt(prompt, exc)
+            # The retry carries the schema too — without it, attempt 2 knows
+            # what went wrong but has again forgotten what shape to produce.
+            current_prompt = f"{_retry_prompt(prompt, exc)}\n\n{schema_hint}"
 
     raise StructuredOutputError(
         f"{response_model.__name__} not produced in {max_attempts} attempts. "

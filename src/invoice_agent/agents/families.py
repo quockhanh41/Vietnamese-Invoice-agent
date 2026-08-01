@@ -25,6 +25,7 @@ has_a_declared_family` fails otherwise — an unmapped model would compare as
 # the same weights served by two providers are one family.
 MODEL_FAMILIES: dict[str, str] = {
     "groq/llama-3.3-70b-versatile": "meta-llama",
+    "groq/llama-3.1-8b-instant": "meta-llama",
     "openrouter/meta-llama/llama-3.3-70b-instruct:free": "meta-llama",
     "groq/openai/gpt-oss-120b": "openai-oss",
     "openai/gpt-4o-mini": "openai-gpt4",

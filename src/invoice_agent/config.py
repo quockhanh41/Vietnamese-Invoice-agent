@@ -23,10 +23,20 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 # 2026-07-19 ở project đó). Groq trước vì free tier rộng nhất, Gemini flash
 # sau vì là quota ngoài lớn nhất, OpenRouter :free là đuôi vét chứ không phải
 # ngựa kéo (~50 req/ngày/key, tính cả account chứ không phải cả model).
+# Measured 2026-08-01, the first day a provider key existed here: BOTH
+# OpenRouter `:free` slugs that used to tail this chain are RETIRED —
+# "This model is unavailable for free. The paid version is available now."
+# They are dropped rather than re-pointed at the paid slugs, because $0 is this
+# project's premise (§0) and a silently-paid fallback is worse than a short
+# chain. A dead entry is not free either: it costs a real round-trip and a
+# `llm_calls` failure row every time the chain reaches it.
+#
+# `llama-3.1-8b-instant` replaces them — same meta-llama family, which is what
+# the Auditor disjointness check cares about (families.py), and verified the
+# same day to accept `response_format=json_object`.
 DEFAULT_MODEL_CHAIN = [
     "groq/llama-3.3-70b-versatile",
-    "openrouter/qwen/qwen3-next-80b-a3b-instruct:free",
-    "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+    "groq/llama-3.1-8b-instant",
 ]
 
 # The Auditor's chain. DISJOINT from DEFAULT_MODEL_CHAIN by family, not by name

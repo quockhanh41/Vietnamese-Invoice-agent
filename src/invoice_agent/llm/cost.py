@@ -36,6 +36,9 @@ _FREE = (Decimal(0), Decimal(0))
 # figure is zero — not the provider's list price.
 ACTUAL_PRICES: dict[str, tuple[Decimal, Decimal]] = {
     "groq/llama-3.3-70b-versatile": _FREE,
+    # Added 2026-08-01 with the chain change in config.py: the two retired
+    # OpenRouter `:free` slugs left the Classifier with no fallback at all.
+    "groq/llama-3.1-8b-instant": _FREE,
     "groq/openai/gpt-oss-120b": _FREE,
     "gemini/gemini-3.5-flash": _FREE,
     "openrouter/qwen/qwen3-next-80b-a3b-instruct:free": _FREE,
