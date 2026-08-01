@@ -433,6 +433,21 @@ def submit_decision(
     `decision` is validated BEFORE the graph is touched. `route_after_decision`
     sends anything that is not approved/edited to `record_rejection`, so an
     unvalidated typo would silently reject a good invoice.
+
+    `graph_builder` EXISTS FOR ONE CALLER, and it is worth naming rather than
+    leaving as an unexplained parameter. `tests/test_hitl_survives_restart.py`
+    resumes through this function but needs the node-counting graph from
+    `tests/helpers/hitl_child.py`, because the "`approval_gate` ran twice"
+    measurement cannot come from checkpoint history — the gate's first pass
+    raises `GraphInterrupt` and commits nothing (measured 2026-07-27 at M1.5).
+    Without the seam the durability test would have to re-implement the resume
+    instead of exercising the production path, which is the more valuable thing
+    to test.
+
+    The cost is a test-shaped hole in production code, and it is bounded by
+    `test_the_counted_graph_matches_the_real_one`: the injected builder must
+    render byte-identical mermaid to `build_approval_graph`, so it cannot be a
+    different graph. Same arrangement as `build_enrichment_graph(gateway=…)`.
     """
     from langgraph.types import Command
 

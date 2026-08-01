@@ -459,6 +459,27 @@ def test_the_counted_graph_matches_the_real_one():
     assert counted == real
 
 
+def test_the_committed_diagram_matches_the_graph():
+    """The same drift guard the enrichment and batch graphs have had since M3-C.
+
+    Added 2026-08-01 by the M5-B review, which found `approval_graph.mmd` had
+    been hand-drawn from the design doc, never regenerated once
+    `graphs/approval.py` existed, and was STALE — while the closeout note listed
+    it as a delivered artefact. Two of three diagrams were guarded; the
+    unguarded one is the one that rotted.
+
+    Regenerate with `python -m scripts.render_graph`; never hand-edit the .mmd.
+    """
+    import pathlib
+
+    committed = pathlib.Path("docs/diagrams/approval_graph.mmd")
+    assert committed.exists()
+    assert (
+        committed.read_text(encoding="utf-8").strip()
+        == approval.build_approval_graph().get_graph().draw_mermaid().strip()
+    )
+
+
 
 
 

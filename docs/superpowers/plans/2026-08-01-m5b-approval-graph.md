@@ -1,6 +1,6 @@
 # M5-B: the approval graph and the HITL loop — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the human decision that authorises a journal entry durable across a process death — a reviewer may decide hours later, from a different process, after a deploy — and close the loop where that decision feeds vendor and episodic memory.
 

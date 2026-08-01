@@ -45,9 +45,18 @@ def scan() -> dict[str, list[dict[str, Any]]]:
                 "thread_id": row["thread_id"],
             }
             # `.interrupts` is the live-interrupt list on the state snapshot.
-            # An empty `.next` with no interrupts means the thread never ran or
-            # its checkpoints are gone.
-            if getattr(snapshot, "interrupts", ()):
+            # No interrupts means the thread never ran or its checkpoints are
+            # gone.
+            #
+            # DIRECT ATTRIBUTE ACCESS, not `getattr(..., ())`. Verified
+            # 2026-08-01 on langgraph 1.2.9: `interrupts` is present in
+            # `StateSnapshot._fields`. A default would be error handling for a
+            # scenario that cannot happen today, and it would turn a future
+            # rename into "every thread is orphaned" — silently emptying the
+            # reviewer queue — instead of an AttributeError naming the cause.
+            # The version is pinned (roadmap §0 rule 6), so a rename is an
+            # intentional migration, and this is where it should fail loudly.
+            if snapshot.interrupts:
                 pending.append(record)
             else:
                 orphaned.append(record)

@@ -24,7 +24,6 @@ pytest_plugins = ["tests.helpers.approval_fixtures"]
 
 
 @pytest.fixture(scope="session", autouse=True)
-
 def _reset_db_state(requires_postgres) -> None:  # type: ignore[misc]
     """Truncate mutable app tables before every test session.
 
