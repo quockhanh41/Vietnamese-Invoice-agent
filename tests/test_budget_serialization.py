@@ -149,6 +149,22 @@ def test_gate_batch_end_to_end_replay(runtime_conn, tmp_path, monkeypatch):
     monkeypatch.delenv("GROQ_API_KEYS", raising=False)
     monkeypatch.delenv("GEMINI_API_KEYS", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEYS", raising=False)
+    # WITHOUT THIS THE MONKEYPATCH DOES NOTHING. `config.get_settings` is
+    # `@lru_cache`d (config.py:238), so a Settings built earlier in the session
+    # is handed back and the gateway keeps `llm_mode="live"` with the real keys
+    # still loaded. Measured 2026-08-01: this test was making LIVE Groq calls
+    # and passed only because a key happened to be configured — it failed the
+    # moment Groq rate-limited, with an extra invoice in `failed`. So the "the
+    # gate replays hermetically" claim was false, and CI would have proved
+    # nothing about it.
+    from invoice_agent.config import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        "invoice_agent.config.get_settings",
+        get_settings,
+        raising=False,
+    )
 
     from scripts.generator import gate_batch
 
