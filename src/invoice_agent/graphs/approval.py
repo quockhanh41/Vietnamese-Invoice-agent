@@ -421,6 +421,7 @@ def submit_decision(
     decided_by: str,
     reason: str | None = None,
     corrections: dict[str, Any] | None = None,
+    graph_builder: Any = None,
 ) -> dict[str, Any]:
     """Resume a pending approval thread. THE SEAM M5-C WRAPS.
 
@@ -442,7 +443,8 @@ def submit_decision(
 
     config = {"configurable": {"thread_id": f"appr:{invoice_id}"}}
     with build_checkpointer() as saver:
-        app = build_approval_graph(checkpointer=saver)
+        builder = graph_builder or build_approval_graph
+        app = builder(checkpointer=saver)
         return dict(
             app.invoke(
                 Command(
@@ -456,6 +458,7 @@ def submit_decision(
                 config,
             )
         )
+
 
 
 

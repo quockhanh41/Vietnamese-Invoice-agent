@@ -444,6 +444,22 @@ def test_an_unknown_decision_never_reaches_the_graph(committed_rows):
         )
 
 
+def test_the_counted_graph_matches_the_real_one():
+    """`hitl_child.build_counted_graph` re-declares the topology in order to wrap
+    two nodes. A copy of a graph is a copy that drifts — so this compares the
+    rendered mermaid of both, and portfolio test 1 stops measuring the real
+    graph the moment they differ."""
+    from tests.helpers.hitl_child import build_counted_graph
+
+    from invoice_agent.checkpointer import build_checkpointer
+
+    with build_checkpointer() as saver:
+        counted = build_counted_graph("appr:x", saver).get_graph().draw_mermaid()
+        real = approval.build_approval_graph(checkpointer=saver).get_graph().draw_mermaid()
+    assert counted == real
+
+
+
 
 
 

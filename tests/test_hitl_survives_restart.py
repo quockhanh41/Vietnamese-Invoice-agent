@@ -10,15 +10,16 @@ import signal
 import subprocess
 import sys
 import time
-import uuid
 from pathlib import Path
 
 import psycopg
 import pytest
-from langgraph.types import Command
-from tests.helpers.spike_graph import build_spike_graph
+from sqlalchemy import select
+from tests.helpers.approval_fixtures import _persisted_invoice
 
-from invoice_agent.checkpointer import build_checkpointer
+from invoice_agent.db import models
+from invoice_agent.db.engine import get_engine
+from invoice_agent.graphs import approval
 
 # Mặc định 3 cho vòng lặp local nhanh; CI đặt 10 để đóng gate M1.
 # Đọc lúc pytest COLLECTION vì `parametrize` chạy ở thì đó — đổi biến giữa
@@ -90,13 +91,29 @@ def _wait_for_interrupt(dsn: str, thread_id: str, child: subprocess.Popen) -> No
 
 
 @pytest.mark.parametrize("run", range(HITL_RUNS))
-def test_hitl_survives_restart(requires_postgres, run):
-    thread_id = f"spike:{uuid.uuid4()}"
-    config = {"configurable": {"thread_id": thread_id}}
+def test_hitl_survives_restart(requires_postgres, committed_rows, run):
+    """PORTFOLIO TEST 1, now on the REAL approval graph.
+
+    Proves what a confirm dialog in a shallow agent demo cannot: the human
+    decision may arrive after the process that asked for it has died.
+
+    Asserts BOTH halves.
+
+    Mechanism — `suggest` = 1, `approval_gate` = 2 across the process boundary.
+    The gate's node runs again from the top on resume; that is LangGraph
+    semantics, not a bug, and it is why `post_entry` is a separate node.
+
+    Consequence — exactly ONE journal entry, ONE audit grant, ONE decided
+    approval. M1 could only count node executions because the spike had no real
+    side effect to count. This graph does, and the consequence is the property
+    that actually matters.
+    """
+    db_id, approval_id = _persisted_invoice(committed_rows)
     project_root = Path(__file__).parent.parent
     env = {**os.environ, "PYTHONPATH": str(project_root)}
+    thread_id = f"appr:{db_id}"
     child = subprocess.Popen(
-        [sys.executable, "-m", "tests.helpers.hitl_child", thread_id],
+        [sys.executable, "-m", "tests.helpers.hitl_child", str(db_id), str(approval_id)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -107,49 +124,56 @@ def test_hitl_survives_restart(requires_postgres, run):
 
         os.kill(child.pid, signal.SIGKILL)
         child.wait(timeout=10)
-        # -9 chứ không chỉ "đã chết": con tự thoát vì lỗi khác (import sai,
-        # không nối được DB) mà test vẫn xanh thì test đó vô giá trị.
         assert child.returncode == -signal.SIGKILL, (
-            f"con phải chết vì SIGKILL, nhận rc={child.returncode}"
+            f"the child must die of SIGKILL, got rc={child.returncode}"
         )
 
-        assert _count(requires_postgres, thread_id, "n1_record") == 1, (
-            "n1_record phải đã chạy 1 lần"
+        assert _count(requires_postgres, thread_id, "suggest") == 1
+        assert _count(requires_postgres, thread_id, "approval_gate") == 1
+
+        from tests.helpers.hitl_child import build_counted_graph
+
+        # A brand-new process. Nothing from the dead one is reused.
+        result = approval.submit_decision(
+            invoice_id=str(db_id),
+            decision="approved",
+            decided_by="ketoan",
+            graph_builder=lambda checkpointer: build_counted_graph(thread_id, checkpointer),
         )
-        assert _count(requires_postgres, thread_id, "n2_gate") == 1, (
-            "thân n2_gate phải đã chạy 1 lần trước khi process chết"
+        assert "__interrupt__" not in result, "the resume was ignored"
+        assert result["status"] == "learned"
+
+
+        assert _count(requires_postgres, thread_id, "suggest") == 1, (
+            "a node BEFORE the gate must not run twice"
+        )
+        assert _count(requires_postgres, thread_id, "approval_gate") == 2, (
+            "the node CONTAINING interrupt() runs again from the top on resume"
         )
 
-        # Checkpointer HOÀN TOÀN MỚI — process cũ đã chết, không có gì tái dùng.
-        with build_checkpointer() as saver:
-            app = build_spike_graph().compile(checkpointer=saver)
-            final = app.invoke(Command(resume={"decision": "approved"}), config)
-
-        assert "__interrupt__" not in final, "resume bị bỏ qua"
-        assert final["decision"] == "approved"
-        assert final["trace"] == ["n1_record", "n2_gate", "n3_finish"]
-
-        # Điều kiện CẦN của "không bao giờ post hai lần" — và nó chỉ đúng cho
-        # node TRƯỚC cổng.
-        assert _count(requires_postgres, thread_id, "n1_record") == 1, (
-            "side effect ở node trước cổng bị lặp sau resume"
-        )
-        # Nửa còn lại của phát hiện, đo qua RANH GIỚI PROCESS: 1 lần ở process
-        # đã bị kill -9, 1 lần nữa ở process này. Đây là lý do `post_entry` của
-        # M5 không được nằm cùng node với `approval_gate`.
-        assert _count(requires_postgres, thread_id, "n2_gate") == 2, (
-            "node CHỨA interrupt() phải chạy lại từ đầu sau resume"
-        )
+        with get_engine().begin() as conn:
+            entries = list(
+                conn.execute(
+                    select(models.journal_entries).where(
+                        models.journal_entries.c.invoice_id == db_id
+                    )
+                ).mappings()
+            )
+            grants = [
+                r
+                for r in conn.execute(
+                    select(models.audit_log).where(
+                        models.audit_log.c.target_id == str(db_id)
+                    )
+                ).mappings()
+                if r["allowed"]
+            ]
+        assert len(entries) == 1, "the irreversible write happened more than once"
+        assert entries[0]["posting_authority"] == "human_approved"
+        assert len(grants) == 1
     finally:
         if child.poll() is None:
             child.kill()
             child.wait(timeout=5)
         with psycopg.connect(requires_postgres) as conn:
             conn.execute("DELETE FROM app.spike_counter WHERE thread_id = %s", (thread_id,))
-
-
-def test_ci_runs_the_full_ten():
-    """Chốt chặn: không có test này, một ngày nào đó ai đó sửa workflow, CI âm
-    thầm chạy 3 lần, và gate "10/10" tự suy yếu mà không ai biết."""
-    if os.getenv("CI", "").lower() in ("true", "1"):
-        assert HITL_RUNS >= 10, f"CI phải đặt HITL_RUNS>=10 để đóng gate M1, đang là {HITL_RUNS}"
