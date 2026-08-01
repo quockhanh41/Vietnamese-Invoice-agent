@@ -19,7 +19,6 @@ from scripts.seed_reference import CATEGORIES
 
 from invoice_agent.agents import audit as audit_mod
 from invoice_agent.agents import classification
-from invoice_agent.agents.models import AuditVerdict, ClassificationResult
 from invoice_agent.config import get_settings
 from invoice_agent.eval import baseline
 from invoice_agent.extraction.xml_parser import parse_invoice_xml
@@ -101,7 +100,7 @@ def evaluate(
 
     total_calls: list[LLMCallRecord] = []
 
-    for idx, record in enumerate(xml_records):
+    for record in xml_records:
         xml_file = corpus_dir.parent / record["path"]
         invoice = parse_invoice_xml(xml_file.read_bytes())
         truth_cat = record["category"]

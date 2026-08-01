@@ -5,9 +5,7 @@ PYTHON decides whether that becomes a flag. No response model has a field that
 reaches `invoice_flags`.
 """
 
-from decimal import Decimal
 
-import pytest
 
 from invoice_agent.agents import audit as audit_mod
 from invoice_agent.agents import classification

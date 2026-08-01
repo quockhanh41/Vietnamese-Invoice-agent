@@ -5,17 +5,15 @@ Revises: f26e8ea62320
 Create Date: 2026-08-01 07:25:16.465213
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
-import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
 revision: str = '9c82b5515db9'
-down_revision: Union[str, Sequence[str], None] = 'f26e8ea62320'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = 'f26e8ea62320'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 _OLD = "('validation', 'taxcode', 'anomaly', 'budget', 'duplicate', 'vendor_memory')"
 _NEW = (

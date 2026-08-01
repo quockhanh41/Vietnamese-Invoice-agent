@@ -11,10 +11,9 @@ by entry 5: the same weights grading their own generation. That is invisible to
 name-based exclusion, which is why the chains are DECLARED disjoint instead.
 """
 
-import pytest
 
 from invoice_agent.agents import families
-from invoice_agent.config import DEFAULT_MODEL_CHAIN, Settings
+from invoice_agent.config import Settings
 
 
 def test_every_configured_model_has_a_declared_family():
