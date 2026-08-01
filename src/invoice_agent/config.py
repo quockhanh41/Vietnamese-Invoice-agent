@@ -120,6 +120,11 @@ class Settings(BaseSettings):
     # để không bao giờ hỏng vì rate limit của người khác (design doc §11.4).
     llm_mode: Literal["live", "record", "replay"] = "live"
     llm_cache_dir: str = "tests/fixtures/llm_cache"
+    # Where POST /batches spools uploaded invoices. Outside `corpus/` so a
+    # regenerate cannot delete a user's upload. `.gitignore` blocks *.xml/*.pdf
+    # unanchored already; the directory is listed too, because this repo has
+    # leaked PII twice and one layer is not enough (roadmap §1).
+    upload_dir: str = "uploads"
 
     # --- Batch --------------------------------------------------------------
     # Kiểm soát CHÍNH chống 429 khi fan-out; key rotation chỉ là lưới đỡ.

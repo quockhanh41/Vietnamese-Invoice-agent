@@ -48,6 +48,9 @@ dependencies = [
     # Turns a pypdfium2 bitmap into PNG bytes. Imported directly rather than
     # relied on transitively.
     "pillow>=12.0.0",
+    # FastAPI raises RuntimeError on ANY multipart route without this. Verified
+    # 2026-08-01: not previously installed, because nothing served an upload.
+    "python-multipart>=0.0.20",
 ]
 
 [project.optional-dependencies]

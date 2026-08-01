@@ -62,3 +62,7 @@ tests/fixtures/llm_cache/*.tmp
 # OS
 .DS_Store
 Thumbs.db
+
+# Spooled invoice uploads — POST /batches writes here. Listed explicitly
+# because this repo has leaked PII twice; *.xml/*.pdf blocked unanchored elsewhere.
+uploads/

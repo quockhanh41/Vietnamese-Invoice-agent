@@ -35,10 +35,12 @@ def create_app() -> FastAPI:
     install_error_handlers(app)
     app.include_router(health.router)
 
-    from invoice_agent.api.routes import invoices, reports
+    from invoice_agent.api.routes import approvals, batches, invoices, reports
 
     app.include_router(invoices.router)
     app.include_router(reports.router)
+    app.include_router(approvals.router)
+    app.include_router(batches.router)
     return app
 
 

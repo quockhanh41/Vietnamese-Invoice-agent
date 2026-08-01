@@ -5,7 +5,7 @@ THIS ROUTE ADDS NO LOGIC. `POST /approvals/{invoice_id}/decision` calls
 "interrupt is transport-agnostic" (M7's artefact) a demonstration rather than a
 claim — a test, a script, this route and later MCP all drive the same function.
 
-It must never import `tools.guards` or `db.repositories.journal`:
+It must never import `tools.guards` or the journal repository directly:
 `tests/test_api_boundary.py` enforces it. A route that imported the guard could
 choose its own `posting_authority`, and the HTTP layer would become a second
 door to the ledger.
