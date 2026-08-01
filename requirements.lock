@@ -247,6 +247,8 @@ python-dotenv==1.2.2
     #   litellm
     #   pydantic-settings
     #   uvicorn
+python-multipart==0.0.32
+    # via vietnamese-invoice-agent (pyproject.toml)
 pyyaml==6.0.3
     # via
     #   huggingface-hub
