@@ -139,3 +139,49 @@ def _suggest(conn: Any, state: ApprovalState) -> dict[str, Any]:
         suggestions={"episodes": suggestions},
     )
     return {"suggestions": suggestions, "status": "suggested"}
+
+
+def approval_gate_node(state: ApprovalState) -> dict[str, Any]:
+    """`interrupt()` and nothing else.
+
+    NOT a stylistic preference. Measured 2026-07-27 at M1.5 across a real
+    `kill -9`: this node's body runs TWICE — once in the process that died,
+    once in the process that resumed. Anything added here happens twice.
+    `tests/test_approval_graph.py` guards it statically and Task 9's durability
+    test guards it behaviourally.
+    """
+    from langgraph.types import interrupt
+
+    decision = interrupt(
+        {
+            "invoice": state["snapshot"],
+            # Vietnamese, and it stays Vietnamese: a Vietnamese accountant reads
+            # these. CLAUDE.md puts product output on the other side of the
+            # authoring-language rule.
+            "flags": state["flags"],
+            "suggestions": state["suggestions"],
+        }
+    )
+    return {
+        "decision": decision["decision"],
+        "decided_by": decision["decided_by"],
+        "reason": decision.get("reason"),
+        "corrections": decision.get("corrections"),
+    }
+
+
+def build_approval_graph(*, checkpointer: Any = None) -> Any:
+    from langgraph.graph import END, START, StateGraph
+
+    builder = StateGraph(ApprovalState)
+    builder.add_node("load_snapshot", load_snapshot_node)
+    builder.add_node("suggest", suggest_node)
+    builder.add_node("approval_gate", approval_gate_node)
+
+    builder.add_edge(START, "load_snapshot")
+    builder.add_edge("load_snapshot", "suggest")
+    builder.add_edge("suggest", "approval_gate")
+    builder.add_edge("approval_gate", END)
+
+    return builder.compile(checkpointer=checkpointer)
+

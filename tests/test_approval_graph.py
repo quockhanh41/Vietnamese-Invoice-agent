@@ -205,3 +205,44 @@ def test_suggest_persists_the_context_it_built(committed_rows):
         row = approvals_repo.get_approval(conn, approval_id)
     assert row["flags_snapshot"]["flags"][0]["code"] == "PRICE_OUTLIER"
     assert "invoice" in row["interrupt_payload"]
+
+
+def test_the_graph_stops_at_the_interrupt_and_checkpoints(committed_rows):
+    """The property design §5.2 calls the largest difference between this system
+    and a confirm dialog: execution stops and the whole state lands in Postgres,
+    so the process may die."""
+    from invoice_agent.checkpointer import build_checkpointer
+
+    db_id, approval_id = _persisted_invoice(
+        committed_rows, flag=("PRICE_OUTLIER", "warn", "anomaly")
+    )
+    config = {"configurable": {"thread_id": f"appr:{db_id}"}}
+    with build_checkpointer() as saver:
+        saver.setup()
+        app = approval.build_approval_graph(checkpointer=saver)
+        result = app.invoke(_initial_state(db_id, approval_id), config)
+
+    assert "__interrupt__" in result, "the graph ran past its own gate"
+    payload = result["__interrupt__"][0].value
+    assert payload["invoice"]["invoice_number"]
+    assert payload["flags"][0]["code"] == "PRICE_OUTLIER"
+
+
+def test_the_gate_node_has_no_side_effect_beyond_the_interrupt():
+    """A STATIC guard, and deliberately so. The behavioural cost of a write in
+    this node only appears across a `kill -9` (Task 9 measures it), which is
+    slow and easy to skip. This one is instant and fails at the commit that
+    introduces the write.
+
+    M1.5 measured the consequence: the node containing `interrupt()` runs TWICE
+    across resume, so anything here happens twice.
+    """
+    import inspect
+
+    source = inspect.getsource(approval.approval_gate_node)
+    for forbidden in ("conn", "insert", "update", "record_", "get_engine", "repositories"):
+        assert forbidden not in source, (
+            f"approval_gate_node touches {forbidden!r}; it must contain interrupt() and "
+            "nothing else — M1.5 measured that this node runs twice across a restart"
+        )
+
