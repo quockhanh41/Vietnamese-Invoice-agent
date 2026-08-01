@@ -355,3 +355,63 @@ def test_ck_flags_raised_by_still_rejects_an_unknown_source(runtime_conn):
             detail={},
         )
 
+
+def test_an_info_flag_does_not_block_auto_clean_posting(runtime_conn):
+    """Migration 13. NEW_VENDOR is severity `info` and M4-B measured 51 first
+    sightings across the corpus — on a fresh database that is nearly every
+    invoice. Before this migration the trigger blocked auto_clean on ANY open
+    flag, so persisting findings honestly (Task 7) would have made the auto path
+    unreachable: exactly the 28-of-28 failure route_outcomes_node's docstring
+    already measured in memory.
+    """
+    from invoice_agent.domain import findings
+
+    invoice_id = _clean_invoice(runtime_conn, f"INF{uuid.uuid4().hex[:6]}")
+    flags.raise_flag(
+        runtime_conn,
+        invoice_id,
+        code=findings.NEW_VENDOR,
+        severity="info",
+        raised_by="vendor_memory",
+    )
+    entry_id = journal.create_entry_with_lines(
+        runtime_conn,
+        invoice_id=invoice_id,
+        entry_date=date(2026, 7, 1),
+        posting_authority="auto_clean",
+        lines=[
+            journal.JournalLine("6422", "Chi phí quản lý", Decimal("100"), Decimal("0")),
+            journal.JournalLine("331", "Phải trả người bán", Decimal("0"), Decimal("100")),
+        ],
+    )
+    assert entry_id is not None
+
+
+def test_a_warn_flag_still_blocks_auto_clean_posting(runtime_conn):
+    """The half of the trigger migration 13 must NOT relax. This is the database
+    layer of the three-layer safety property; if it stops biting, the property
+    rests on application code alone.
+    """
+    from invoice_agent.domain import findings
+
+    invoice_id = _clean_invoice(runtime_conn, f"WRN{uuid.uuid4().hex[:6]}")
+    flags.raise_flag(
+        runtime_conn,
+        invoice_id,
+        code=findings.PRICE_OUTLIER,
+        severity="warn",
+        raised_by="anomaly",
+    )
+    with pytest.raises(Exception, match="open flag"):
+        journal.create_entry_with_lines(
+            runtime_conn,
+            invoice_id=invoice_id,
+            entry_date=date(2026, 7, 1),
+            posting_authority="auto_clean",
+            lines=[
+                journal.JournalLine("6422", "Chi phí quản lý", Decimal("100"), Decimal("0")),
+                journal.JournalLine("331", "Phải trả người bán", Decimal("0"), Decimal("100")),
+            ],
+        )
+
+
