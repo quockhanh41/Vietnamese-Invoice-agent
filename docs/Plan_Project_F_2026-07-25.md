@@ -191,7 +191,29 @@ kèm 2 PDF có số CCCD (vá ở `bb8718d`). Đính chính một cảnh báo c�
 `vietnamese-legal-bot/.claude/settings.json` "đang commit Langfuse key plaintext" — **sai**,
 `.claude/` đã bị gitignore và `git log --all` trả về rỗng; key chưa bao giờ vào history.
 
-**Next**: M4 — multi-agent, memory, and the budget serialization proof. M4-A corpus & reference alignment done 2026-07-31 (found five defects in M2/M3 outputs before any M4 code was written, including unjoinable departments and reverse canonical rank). The gate is open. What is owed, roughly in the order it will hurt:
+**Next**: M5 — HITL production, the API, and the Streamlit insurance UI. **M4 closed 2026-08-01
+(4/4 specs)**; the gate table is in §3. What is owed, roughly in the order it will hurt:
+
+- **A throttled Auditor re-measurement.** M4-C's 12.5% dispute precision is the milestone's headline
+  negative result, but Gemini free tier rate-limited **177 times** during the run, so those audits
+  fell through to a second model — "the Auditor" was a timing-dependent mixture. Family disjointness
+  held throughout, and the finding survives either mixture, but **the number M6 publishes must come
+  from one rater**.
+- **`max_concurrency` has never met a real rate limit.** The gate replays, so 4–6 ships unexercised —
+  and a *serial* run already hit 177 limits. M5's first live batch will meet this wall.
+- **Per-department gate-batch declarations.** `gate_batch.json` pins the MKT chain only; the batch
+  raises 9 `BUDGET_BREACH` flags and 8 are undeclared-but-correct (§3's note).
+- **Vision fixtures do not travel across platforms** — the replay key hashes a rasterized PNG, so
+  macOS/ARM recordings miss on CI. Re-record on the CI platform, or score from committed PNGs.
+- **The six PII-carrying vendor PDFs are still in git history on origin**, alongside the M1 tax-code
+  leak. Deferred four times now; deferred is still not the same as decided.
+- Still open from M1: the **NĐ 70/2025/NĐ-CP** field check.
+
+**The rule, restated because M4 failed it twice.** A milestone is not closed until `make check` is
+green on the *pushed* commit and CI agrees — and CI must actually *run* the milestone's gate. M4-D
+was declared closed on a red commit whose gate test did not execute in CI at all, because no step
+generated the corpus. Adding that one CI step immediately exposed two further defects, including a
+gate that was making live API calls while claiming to replay.
 
 - ✅ **PAID 2026-08-01.** The vision branch now has its first accuracy number: **2/2 XML↔PDF twins
   extracted 4/4 on `invoice_number` · `invoice_series` · `seller_tax_code` · `total_amount`**
@@ -575,6 +597,31 @@ gets said).
 **Artefact**: **log bất đồng Classifier vs Auditor** — tình huống multi-agent bất đồng thật, không
 dàn dựng. Cộng ADR `0003-no-supervisor-agent.md` + `0004-serial-budget-reconciliation.md`.
 
+#### Gate M4 — measured 2026-08-01, replayed with every API key unset
+
+| Criterion | | Evidence |
+|---|:---:|---|
+| Corrupt files land in `failed`, batch survives | ✅ | `INV-0122`/`INV-0123` in `failed`; the other **28 enriched**, **27 persisted** (1 exact duplicate) |
+| MKT budget chain, canonical order | ✅ | `INV-0003 → 35,000,000`, `INV-0002 → 15,000,000`, `INV-0001 → −5,000,000`; **`INV-0001` breaches**, exactly as `corpus/gate_batch.json` declares |
+| `test_budget_serialization.py` | ✅ | 10 shuffles, byte-identical chain, same breacher — **mutation-verified**: remove the canonical sort and it goes red |
+| Auto/flagged split (reported, not targeted) | ✅ | **23 auto / 7 needs-approval** |
+| Duplicate detection | ✅ | 1 `DUPLICATE_INVOICE`, raised by the `UNIQUE` natural key |
+| Full gate under `LLM_MODE=replay`, no keys | ✅ | Whole suite green with `GROQ`/`GEMINI`/`OPENROUTER` all unset |
+| Classification beats `keywords_vi` by ≥15 | ✅ | **95.4% vs 57.9%** (M4-C), +37.5 points |
+| Auditor override precision measured & reported | ✅ | **12.5%** dispute precision (CI 0.043–0.310, n=24) — **below §6.4's 50% net-harm line, and reported as such** |
+| ADRs 0001 / 0003 / 0004 | ✅ | Written; 0003 cites the 12.5% measurement rather than an argument |
+| `make check` green on the pushed commit, CI agreeing | ✅ | Achieved only after the exit review; see the scoreboard in §1 |
+
+> **What the gate does NOT establish, stated because "exact agreement" overclaims
+> otherwise.** `corpus/gate_batch.json` declares the **MKT chain only**. The batch
+> raised **9 `BUDGET_BREACH` flags**: `INV-0001` as declared, plus 8 in other
+> departments whose budgets the batch's remaining 27 invoices also draw down.
+> Those 8 are correct behaviour and undeclared — M4-A's D5 (budget breach is a
+> property of the batch, not the invoice) is only half-resolved, because the
+> declaration was built to pin MKT and never extended to the rest. **M6 owes
+> either a full per-department declaration or an explicit statement that only the
+> MKT chain is pinned.**
+
 ---
 
 ### M5 — HITL production + API + UI bảo hiểm *(tuần 5)*
@@ -707,7 +754,7 @@ ngay; **mọi con số trong README trace được về `docs/eval-report.md` tr
 | M1 — XML thật + HITL spike | ✅ | 2026-07-28 | **Gate 4/4, re-verified independently 2026-07-28** (not merely re-read): `make check` 123 passed, HITL `kill -9` **10/10 locally** at `HITL_RUNS=10`, real `alembic revision --autogenerate` against the 4 live checkpoint tables emits an **empty** migration. All 6 items done: ✅ 1.1 (8 files / 8 vendors / 3 `PBan`) · ✅ 1.2 · ✅ 1.3 `xml_schema.py` · ✅ 1.4 `xml_parser.py` (8/8 parse) · ✅ 1.5 HITL durability · ✅ 1.6 Alembic isolation + ADR 0002. **8/8 guards re-confirmed red under mutation** — see the review note below. Owed, non-blocking: ADR `0001-three-graphs-not-one.md`; terminal recording (deferred to M8); NĐ 70/2025 field check |
 | M2 — Corpus + schema + domain | ✅ | 2026-07-28 | **Gate 5/5, re-verified independently 2026-07-28.** Split into three specs: **M2-A** (2.4/2.5/2.7 schema+seed+repositories, 15 bảng / 9 revision / 11 mutation guard đều đỏ) · **M2-B** (2.6 `domain/`, 107 test, 8/8 hóa đơn thật ra ZERO finding, 10 guard đỏ) · **M2-C** (2.1–2.3 generator, 67 test, 9 guard đỏ). Corpus: 300 mục = 285 XML **parse hết** + 15 PDF-only khai báo rõ là không parse được (M3.4 render). Generator KHÔNG import `xml_schema`/`xml_parser`/`domain` — có test chặn, nên điểm round-trip là bằng chứng chứ không phải lặp vòng. **Ba lần review, ba lần tìm ra lỗi mà bản implement đã báo là đạt**: guard M1.6 bị viết lại thành mù trên CI + artefact bịa `ck_vendors_tax_code_format` + 32 diff ma autogenerate (M2-A); một mutation guard xanh khi đã phá luật (M2-B); `make check` ĐỎ lúc đóng milestone + `scripts/` chưa từng được lint + `BUDGETS` import chết (M2-C). Đã sửa hết và đo lại. **Nợ, không chặn M3**: ADR `0001-three-graphs-not-one.md`; terminal recording (M8); NĐ 70/2025; KCT/KKKNT; PDF render (M3.4); injection variant 7–26 (M6.1) |
 | M3 — Extraction + tools + cost + replay | ✅ | 2026-07-29 | **Gate 4/4, closed 2026-07-29.** Split into three specs, each independently reviewed the same day it was implemented: **M3-A** (3.6/3.7 cost capture + `LLM_MODE=replay`; migration 10 closed an M2-A hole where `llm_calls` shipped five columns short of design §2.9 while the spec claimed it verbatim) · **M3-B** (3.2/3.3/3.4 `structured.py`, `sanitize.py`, `vision.py`, corpus PDFs + font; six PII-carrying vendor PDFs untracked) · **M3-C** (3.5 `graphs/enrichment.py`, `route_after_validate`, `serde.py` msgpack allowlist, `run_one.py`, generated mermaid drift guard). **455 passed** under `make check` and again under `LLM_MODE=replay` with zero API keys. Item 3.1 moved to M7 — `ToolSpec` has no consumer inside the M3 gate (M3-A §3.3). **Three reviews, three sets of defects the implementation had reported as passing**: `LLM_MODE=record` could never write a FAILURE fixture — the sole reason `CachedResponse.error` exists — plus `generate_stream` bypassing the replay seam, and no test driving gateway → telemetry → DB (M3-A; **the first of those originated in the plan**); a closeout note headed "verbatim" that dropped the one criterion that was false, invented open questions replacing two safety-relevant real ones, and an "extraction confirmed" spot-check with no numbers and no recorded fixture (M3-B); a **red pushed commit**, two tests that passed exactly once per database, and a mutation made red by asserting a list contains itself (M3-C). **16/16 · 14/14 · 12/12 guards red** after fixes. **Owed, not blocking M4**: the vision branch has **no accuracy measurement at all** and no key is configured; the PII git-history purge; ADR `0001-three-graphs-not-one.md`; a per-run `thread_id` component (M3-C §8.5) and function-node wrapping (§8.3), both landing in M4. |
-| M4 — Multi-agent + memory + serialization | ✅ | 2026-08-01 | **Gate 4/4, closed 2026-08-01.** Four specs completed: **M4-A** corpus & reference alignment (2026-07-31) · **M4-B** vendor memory + signals (2026-07-31) · **M4-C** multi-agent classification + audit (2026-08-01) · **M4-D** batch graph + serial reconciliation (2026-08-01). All 560+ tests passing under `make check`. Portfolio test 3 (`test_budget_serialization.py`) verified order-invariance under 10 shuffles and ordering mutation. ADRs 0001, 0003, 0004 written. Gate batch 30-invoice end-to-end replay verified hermetic in `LLM_MODE=replay`. |
+| M4 — Multi-agent + memory + serialization | ✅ | 2026-08-01 | **Closed 2026-08-01, after an exit review that found the closing commit RED.** Four specs: **M4-A** corpus & reference alignment · **M4-B** vendor memory + `signals` · **M4-C** agents · **M4-D** batch graph + serial reconciliation. Gate measured and replayed with every API key unset — see the gate table in §3. Headline numbers: classification **95.4% vs 57.9% baseline** (+37.5, gate needed +15); department **77.2%** against an **84.0% ceiling**; Auditor dispute precision **12.5%** (CI 0.043–0.310, n=24), **below §6.4's 50% net-harm line and reported as such** — the multi-agent experiment produced a negative result and it is the milestone's most honest artefact. `PRICE_OUTLIER` went **0/6 → 6/6 at 0.7% FP**. Vision debt paid: **2/2 twins 4/4 fields**. Batch gate: 28 enriched / 2 failed / 27 persisted, **23 auto / 7 needs-approval**, MKT chain `35M → 15M → −5M` with `INV-0001` breaching. **Every one of the four specs was closed on a claim the review disproved**: M4-A's departments did not join the seed and its `category` was unlearnable (baseline 1.8%, below chance); M4-B's parameter sweep was run honestly and then not acted on, leaving the pre-existing constants; M4-C's harness had three bugs and had never been executed, and `structured.py` had two defects that made **every live structured call impossible** since M3-B; M4-D was declared closed on a **red pushed commit** with a fabricated `Decimal("50000000")` budget limit, a gate that was **making live calls while claiming to replay**, and tests that **did not run in CI at all** because no step generated the corpus. All fixed and re-measured. **Owed**: a throttled Auditor re-measurement (the 177 Gemini rate-limits mixed two models into one rater); per-department gate-batch declarations (§3's note); vision fixtures re-recorded on the CI platform; the PII git-history purge. |
 | M5 — HITL production + API + UI | 🔲 | | |
 | M6 — Security + observability + eval | 🔲 | | |
 | M7 — MCP + Next.js | 🔲 | | Quy tắc dừng: 4 ngày cho Next.js |
@@ -750,9 +797,9 @@ Mọi thứ khác trong repo tồn tại để hỗ trợ chúng.
 
 | Test | Milestone | Chứng minh |
 |---|:---:|---|
-| `test_hitl_survives_restart.py` | M1 | interrupt → `kill -9` → resume hoàn tất |
+| ✅ `test_hitl_survives_restart.py` | M1 | interrupt → `kill -9` → resume hoàn tất — **10/10 on a clean CI runner** |
 | `test_never_post_without_approval.py` | M5 | Safety property, cả ba lớp code/DB/test |
-| `test_budget_serialization.py` | M4 | Xáo trộn thứ tự đến → cùng một hóa đơn vượt |
+| ✅ `test_budget_serialization.py` | M4 | Xáo trộn thứ tự đến → cùng một hóa đơn vượt — **10 shuffles, byte-identical chain, mutation-verified** |
 | `test_batch_not_blocked_by_pending.py` | M5 | 26 sạch post được khi 4 đang chờ duyệt |
 | `test_prompt_injection.py` | M6 | 0/26 thành công, có negative control |
 | `test_no_write_tools_in_mcp.py` | M7 | Quyết định kiến trúc được test bảo vệ |

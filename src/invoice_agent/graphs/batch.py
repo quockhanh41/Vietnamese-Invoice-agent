@@ -372,8 +372,34 @@ def route_outcomes_node(state: BatchState) -> dict[str, Any]:
     auto: list[str] = []
     needs_approval: list[str] = []
 
+    def _needs_a_human(entry: EnrichedInvoice) -> bool:
+        """SEVERITY decides, not the mere existence of a finding.
+
+        Measured 2026-08-01 on the gate batch: routing on "any finding or
+        signal" sent 28 of 28 enriched invoices to a reviewer and left `auto`
+        empty. The cause is `NEW_VENDOR`, which `signals` raises on every
+        vendor's FIRST sighting — on a fresh database that is nearly every
+        invoice, and M4-B measured 51 first sightings across the corpus.
+
+        `NEW_VENDOR` is severity `info`: it asserts something is NEW, which is
+        true every time it fires, not that something is WRONG. M4-B already made
+        severity the discriminator for the flag false-positive metric
+        (docs/notes/2026-07-31-m4b-vendor-memory.md) and the same line applies
+        here — otherwise "every invoice from a new supplier needs a human" makes
+        the auto path unreachable and the reviewer queue worthless.
+
+        `warn` and `critical` assert a defect and do require a person.
+        """
+        for item in (*(entry.get("findings") or []), *(entry.get("signals") or [])):
+            severity = getattr(item, "severity", None) or (
+                item.get("severity") if isinstance(item, dict) else None
+            )
+            if severity in ("warn", "critical"):
+                return True
+        return False
+
     for e in state.get("enriched") or []:
-        if e.get("findings") or e.get("signals"):
+        if _needs_a_human(e):
             needs_approval.append(e["invoice_id"])
         else:
             auto.append(e["invoice_id"])
