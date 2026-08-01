@@ -181,8 +181,11 @@ M3.2 và **bỏ hàm calculator dùng `eval()`**.
 code LangFuse; cost tracking — Project A **hoàn toàn không có** (dashboard hardcode `$0.00`).
 
 **Nợ kỹ thuật kế thừa**: ✅ `os.getenv` rải rác → một `config.py` (M0.2) · ✅ `sys.path.insert` →
-src-layout (M0.1) · ✅ không lint/typecheck/CI → đã có (M0.6) · 🔲 `main.py` 643 dòng với `routes/`
-rỗng → tách routes thật, đến M5.6.
+src-layout (M0.1) · ✅ không lint/typecheck/CI → đã có (M0.6) · ✅ **PAID 2026-08-01 (M5-C)**
+`main.py` 643 dòng với `routes/` rỗng → `src/invoice_agent/api/` tách thật ngay từ commit đầu:
+`app.py` + `schemas.py` + `progress.py` + năm module route (`health`, `invoices`, `reports`,
+`approvals`, `batches`), không module nào chứa SQL — `db/queries.py` giữ phần đọc. **Cả bốn món nợ
+kế thừa từ Project A giờ đã trả xong.**
 
 **⚠️ Bài học bảo mật của chính repo này**: hóa đơn thật mang PII **và** chứng thư số, mà
 **gitleaks không bắt được PII** — nó tìm token. `.gitignore` là lớp phòng thủ duy nhất, và nó
