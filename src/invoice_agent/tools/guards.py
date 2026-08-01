@@ -17,9 +17,11 @@ Two rules carry this module, and both exist because state is not evidence:
 import uuid
 from collections.abc import Sequence
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import Connection
+from sqlalchemy.exc import IntegrityError
 
 from invoice_agent.db import audit
 from invoice_agent.db.repositories import approvals, flags, invoices, journal
@@ -36,6 +38,43 @@ POSTING_DECISIONS = ("approved", "edited")
 BLOCKING_SEVERITIES = ("warn", "critical")
 
 ACTION = "tool.create_journal_entry"
+
+
+def _resolve_existing(
+    existing: dict[str, Any],
+    *,
+    actor: str,
+    invoice_id: uuid.UUID,
+    total: Decimal,
+    posting_authority: str,
+) -> uuid.UUID:
+    """An entry already exists. Same entry → idempotent success; different entry
+    → denial.
+
+    Decimal("100") and Decimal("100.00") are equal under `==` but not under
+    `str`, and Postgres NUMERIC round-trips the scale it was given — so this
+    compares Decimals, never their text.
+    """
+    same = (
+        Decimal(existing["total_debit"]) == total
+        and existing["posting_authority"] == posting_authority
+    )
+    if not same:
+        raise _deny(
+            actor=actor,
+            invoice_id=invoice_id,
+            reason="already posted with different content",
+            existing_total=str(existing["total_debit"]),
+            attempted_total=str(total),
+        )
+    _audit(
+        actor=actor,
+        allowed=True,
+        invoice_id=invoice_id,
+        reason="idempotent replay",
+        entry_id=str(existing["id"]),
+    )
+    return uuid.UUID(str(existing["id"]))
 
 
 class GuardDenied(Exception):
@@ -143,25 +182,54 @@ def create_journal_entry(
                 codes=sorted({f["code"] for f in blocking}),
             )
 
-    entry_id = journal.create_entry_with_lines(
-        conn,
-        invoice_id=invoice_id,
-        entry_date=entry_date,
-        posting_authority=posting_authority,
-        approval_id=approval_id,
-        posted_by=actor,
-        status="posted",
-        lines=[
-            journal.JournalLine(
-                account_code=line.account_code,
-                account_name=line.account_name,
-                debit=line.debit,
-                credit=line.credit,
-                description=line.description,
-            )
-            for line in lines
-        ],
-    )
+    total = sum((line.debit for line in lines), Decimal("0"))
+    existing = journal.get_for_invoice(conn, invoice_id)
+    if existing is not None:
+        return _resolve_existing(
+            existing,
+            actor=actor,
+            invoice_id=invoice_id,
+            total=total,
+            posting_authority=posting_authority,
+        )
+
+    try:
+        entry_id = journal.create_entry_with_lines(
+            conn,
+            invoice_id=invoice_id,
+            entry_date=entry_date,
+            posting_authority=posting_authority,
+            approval_id=approval_id,
+            posted_by=actor,
+            status="posted",
+            lines=[
+                journal.JournalLine(
+                    account_code=line.account_code,
+                    account_name=line.account_name,
+                    debit=line.debit,
+                    credit=line.credit,
+                    description=line.description,
+                )
+                for line in lines
+            ],
+        )
+    except IntegrityError:
+        # Two processes both passed the existence check above. The constraint is
+        # the arbiter; re-read and take the same fork. `conn` is unusable after
+        # an IntegrityError, so the re-read runs on its own connection.
+        from invoice_agent.db.engine import get_engine
+
+        with get_engine().begin() as fresh:
+            raced = journal.get_for_invoice(fresh, invoice_id)
+        assert raced is not None, "IntegrityError on invoice_id with no row to show for it"
+        return _resolve_existing(
+            raced,
+            actor=actor,
+            invoice_id=invoice_id,
+            total=total,
+            posting_authority=posting_authority,
+        )
+
     invoices.set_status(conn, invoice_id, "posted")
     _audit(
         actor=actor,
@@ -172,3 +240,4 @@ def create_journal_entry(
         posting_authority=posting_authority,
     )
     return entry_id
+

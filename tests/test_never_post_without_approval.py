@@ -272,3 +272,68 @@ def test_auto_clean_refuses_to_carry_an_approval_id(runtime_conn, sample_invoice
             actor="system",
         )
 
+
+def test_posting_the_same_invoice_twice_yields_one_entry(runtime_conn, sample_invoice):
+    """Roadmap §1, measured 2026-07-27: `kill -9` INSIDE a post node, after its
+    write and before its checkpoint commits, makes the node run again on resume
+    → two journal entries. Node placement does not prevent that. This does, with
+    UNIQUE(invoice_id) underneath it (case 11)."""
+    from sqlalchemy import func, select
+
+    invoice_id = _insert_invoice(runtime_conn, sample_invoice)
+    first = guards.create_journal_entry(
+        runtime_conn,
+        invoice_id=invoice_id,
+        posting_authority="auto_clean",
+        entry_date=date(2026, 7, 1),
+        lines=BALANCED,
+        actor="system",
+    )
+    second = guards.create_journal_entry(
+        runtime_conn,
+        invoice_id=invoice_id,
+        posting_authority="auto_clean",
+        entry_date=date(2026, 7, 1),
+        lines=BALANCED,
+        actor="system",
+    )
+    assert second == first, "a resume must complete, not raise"
+
+    count = runtime_conn.execute(
+        select(func.count())
+        .select_from(models.journal_entries)
+        .where(models.journal_entries.c.invoice_id == invoice_id)
+    ).scalar_one()
+    assert count == 1
+
+    replays = [r for r in _audit_rows(invoice_id) if r["reason"] == "idempotent replay"]
+    assert len(replays) == 1
+
+
+def test_reposting_with_different_totals_is_denied(runtime_conn, sample_invoice):
+    """Returning the existing entry here would hide a genuine divergence, which
+    is worse than a crash."""
+    invoice_id = _insert_invoice(runtime_conn, sample_invoice)
+    guards.create_journal_entry(
+        runtime_conn,
+        invoice_id=invoice_id,
+        posting_authority="auto_clean",
+        entry_date=date(2026, 7, 1),
+        lines=BALANCED,
+        actor="system",
+    )
+    divergent = [
+        accounting.JournalLine("6422", "Chi phí quản lý", Decimal("999"), Decimal("0")),
+        accounting.JournalLine("331", "Phải trả người bán", Decimal("0"), Decimal("999")),
+    ]
+    with pytest.raises(guards.GuardDenied, match="already posted"):
+        guards.create_journal_entry(
+            runtime_conn,
+            invoice_id=invoice_id,
+            posting_authority="auto_clean",
+            entry_date=date(2026, 7, 1),
+            lines=divergent,
+            actor="system",
+        )
+
+
