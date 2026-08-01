@@ -96,3 +96,36 @@ def test_audit_runs_on_the_auditor_chain(monkeypatch, sample_invoice):
     monkeypatch.setattr(audit_mod, "call_structured", fake_call_structured)
     audit_mod.audit(sample_invoice, _result(), gateway=object())
     assert seen["model"] == Settings().auditor_model_chain
+
+
+def test_agent_vocabularies_match_the_seeded_reference_data():
+    """The Literal sets in `agents/models.py` are duplicated from
+    `scripts.seed_reference` because `src/` must not import from `scripts/`.
+    Duplication is only safe while something asserts the copies agree — the same
+    arrangement `domain.findings.SOURCES` has with `db.models.FLAG_SOURCES`.
+
+    Why closed sets at all: measured 2026-08-01, a live gemini-3.5-flash verdict
+    proposed `OFFICE_REPAIR_MAINTENANCE`. Under an open `str` that validates,
+    and `dispute()` then raises CLASSIFICATION_DISPUTED against a category no
+    invoice can carry — inflating the dispute count and pinning override
+    precision at 0 for those rows. A corrupt metric rather than a crash.
+    """
+    from typing import get_args
+
+    from scripts.seed_reference import CATEGORIES as SEEDED_CATEGORIES
+    from scripts.seed_reference import DEPARTMENTS as SEEDED_DEPARTMENTS
+
+    from invoice_agent.agents import models as agent_models
+
+    assert set(get_args(agent_models.CATEGORIES)) == {row[0] for row in SEEDED_CATEGORIES}
+    assert set(get_args(agent_models.DEPARTMENTS)) == {code for code, _name in SEEDED_DEPARTMENTS}
+
+
+def test_an_invented_category_is_rejected_not_disputed():
+    """The failure this closes end to end: an out-of-vocabulary proposal must
+    never reach `dispute()`."""
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        AuditVerdict(agrees=False, proposed_category="OFFICE_REPAIR_MAINTENANCE", reason="x")

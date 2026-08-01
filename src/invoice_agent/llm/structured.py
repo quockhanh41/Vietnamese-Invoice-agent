@@ -41,6 +41,31 @@ class StructuredOutputError(RuntimeError):
     """
 
 
+def _first_json_object(raw: str) -> object:
+    """Parse the first complete JSON value and ignore anything after it.
+
+    Measured 2026-08-01 on a real gemini-3.5-flash reply: a well-formed object
+    followed by ONE stray closing brace —
+
+        {\\n  "agrees": false,\\n  ...\\n}\\n}
+
+    `json.loads` rejects the whole string ("Extra data: line 7 column 1"), so a
+    perfectly usable verdict was thrown away and retried three times. Models
+    also fence replies in ```json blocks; both are trailing-content problems.
+
+    `raw_decode` parses one value and reports where it stopped, which is exactly
+    the semantics wanted: take the object, discard the noise. NOT a silent
+    repair of malformed JSON — a truncated or genuinely invalid object still
+    raises, and still reaches the retry loop with a real error.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        # ```json\n{...}\n```  ->  {...}
+        text = text.split("\n", 1)[-1] if "\n" in text else text
+        text = text.rsplit("```", 1)[0]
+    return json.JSONDecoder().raw_decode(text.lstrip())[0]
+
+
 def _schema_instruction(response_model: type[BaseModel]) -> str:
     """Tell the model the shape it must return.
 
@@ -107,7 +132,7 @@ def call_structured[ModelT: BaseModel](
             calls=calls,
         )
         try:
-            return response_model.model_validate(json.loads(raw))
+            return response_model.model_validate(_first_json_object(raw))
         except (json.JSONDecodeError, ValidationError) as exc:
             attempt_errors.append(str(exc))
             # The retry carries the schema too — without it, attempt 2 knows

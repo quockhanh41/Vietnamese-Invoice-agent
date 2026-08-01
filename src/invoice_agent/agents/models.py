@@ -12,7 +12,30 @@ mutation-verified.
 checking a schema the response is not held to.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
+
+# The seeded vocabularies, as a closed set. Duplicated from
+# `scripts.seed_reference` ON PURPOSE — `src/` must not import from `scripts/` —
+# and `tests/test_agents.py` asserts the two agree, the same arrangement
+# `domain.findings.SOURCES` has with `db.models.FLAG_SOURCES`.
+#
+# CLOSED, not `str`, because of a measured failure. 2026-08-01, a live
+# gemini-3.5-flash verdict proposed `OFFICE_REPAIR_MAINTENANCE` — a category
+# that does not exist. With an open `str` that validates, so `dispute()` raises
+# CLASSIFICATION_DISPUTED against a label no invoice can ever carry: the dispute
+# count inflates and override precision is forced to 0 on those rows, because
+# truth can never equal an invented category. A corrupt metric, silently.
+#
+# Constraining it here makes the schema carry the allowed values to the model
+# (`_schema_instruction` sends it) AND makes a bad value a ValidationError, which
+# is what `call_structured`'s retry loop is for.
+CATEGORIES = Literal[
+    "OFFICE_SUPPLIES", "MARKETING", "IT_SERVICES",
+    "LOGISTICS", "UTILITIES", "GOODS", "TOOLS",
+]
+DEPARTMENTS = Literal["MKT", "ADMIN", "OPS", "IT", "SALES"]
 
 
 class ClassificationResult(BaseModel):
@@ -20,8 +43,8 @@ class ClassificationResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    category: str
-    department: str
+    category: CATEGORIES
+    department: DEPARTMENTS
     # Self-reported and badly calibrated — kept because
     # `invoices.classification_confidence` exists (M2-A) and M5's `suggest` may
     # order by it. Spec §7 open question 1: M4-C reports whether it correlates
@@ -37,6 +60,6 @@ class AuditVerdict(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     agrees: bool
-    proposed_category: str | None = None
-    proposed_department: str | None = None
+    proposed_category: CATEGORIES | None = None
+    proposed_department: DEPARTMENTS | None = None
     reason: str
