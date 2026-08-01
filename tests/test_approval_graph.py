@@ -496,5 +496,44 @@ def test_field_corrections_reach_the_field_classify_reads(committed_rows):
     assert "IT_SERVICES" in vendor["reviewer_notes"]
 
 
+def test_submit_decision_drives_a_pending_thread_to_completion(committed_rows):
+    """The seam M5-C's route wraps. The API adds no logic — it parses a body and
+    calls this — which is what makes M7's "interrupt is transport-agnostic"
+    artefact a demonstration instead of a claim.
+    """
+    from invoice_agent.checkpointer import build_checkpointer
+    from invoice_agent.db.engine import get_engine
+    from invoice_agent.db.repositories import journal
+
+    db_id, approval_id = _persisted_invoice(committed_rows)
+    config = {"configurable": {"thread_id": f"appr:{db_id}"}}
+    with build_checkpointer() as saver:
+        saver.setup()
+        app = approval.build_approval_graph(checkpointer=saver)
+        first = app.invoke(_initial_state(db_id, approval_id), config)
+    assert "__interrupt__" in first
+
+    result = approval.submit_decision(
+        invoice_id=str(db_id), decision="approved", decided_by="ketoan"
+    )
+    assert "__interrupt__" not in result
+    assert result["status"] == "learned"
+
+    with get_engine().begin() as conn:
+        assert journal.get_for_invoice(conn, db_id) is not None
+
+
+def test_an_unknown_decision_never_reaches_the_graph(committed_rows):
+    """A typo must not resume a thread into a state `route_after_decision`
+    cannot route — that would silently take the rejection branch and mark a
+    perfectly good invoice rejected."""
+    db_id, _approval_id = _persisted_invoice(committed_rows)
+    with pytest.raises(ValueError, match="decision"):
+        approval.submit_decision(
+            invoice_id=str(db_id), decision="aproved", decided_by="ketoan"
+        )
+
+
+
 
 

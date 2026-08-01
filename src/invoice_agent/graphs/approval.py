@@ -411,4 +411,52 @@ def build_approval_graph(*, checkpointer: Any = None) -> Any:
     return builder.compile(checkpointer=checkpointer)
 
 
+VALID_DECISIONS = ("approved", "rejected", "edited")
+
+
+def submit_decision(
+    *,
+    invoice_id: str,
+    decision: str,
+    decided_by: str,
+    reason: str | None = None,
+    corrections: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Resume a pending approval thread. THE SEAM M5-C WRAPS.
+
+    The FastAPI route parses a request body and calls this; it adds no logic.
+    That is what makes "interrupt is transport-agnostic" (the M7 artefact)
+    demonstrable rather than asserted — a test, a script, HTTP and MCP all drive
+    the identical function.
+
+    `decision` is validated BEFORE the graph is touched. `route_after_decision`
+    sends anything that is not approved/edited to `record_rejection`, so an
+    unvalidated typo would silently reject a good invoice.
+    """
+    from langgraph.types import Command
+
+    from invoice_agent.checkpointer import build_checkpointer
+
+    if decision not in VALID_DECISIONS:
+        raise ValueError(f"decision must be one of {VALID_DECISIONS}, got {decision!r}")
+
+    config = {"configurable": {"thread_id": f"appr:{invoice_id}"}}
+    with build_checkpointer() as saver:
+        app = build_approval_graph(checkpointer=saver)
+        return dict(
+            app.invoke(
+                Command(
+                    resume={
+                        "decision": decision,
+                        "decided_by": decided_by,
+                        "reason": reason,
+                        "corrections": corrections,
+                    }
+                ),
+                config,
+            )
+        )
+
+
+
 
