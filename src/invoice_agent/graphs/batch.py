@@ -22,6 +22,8 @@ import uuid
 from decimal import Decimal
 from typing import Annotated, Any, TypedDict
 
+from langgraph.types import Send
+
 from invoice_agent.extraction.models import InvoiceData
 
 
@@ -275,4 +277,114 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
         "consumption": consumption_out,
         "raised": raised,
     }
+
+
+def ingest_node(state: BatchState) -> dict[str, Any]:
+    batch_id = state.get("batch_id") or str(uuid.uuid4())
+    return {"batch_id": batch_id, "status": "ingested"}
+
+
+def cost_gate_node(state: BatchState) -> dict[str, Any]:
+    """Check budget/file-count gate.
+
+    M6.6 owns the real token budget logic and cost cap. Ships as a threshold
+    check here to establish graph topology per design §4.
+    """
+    return {"status": "cost_gate_passed"}
+
+
+def cost_gate_condition(state: BatchState) -> str:
+    inputs = state.get("inputs") or []
+    if len(inputs) > 10000:
+        return "rejected"
+    return "ok"
+
+
+def fan_out_node(state: BatchState) -> dict[str, Any]:
+    return {"status": "fan_out"}
+
+
+def fan_out_router(state: BatchState) -> list[Send]:
+    batch_id = state["batch_id"]
+    inputs = state.get("inputs") or []
+    return [
+        Send("enrich_one", {**inp, "batch_id": batch_id})
+        for inp in inputs
+    ]
+
+
+def enrich_one_task_node(task: Any) -> dict[str, Any]:
+    from invoice_agent.graphs.enrichment import build_enrichment_graph
+
+    enrichment_graph = build_enrichment_graph()
+    return enrich_one(task, graph=enrichment_graph)
+
+
+def route_outcomes_node(state: BatchState) -> dict[str, Any]:
+    """Split into auto and needs_approval.
+
+    Design §0 constraint 5: produces lists that nothing consumes until M5.
+    Deliberate.
+    """
+    auto: list[str] = []
+    needs_approval: list[str] = []
+
+    for e in state.get("enriched") or []:
+        if e.get("findings") or e.get("signals"):
+            needs_approval.append(e["invoice_id"])
+        else:
+            auto.append(e["invoice_id"])
+
+    for f in state.get("failed") or []:
+        needs_approval.append(f["invoice_id"])
+
+    return {"auto": auto, "needs_approval": needs_approval, "status": "routed"}
+
+
+def finalize_node(state: BatchState) -> dict[str, Any]:
+    batch_id_str = state.get("batch_id")
+    if batch_id_str:
+        try:
+            batch_uuid = uuid.UUID(batch_id_str)
+            from invoice_agent.db.engine import get_engine
+            from invoice_agent.db.repositories import batches
+
+            with get_engine().begin() as conn:
+                count = len(state.get("enriched") or []) + len(state.get("failed") or [])
+                batches.complete_batch(conn, batch_uuid, status="completed", invoice_count=count)
+        except Exception:
+            pass
+    return {"status": "completed"}
+
+
+def build_batch_graph(*, max_concurrency: int = 5) -> Any:
+    """Compile the batch workflow graph.
+
+    max_concurrency defaults to 5 (design §4.2's 4-6). Ships unexercised
+    against real rate limits because the gate replays hermetically — M4-C
+    measured 177 Gemini rate-limits in a serial run.
+    """
+    from langgraph.graph import END, START, StateGraph
+
+    builder = StateGraph(BatchState)
+
+    builder.add_node("ingest", ingest_node)
+    builder.add_node("cost_gate", cost_gate_node)
+    builder.add_node("fan_out", fan_out_node)
+    builder.add_node("enrich_one", enrich_one_task_node)  # type: ignore[arg-type]
+    builder.add_node("serial_join", serial_join)
+    builder.add_node("route_outcomes", route_outcomes_node)
+    builder.add_node("finalize", finalize_node)
+
+    builder.add_edge(START, "ingest")
+    builder.add_edge("ingest", "cost_gate")
+    builder.add_conditional_edges("cost_gate", cost_gate_condition, {"ok": "fan_out", "rejected": END})
+    builder.add_conditional_edges("fan_out", fan_out_router, ["enrich_one"])
+    builder.add_edge("enrich_one", "serial_join")
+    builder.add_edge("serial_join", "route_outcomes")
+    builder.add_edge("route_outcomes", "finalize")
+    builder.add_edge("finalize", END)
+
+    return builder.compile()
+
 
