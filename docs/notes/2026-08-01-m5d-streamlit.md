@@ -76,7 +76,39 @@ TRUNCATE app.invoices CASCADE;
 
 ---
 
-## 7. Spec §8 Open Questions & Findings
+## 7. Spec §8 Open Questions — carried forward, not resolved
 
-1. **Unroutable Uploads:** Invoices uploaded without a department field land in `unroutable` and are never reconciled against a budget. The UI provides an optional department selector on the upload page so reviewers can specify the department code up front.
-2. **Reviewer Identity:** `decided_by` is currently free text input on screen because authentication was cut in design §11.3. The client sends the user-declared reviewer string over HTTP.
+Numbered as the spec numbers them. The first cut of this section listed two
+items, one of which was M5-C's unroutable-upload finding rather than a §8 entry.
+
+1. **The queue has no pagination.** `GET /approvals` returns every pending row and
+   the page renders all of them. Correct at the 12 the gate batch parks, wrong at
+   3,000. Fixing it means `limit`/`offset` on the endpoint first — a backend
+   change, and M5-D adds none (spec §0 constraint 5).
+2. **`decided_by` is a free-text box.** There is no auth (design §11.3 cut it), so
+   the UI asks the reviewer to type their own name and the API records what it is
+   told. The label says so on screen — *"Người duyệt (chưa có đăng nhập — tự
+   khai)"* — rather than hiding it behind a default.
+3. **Corrections would be raw JSON, and nothing applies them.** M5-B open question
+   2 records that `field_corrections` reaches `vendors.reviewer_notes` and never
+   rewrites the invoice. A structured editor would imply they take effect, which
+   would be a lie until that question is answered, so the UI does not offer one.
+4. **The gate's evidence is textual by design** (§2, §3 above). An implementing
+   agent cannot take a screenshot, so a screenshot criterion would be unmeetable
+   and therefore quietly skipped. Screenshots for the README and M8's video stay
+   a human step and are not gated.
+5. **Inherited and still open**: `invoices.status` has no state machine (M5-A §8.3,
+   worsened at M5-B which added `rejected` and a second route to `posted`), and
+   `/health` does not check the LangGraph checkpointer schema (M5-C §8.4) — a
+   broken `langgraph` schema reports healthy until the first approval thread
+   fails.
+
+### Not from §8, but found and worth keeping
+
+- **Unroutable uploads.** An invoice uploaded without a department lands in
+  `unroutable` and is never reconciled against a budget, because `serial_join`
+  groups budgets by the task-declared department and `InvoiceData` carries none
+  (M5-C note §3). The upload page offers an optional department selector so a
+  reviewer can avoid it; the selector's options come from `/reports/budgets`
+  rather than a hardcoded list, so adding a department to the seed changes the UI
+  without touching the UI.
