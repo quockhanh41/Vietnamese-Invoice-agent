@@ -250,7 +250,13 @@ def main() -> None:
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(res, indent=2, ensure_ascii=False), encoding="utf-8")
+        # `default=str` because cost is Decimal — money is never float in this
+        # project (M1 measured amounts to 8 decimal places). Without it the whole
+        # run is lost at the last line: TypeError, after 285 invoices and 570
+        # calls. Found 2026-08-01 exactly that way.
+        args.out.write_text(
+            json.dumps(res, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
+        )
         print(f"Raw results written to {args.out}")
 
 
