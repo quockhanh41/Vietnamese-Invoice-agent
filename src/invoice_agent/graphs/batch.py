@@ -60,7 +60,10 @@ class BatchState(TypedDict):
     auto: list[str]
     needs_approval: list[str]
     posted: list[dict[str, Any]]
+    opened: list[dict[str, Any]]
+    unopened: list[dict[str, str]]
     status: str
+
 
 
 def thread_id_for(batch_id: uuid.UUID | str, invoice_id: str) -> str:
@@ -568,6 +571,85 @@ def auto_post_node(state: BatchState) -> dict[str, Any]:
     return {"posted": posted, "auto": still_auto, "needs_approval": to_human}
 
 
+def open_approval_node(state: BatchState) -> dict[str, Any]:
+    """Design §5.2's arm: one approval thread per flagged invoice, then return.
+
+    The batch does NOT wait. Each thread runs to `interrupt()` and stops, its
+    whole state checkpointed to Postgres, so the reviewer may decide hours later
+    from a different process. That is the entire justification for three graphs
+    rather than one (design §1.1), and `test_batch_not_blocked_by_pending.py`
+    is the measurement of it.
+
+    ONE checkpointer for the whole node, not one per invoice: a PostgresSaver
+    per invoice would open a connection pool per invoice to accomplish nothing.
+    """
+    from invoice_agent.checkpointer import build_checkpointer
+    from invoice_agent.db.engine import get_engine
+    from invoice_agent.db.repositories import approvals as approvals_repo
+    from invoice_agent.graphs.approval import build_approval_graph
+
+    db_ids = {p["invoice_id"]: uuid.UUID(p["db_id"]) for p in state.get("persisted") or []}
+    opened: list[dict[str, Any]] = []
+    unopened: list[dict[str, str]] = []
+
+    pending = [k for k in (state.get("needs_approval") or []) if k in db_ids]
+    unopened.extend(
+        {"invoice_id": k, "reason": "not persisted"}
+        for k in (state.get("needs_approval") or [])
+        if k not in db_ids
+    )
+    if not pending:
+        return {"opened": opened, "unopened": unopened, "status": "approvals_opened"}
+
+    with build_checkpointer() as saver:
+        saver.setup()
+        graph = build_approval_graph(checkpointer=saver)
+        for invoice_key in pending:
+            db_id = db_ids[invoice_key]
+            thread_id = f"appr:{db_id}"
+            with get_engine().begin() as conn:
+                approval_id = approvals_repo.open_approval(
+                    conn,
+                    invoice_id=db_id,
+                    thread_id=thread_id,
+                    interrupt_payload={},
+                    flags_snapshot={},
+                    suggestions={},
+                )
+            initial: dict[str, Any] = {
+
+                "invoice_id": str(db_id),
+                "approval_id": str(approval_id),
+                "snapshot": {},
+                "flags": [],
+                "suggestions": [],
+                "decision": "",
+                "decided_by": "",
+                "reason": None,
+                "corrections": None,
+                "entry_id": None,
+                "status": "",
+            }
+            result = graph.invoke(initial, {"configurable": {"thread_id": thread_id}})
+            if "__interrupt__" not in result:
+                # The graph ran past its own gate. Reported rather than
+                # asserted: a batch node must not die because one thread
+                # misbehaved, and a silent success here would mean an invoice
+                # nobody is ever asked about.
+                unopened.append({"invoice_id": invoice_key, "reason": "no interrupt raised"})
+                continue
+            opened.append(
+                {
+                    "invoice_id": invoice_key,
+                    "db_id": str(db_id),
+                    "approval_id": str(approval_id),
+                    "thread_id": thread_id,
+                }
+            )
+
+    return {"opened": opened, "unopened": unopened, "status": "approvals_opened"}
+
+
 def build_batch_graph(*, max_concurrency: int = 5) -> Any:
     """Compile the batch workflow graph.
 
@@ -586,6 +668,7 @@ def build_batch_graph(*, max_concurrency: int = 5) -> Any:
     builder.add_node("serial_join", serial_join)
     builder.add_node("route_outcomes", route_outcomes_node)
     builder.add_node("auto_post", auto_post_node)
+    builder.add_node("open_approval", open_approval_node)
     builder.add_node("finalize", finalize_node)
 
     builder.add_edge(START, "ingest")
@@ -595,9 +678,11 @@ def build_batch_graph(*, max_concurrency: int = 5) -> Any:
     builder.add_edge("enrich_one", "serial_join")
     builder.add_edge("serial_join", "route_outcomes")
     builder.add_edge("route_outcomes", "auto_post")
-    builder.add_edge("auto_post", "finalize")
+    builder.add_edge("auto_post", "open_approval")
+    builder.add_edge("open_approval", "finalize")
     builder.add_edge("finalize", END)
 
     return builder.compile()
+
 
 

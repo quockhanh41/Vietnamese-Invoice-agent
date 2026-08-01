@@ -12,15 +12,17 @@ graph TD;
 	serial_join(serial_join)
 	route_outcomes(route_outcomes)
 	auto_post(auto_post)
+	open_approval(open_approval)
 	finalize(finalize)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> ingest;
-	auto_post --> finalize;
+	auto_post --> open_approval;
 	cost_gate -. &nbsp;rejected&nbsp; .-> __end__;
 	cost_gate -. &nbsp;ok&nbsp; .-> fan_out;
 	enrich_one --> serial_join;
 	fan_out -.-> enrich_one;
 	ingest --> cost_gate;
+	open_approval --> finalize;
 	route_outcomes --> auto_post;
 	serial_join --> route_outcomes;
 	finalize --> __end__;

@@ -277,17 +277,12 @@ def test_a_guard_denial_moves_the_invoice_to_needs_approval(committed_rows):
     assert len(result["needs_approval"]) == 1
 
 
-def test_the_graph_wires_auto_post_between_route_outcomes_and_finalize():
-    """Asserts the EDGES, not just the node.
-
-    The first cut asserted `"auto_post" in nodes` under this name, which stays
-    green with the node orphaned, wired in parallel, or hung off `finalize` —
-    i.e. it did not test what it is called.
-    """
+def test_the_graph_wires_open_approval_between_auto_post_and_finalize():
     rendered = batch.build_batch_graph().get_graph().draw_mermaid()
     assert "route_outcomes --> auto_post;" in rendered
-    assert "auto_post --> finalize;" in rendered
-    assert "route_outcomes --> finalize;" not in rendered
+    assert "auto_post --> open_approval;" in rendered
+    assert "open_approval --> finalize;" in rendered
+    assert "auto_post --> finalize;" not in rendered
 
 
 def test_routing_sees_budget_flags_the_fan_out_could_not_have_returned(committed_rows):
@@ -331,4 +326,47 @@ def test_an_unpersisted_invoice_never_reaches_the_auto_path(committed_rows):
     routed = batch.route_outcomes_node(state)
     assert routed["auto"] == []
     assert routed["needs_approval"] == ["INV-TEST"]
+
+
+def test_open_approval_parks_a_flagged_invoice_at_its_interrupt(committed_rows):
+    """Design §5.2: write the approvals row, drive the graph to interrupt, come
+    straight back so the batch can finish."""
+    import uuid
+
+    from invoice_agent.db.engine import get_owner_engine
+    from invoice_agent.db.repositories import approvals as approvals_repo
+    from invoice_agent.domain import findings
+
+    state = _joined_state(committed_rows, category="OFFICE_SUPPLIES")
+    db_id = uuid.UUID(state["persisted"][0]["db_id"])
+    _raise_flag_committed(
+        db_id, code=findings.PRICE_OUTLIER, severity="warn", raised_by="anomaly"
+    )
+    state["needs_approval"] = ["INV-TEST"]
+    state["auto"] = []
+
+    result = batch.open_approval_node(state)
+
+    assert [o["invoice_id"] for o in result["opened"]] == ["INV-TEST"]
+    with get_owner_engine().begin() as conn:
+        row = approvals_repo.get_by_invoice(conn, db_id)
+    assert row is not None
+    assert row["decision"] is None
+    assert row["thread_id"] == f"appr:{db_id}"
+    assert row["interrupt_payload"]["invoice"]["invoice_number"]
+
+
+def test_an_invoice_that_never_persisted_gets_no_thread(committed_rows):
+    """`approvals.invoice_id` is a NOT NULL FK, so the 2 failed PDFs and the 1
+    unpersisted duplicate in the gate batch cannot have a thread. They are
+    REPORTED in `unopened`, not silently dropped — the treatment M4-D gave
+    `unroutable`."""
+    state = _joined_state(committed_rows, category="OFFICE_SUPPLIES")
+    state["needs_approval"] = ["INV-GHOST"]
+    state["auto"] = []
+
+    result = batch.open_approval_node(state)
+    assert result["opened"] == []
+    assert result["unopened"] == [{"invoice_id": "INV-GHOST", "reason": "not persisted"}]
+
 
