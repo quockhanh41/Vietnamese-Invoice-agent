@@ -22,7 +22,7 @@ from invoice_agent.agents import classification
 from invoice_agent.config import get_settings
 from invoice_agent.eval import baseline
 from invoice_agent.extraction.xml_parser import parse_invoice_xml
-from invoice_agent.llm.cost import LLMCallRecord
+from invoice_agent.llm.cost import LLMCallRecord, actual_cost_usd, shadow_cost_usd
 from invoice_agent.llm.gateway import LLMGateway
 
 KEYWORDS = {code: list(keywords) for code, _n, _d, _v, _c, keywords in CATEGORIES}
@@ -124,7 +124,7 @@ def evaluate(
 
         eval_rows.append(
             {
-                "id": record["id"],
+                "id": record["invoice_id"],
                 "truth": truth_cat,
                 "truth_department": truth_dept,
                 "baseline_category": base_pred,
@@ -137,7 +137,11 @@ def evaluate(
                 "auditor_department": audit_res.proposed_department,
                 "auditor_reason": audit_res.reason,
                 "disputed": dispute_finding is not None,
-                "ambiguous": bool(record.get("ambiguous_category")),
+                # `ambiguous_category` is an entry in the `defects` LIST, not a
+                # field. Reading it as a field returned None for every invoice,
+                # so the group spec §4 requires scoring SEPARATELY was silently
+                # empty — a wrong number, not a crash. Found 2026-08-01.
+                "ambiguous": "ambiguous_category" in (record.get("defects") or []),
                 "alternative_category": record.get("alternative_category"),
             }
         )
@@ -164,7 +168,14 @@ def evaluate(
         1 for r in ambiguous_rows if r["classifier_category"] == r.get("alternative_category")
     )
 
-    total_cost = sum(c.cost for c in total_calls)
+    # `LLMCallRecord` carries token counts, not money — cost is DERIVED by
+    # cost.actual_cost_usd / shadow_cost_usd, which is what keeps the pricing
+    # table the single place a price is written (M3-A). Shadow cost is what
+    # design §2.2's per-invoice target is quoted against; actual is ~0 on free
+    # tier, and reporting only actual would make the number look free rather
+    # than cheap.
+    total_cost = sum(actual_cost_usd(c) for c in total_calls)
+    total_shadow = sum(shadow_cost_usd(c) for c in total_calls)
 
     results = {
         "total_invoices": total_xml,
@@ -188,6 +199,7 @@ def evaluate(
         "cost": {
             "total_calls": len(total_calls),
             "total_cost_usd": total_cost,
+            "total_shadow_cost_usd": total_shadow,
         },
         "rows": eval_rows,
     }
