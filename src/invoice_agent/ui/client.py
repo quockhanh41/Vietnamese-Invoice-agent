@@ -129,3 +129,78 @@ def submit_decision(
         )
     return result
 
+
+def upload_batch(
+    files: list[tuple[str, bytes]],
+    *,
+    department: str | None = None,
+    client: httpx.Client | None = None,
+) -> dict[str, Any]:
+    """`files` is [(filename, bytes)]. `department` is OPTIONAL and its absence
+    has a consequence: `serial_join` groups budgets by the department declared on
+    the task, and `InvoiceData` carries none, so an upload without one is
+    persisted and may be posted but is never reconciled against a budget
+    (M5-C note §3). The UI offers the selector so a reviewer can avoid that."""
+    multipart = [("files", (name, data, "application/octet-stream")) for name, data in files]
+    form = {"department": department} if department is not None else None
+    with _session(client) as session:
+        result: dict[str, Any] = _unwrap(session.post("/batches", files=multipart, data=form))
+    return result
+
+
+def get_batch(batch_id: str, *, client: httpx.Client | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = _get(f"/batches/{batch_id}", client=client)
+    return result
+
+
+def list_invoices(
+    *,
+    status: str | None = None,
+    department: str | None = None,
+    limit: int = 50,
+    client: httpx.Client | None = None,
+) -> list[dict[str, Any]]:
+    params: dict[str, Any] = {"limit": limit}
+    if status is not None:
+        params["status"] = status
+    if department is not None:
+        params["department"] = department
+    result: list[dict[str, Any]] = _get("/invoices", client=client, params=params)
+    return result
+
+
+def budget_report(
+    *, period: str | None = None, client: httpx.Client | None = None
+) -> list[dict[str, Any]]:
+    params = {"period": period} if period is not None else None
+    result: list[dict[str, Any]] = _get("/reports/budgets", client=client, params=params)
+    return result
+
+
+def flag_report(*, client: httpx.Client | None = None) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = _get("/reports/flags", client=client)
+    return result
+
+
+def posting_report(*, client: httpx.Client | None = None) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = _get("/reports/posting", client=client)
+    return result
+
+
+def cost_report(*, client: httpx.Client | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = _get("/reports/cost", client=client)
+    return result
+
+
+def departments(*, client: httpx.Client | None = None) -> list[str]:
+    """The seeded departments, READ FROM A REPORT rather than hardcoded.
+
+    There is no `/departments` endpoint and M5-D adds no backend behaviour
+    (spec §0 constraint 5), but `/reports/budgets` already returns
+    `department_code` per row. Hardcoding the five would be a second source of
+    truth for seed data — what `scripts/seed_reference.py` forbids for BUDGETS,
+    because two copies is how a test starts passing for the wrong reason.
+    """
+    return sorted({row["department_code"] for row in budget_report(client=client)})
+
+

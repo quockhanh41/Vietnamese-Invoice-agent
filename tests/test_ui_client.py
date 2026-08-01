@@ -139,3 +139,79 @@ def test_get_invoice_returns_lines_and_flags(api, committed_rows):
     assert body["invoice"]["id"] == str(db_id)
     assert body["lines"]
     assert [f["code"] for f in body["flags"]] == ["PRICE_OUTLIER"]
+
+
+def _one_real_invoice() -> tuple[str, bytes]:
+    import pathlib
+
+    p = pathlib.Path("tests/fixtures/real_samples/viettelpost_gtgt_2.1.0.xml")
+    return p.name, p.read_bytes()
+
+
+def test_upload_returns_a_batch_id_and_the_summary_answers(monkeypatch, tmp_path):
+    from sqlalchemy import text
+
+    from invoice_agent.db.engine import get_owner_engine
+
+    with get_owner_engine().begin() as conn:
+        conn.execute(text("TRUNCATE app.invoices CASCADE;"))
+
+    monkeypatch.setenv("LLM_MODE", "replay")
+    for key in ("GROQ_API_KEYS", "GEMINI_API_KEYS", "OPENROUTER_API_KEYS"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    # get_settings is lru_cached — without this the monkeypatch does nothing and
+    # the upload makes LIVE calls (measured 2026-08-01 at M4-D).
+    from invoice_agent.config import get_settings
+
+    get_settings.cache_clear()
+
+    with TestClient(create_app()) as api:
+        import time
+
+        name, data = _one_real_invoice()
+        posted = ui.upload_batch([(name, data)], department="ADMIN", client=api)
+        assert posted["invoice_count"] == 1
+
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            summary = ui.get_batch(posted["batch_id"], client=api)
+            if summary["status"] in ("completed", "failed"):
+                break
+            time.sleep(0.2)
+        else:
+            pytest.fail("batch did not finish within 60s")
+
+        assert summary["status"] == "completed"
+        assert summary["persisted"] == 1
+    get_settings.cache_clear()
+
+
+
+
+def test_departments_come_from_the_budget_report_not_a_hardcoded_list(api):
+    """Spec §3.1. Hardcoding the five seeded departments in the UI would create a
+    SECOND source of truth for seed data — exactly what seed_reference.py's
+    docstring forbids for BUDGETS. The selector reads them from a report the API
+    already serves, so adding a department to the seed changes the UI without
+    touching the UI."""
+    from scripts.seed_reference import DEPARTMENTS
+
+    assert set(ui.departments(client=api)) == {code for code, _name in DEPARTMENTS}
+
+
+def test_every_report_round_trips(api, committed_rows):
+    _persisted_invoice(committed_rows, flag=("PRICE_OUTLIER", "warn", "anomaly"))
+    assert ui.budget_report(client=api)
+    assert any(r["code"] == "PRICE_OUTLIER" for r in ui.flag_report(client=api))
+    ui.posting_report(client=api)  # may be empty; must not raise
+    assert "shadow_cost_usd" in ui.cost_report(client=api)
+
+
+def test_list_invoices_passes_filters_through(api, committed_rows):
+    db_id, _ = _persisted_invoice(committed_rows)
+    hit = ui.list_invoices(department="ADMIN", client=api)
+    miss = ui.list_invoices(department="MKT", client=api)
+    assert str(db_id) in [r["id"] for r in hit]
+    assert str(db_id) not in [r["id"] for r in miss]
+
