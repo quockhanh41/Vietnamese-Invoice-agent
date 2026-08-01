@@ -193,8 +193,13 @@ kèm 2 PDF có số CCCD (vá ở `bb8718d`). Đính chính một cảnh báo c�
 
 **Next**: M4 — multi-agent, memory, and the budget serialization proof. M4-A corpus & reference alignment done 2026-07-31 (found five defects in M2/M3 outputs before any M4 code was written, including unjoinable departments and reverse canonical rank). The gate is open. What is owed, roughly in the order it will hurt:
 
-- **The vision branch has no accuracy measurement of any kind** — not synthetic, not real. No
-  vision-capable API key is configured, so no fixture has ever been recorded (M3-B §8.1, M3-C §8.1).
+- ✅ **PAID 2026-08-01.** The vision branch now has its first accuracy number: **2/2 XML↔PDF twins
+  extracted 4/4 on `invoice_number` · `invoice_series` · `seller_tax_code` · `total_amount`**
+  (`INV-0196`, `INV-0275`). A third twin, `INV-0029`, is recorded as **unmeasured** rather than
+  failed — six attempts, every one a Gemini 503, so it never produced an extraction to score.
+  Pinned by `tests/test_vision_accuracy.py`, replaying with every key unset. Owed since M3-B and
+  deferred three times; paying it took one afternoon once a key existed, and it surfaced two
+  defects in `structured.py` that had made every live structured call impossible.
   Re-declared at M4-A: Task 9 step 1 precondition check confirmed no key configured.
   **M6 cannot report a vision number until this is paid**, and paying it later means rebuilding all
   of M3's context first.
