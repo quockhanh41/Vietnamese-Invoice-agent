@@ -215,6 +215,24 @@ kèm 2 PDF có số CCCD (vá ở `bb8718d`). Đính chính một cảnh báo c�
 **The rule M4 must not repeat**: a milestone is not closed until `make check` is green **on the
 pushed commit** and CI agrees. Three milestones running have failed that.
 
+> **Scoreboard, updated 2026-08-01.** M4-A and M4-B both passed it — CI green on the exact closing
+> SHA (`a444e22`/`67b1638`, `4682e67`/`90562de`). **M4-C failed it, mildly**: `f08c8a6` was pushed
+> **red** (ruff `UP007` + unused imports) and fixed one commit later in `6ea76f9`. Four milestones
+> have now failed the rule — but this differs from M3-C's `097388b` in the way that matters: there
+> the red commit was pushed, CI failed, **and nobody looked**. Here it was noticed and fixed at once.
+>
+> **The interesting part is the misattribution, and it is a new failure mode.** `f08c8a6` touched
+> exactly one file — this document — and cannot have introduced a lint error. The errors came from
+> the Task 2–6 commits, and `6ea76f9` fixed them in `migrations/`, `scripts/eval_classification.py`,
+> `tests/test_agents.py` and `tests/test_auditor_chain.py`. CI ran on **nothing** between `90562de`
+> and `f08c8a6`: all seven M4-C commits were pushed as one batch, so CI first saw the tip.
+>
+> So per-task commits are a safety net **only if per-task verification runs**. Batching the push
+> means the first CI signal lands on the tip, and the tip's title — here "docs(roadmap): update M4-C
+> completion state" — actively misdirects, because a docs commit reads as one that could not
+> possibly break the build. Running `make check` after any of Tasks 2 through 6 would have caught it
+> at the commit that caused it.
+
 ---
 
 ## 2. Bản đồ hạ tầng $0 + phép tính khả thi

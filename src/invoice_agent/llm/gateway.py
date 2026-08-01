@@ -6,9 +6,18 @@ cấu hình: chain và key giờ đến từ `Settings` chứ không phải `os.
 rác trong `__init__` (đó chính là nợ kỹ thuật của Project A mà M0.2 sinh ra để
 xoá). Gateway không đọc environment nữa — nó nhận cấu hình.
 
-Hai phần mở rộng đã lên lịch, CHƯA làm ở M0:
-- M3.6 `usage` out-param cho cost tracking (theo idiom `used_model` bên dưới)
-- M4.1 `exclude_model` để Auditor không chấm bài của chính model đã sinh ra
+Scheduled extensions, both now resolved:
+- M3.6 `usage` out-param for cost tracking — DONE at M3-A, as the `calls`
+  out-param (`LLMCallRecord`), following the `used_model` idiom below.
+- M4.1 `exclude_model` — **deliberately NOT built**, decided 2026-07-31 at M4-C.
+  Excluding by model NAME cannot deliver what design §6.3 asks for, which is a
+  different model FAMILY: measured on the default chain, entries 1 and 5 are the
+  same Llama 3.3 70B reached through groq and openrouter, so excluding entry 1
+  leaves entry 5 — the same weights grading their own generation. Replaced by a
+  declared `auditor_model_chain` plus `agents/families.py`, with
+  `tests/test_auditor_chain.py` asserting the two chains share no family.
+  `generate_with_model` still returns `(text, model_name)`; nothing consumes it
+  for exclusion any more.
 """
 
 import base64
@@ -344,7 +353,13 @@ class LLMGateway:
         """Same as `generate()`, but also returns which model in the chain
         actually produced the answer — so a caller can tell which model to
         EXCLUDE from LLM self-eval, avoiding a model grading its own
-        generation. This is the hook the Auditor agent needs (M4.1).
+        generation.
+
+        NOT the mechanism the Auditor uses, despite what M4.1 planned. Measured
+        2026-07-31: the same Llama 3.3 70B sits at two positions in the default
+        chain under different providers, so excluding the model NAME still
+        permits the same weights. The Auditor runs on a declared
+        `auditor_model_chain` instead; see the module docstring.
 
         Returns:
             (generated_text, model_name)
