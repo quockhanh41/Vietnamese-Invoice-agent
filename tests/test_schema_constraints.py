@@ -316,3 +316,42 @@ def test_audit_log_records_grants_not_only_refusals(runtime_conn):
         reason="invoice not approved",
     )
     assert row_id is not None
+
+
+def test_agent_disagreement_is_an_accepted_flag_source(runtime_conn):
+    """Migration 12. Without it `raise_flag` dies with an IntegrityError at
+    runtime, on a real invoice, in the middle of a batch."""
+    vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
+    inv_id = invoice_repo.insert_row(
+        runtime_conn, _invoice_values(invoice_number=f"AG{uuid.uuid4().hex[:6]}")
+    )
+    assert inv_id is not None
+    flag_id = flags.raise_flag(
+        runtime_conn,
+        invoice_id=inv_id,
+        code="CLASSIFICATION_DISPUTED",
+        severity="warn",
+        raised_by="agent_disagreement",
+        detail={"classifier": "MARKETING", "auditor": "OFFICE_SUPPLIES"},
+    )
+    assert flag_id is not None
+
+
+def test_ck_flags_raised_by_still_rejects_an_unknown_source(runtime_conn):
+    """The constraint must still constrain. Widening a CHECK is exactly where
+    one accidentally drops it."""
+    vendors.ensure_vendor(runtime_conn, "0100000003", name="NCC")
+    inv_id = invoice_repo.insert_row(
+        runtime_conn, _invoice_values(invoice_number=f"AG2{uuid.uuid4().hex[:6]}")
+    )
+    assert inv_id is not None
+    with pytest.raises(IntegrityError):
+        flags.raise_flag(
+            runtime_conn,
+            invoice_id=inv_id,
+            code="X",
+            severity="warn",
+            raised_by="the_llm_said_so",
+            detail={},
+        )
+

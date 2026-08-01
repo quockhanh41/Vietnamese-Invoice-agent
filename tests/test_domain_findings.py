@@ -33,3 +33,21 @@ def test_finding_is_frozen():
     f = findings.arithmetic_mismatch(expected="1", actual="2")
     with pytest.raises(dataclasses.FrozenInstanceError):
         f.code = "SOMETHING_ELSE"
+
+
+def test_classification_disputed_is_registered_as_agent_disagreement():
+    """The flag M4's portfolio artefact depends on (design §6.4).
+
+    `raised_by` is the PRODUCER as a reviewer understands it, which is the
+    convention this registry already follows for NEW_VENDOR (computed in
+    anomaly.py, sourced as vendor_memory).
+
+    Severity `warn`, not `info`: it asserts something may be WRONG, so unlike
+    NEW_VENDOR it counts toward the flag false-positive metric — M4-B made
+    severity the discriminator for that.
+    """
+    severity, source = findings.CODE_REGISTRY[findings.CLASSIFICATION_DISPUTED]
+    assert severity == "warn"
+    assert source == "agent_disagreement"
+    assert "agent_disagreement" in findings.SOURCES
+

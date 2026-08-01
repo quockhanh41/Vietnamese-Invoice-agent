@@ -242,7 +242,10 @@ invoice_line_items = Table(
 # Deterministic producers ONLY. This list is the DDL encoding of principle 1
 # ("the LLM never raises a flag"): adding an agent here requires a migration,
 # so it cannot happen by accident in a node. Design doc §2.5.
-FLAG_SOURCES = ("validation", "taxcode", "anomaly", "budget", "duplicate", "vendor_memory")
+FLAG_SOURCES = (
+    "validation", "taxcode", "anomaly", "budget", "duplicate", "vendor_memory",
+    "agent_disagreement",
+)
 FLAG_SEVERITIES = ("info", "warn", "critical")
 
 invoice_flags = Table(

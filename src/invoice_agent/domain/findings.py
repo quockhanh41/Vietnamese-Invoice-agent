@@ -17,7 +17,10 @@ from typing import Any
 
 # Must equal db.models.FLAG_SEVERITIES / FLAG_SOURCES — asserted by test.
 SEVERITIES = ("info", "warn", "critical")
-SOURCES = ("validation", "taxcode", "anomaly", "budget", "duplicate", "vendor_memory")
+SOURCES = (
+    "validation", "taxcode", "anomaly", "budget", "duplicate", "vendor_memory",
+    "agent_disagreement",
+)
 
 ARITHMETIC_MISMATCH = "ARITHMETIC_MISMATCH"
 SUBTOTAL_MISMATCH = "SUBTOTAL_MISMATCH"
@@ -35,6 +38,7 @@ NEW_VENDOR = "NEW_VENDOR"
 BUDGET_WARNING = "BUDGET_WARNING"
 BUDGET_BREACH = "BUDGET_BREACH"
 DUPLICATE_INVOICE = "DUPLICATE_INVOICE"
+CLASSIFICATION_DISPUTED = "CLASSIFICATION_DISPUTED"
 
 # code -> (severity, raised_by). `raised_by` is the PRODUCER as the reviewer
 # understands it, not the module the function happens to live in: NEW_VENDOR is
@@ -57,6 +61,11 @@ CODE_REGISTRY: dict[str, tuple[str, str]] = {
     BUDGET_WARNING: ("warn", "budget"),
     BUDGET_BREACH: ("critical", "budget"),
     DUPLICATE_INVOICE: ("critical", "duplicate"),
+    # `warn`, not `info`: it asserts something may be WRONG, so it counts toward
+    # the flag false-positive metric — M4-B made severity the discriminator
+    # (docs/notes/2026-07-31-m4b-vendor-memory.md). Raised by Python comparing
+    # two structured outputs; no model can reach it.
+    CLASSIFICATION_DISPUTED: ("warn", "agent_disagreement"),
 }
 
 
