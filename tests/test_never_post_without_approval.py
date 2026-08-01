@@ -337,3 +337,82 @@ def test_reposting_with_different_totals_is_denied(runtime_conn, sample_invoice)
         )
 
 
+# ---------------------------------------------------------------------------
+# Database layer. These call `repositories.journal` DIRECTLY, bypassing the
+# guard, so each constraint is exercised alone. An intact guard refuses first,
+# which is why the guard-layer cases above cannot measure these.
+# ---------------------------------------------------------------------------
+
+
+def test_the_trigger_blocks_auto_clean_with_the_guard_bypassed(runtime_conn, sample_invoice):
+    from invoice_agent.db.repositories import flags
+    from invoice_agent.domain import findings
+
+    invoice_id = _insert_invoice(runtime_conn, sample_invoice)
+    flags.raise_flag(
+        runtime_conn,
+        invoice_id,
+        code=findings.ARITHMETIC_MISMATCH,
+        severity="critical",
+        raised_by="validation",
+    )
+    with pytest.raises(Exception, match="open flag"):
+        journal.create_entry_with_lines(
+            runtime_conn,
+            invoice_id=invoice_id,
+            entry_date=date(2026, 7, 1),
+            posting_authority="auto_clean",
+            lines=[
+                journal.JournalLine("6422", "Chi phí quản lý", Decimal("100"), Decimal("0")),
+                journal.JournalLine("331", "Phải trả người bán", Decimal("0"), Decimal("100")),
+            ],
+        )
+
+
+def test_the_check_blocks_human_approved_without_an_approval(runtime_conn, sample_invoice):
+    """`ck_journal_human_approved_needs_approval`. Without it, 'human_approved'
+    is just a string the application writes."""
+    invoice_id = _insert_invoice(runtime_conn, sample_invoice)
+    with pytest.raises(Exception, match="ck_journal_human_approved_needs_approval"):
+        journal.create_entry_with_lines(
+            runtime_conn,
+            invoice_id=invoice_id,
+            entry_date=date(2026, 7, 1),
+            posting_authority="human_approved",
+            approval_id=None,
+            lines=[
+                journal.JournalLine("6422", "Chi phí quản lý", Decimal("100"), Decimal("0")),
+                journal.JournalLine("331", "Phải trả người bán", Decimal("0"), Decimal("100")),
+            ],
+        )
+
+
+def test_unique_blocks_a_second_entry_with_the_guard_bypassed(runtime_conn, sample_invoice):
+    """UNIQUE(invoice_id). Note what this measures that the idempotency case
+    does NOT: the guard's existence read returns the prior entry before any
+    insert is attempted, so dropping this constraint leaves that case green.
+    Claiming one covers the other is the shape of error M1's exit review found
+    four times."""
+    invoice_id = _insert_invoice(runtime_conn, sample_invoice)
+    lines = [
+        journal.JournalLine("6422", "Chi phí quản lý", Decimal("100"), Decimal("0")),
+        journal.JournalLine("331", "Phải trả người bán", Decimal("0"), Decimal("100")),
+    ]
+    journal.create_entry_with_lines(
+        runtime_conn,
+        invoice_id=invoice_id,
+        entry_date=date(2026, 7, 1),
+        posting_authority="auto_clean",
+        lines=lines,
+    )
+    with pytest.raises(Exception, match="journal_entries_invoice_id_key|duplicate key"):
+        journal.create_entry_with_lines(
+            runtime_conn,
+            invoice_id=invoice_id,
+            entry_date=date(2026, 7, 1),
+            posting_authority="auto_clean",
+            lines=lines,
+        )
+
+
+
