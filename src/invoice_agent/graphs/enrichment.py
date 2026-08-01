@@ -23,6 +23,10 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from invoice_agent.agents.audit import audit as run_audit
+from invoice_agent.agents.classification import classify as run_classify
+from invoice_agent.agents.classification import dispute
+from invoice_agent.agents.models import AuditVerdict, ClassificationResult
 from invoice_agent.db.engine import get_engine
 from invoice_agent.domain import anomaly, validation
 from invoice_agent.domain.findings import Finding
@@ -60,6 +64,8 @@ class EnrichmentState(TypedDict):
     # observed and cannot un-happen. Nodes return DELTAS.
     signals: Annotated[list[Finding], operator.add]
     status: str
+    classification: ClassificationResult | None
+    audit_verdict: AuditVerdict | None
 
 
 def _describe(finding: Finding) -> str:
@@ -113,7 +119,7 @@ def vision_extract_node(
     except (vision.VisionExtractionError, StructuredOutputError) as exc:
         data, errors = None, [str(exc)]
 
-    _persist_cost(calls, invoice_id=state["invoice_id"])
+    _persist_cost(calls, invoice_id=state["invoice_id"], node="vision_extract")
     return {
         "strategy": "vision",
         "extracted": data,
@@ -124,7 +130,9 @@ def vision_extract_node(
     }
 
 
-def _persist_cost(calls: list[LLMCallRecord], *, invoice_id: str) -> None:
+def _persist_cost(
+    calls: list[LLMCallRecord], *, invoice_id: str, node: str = "vision_extract"
+) -> None:
     """Write the rows the moment the tokens are spent (spec §5.3).
 
     `invoice_id` is left NULL on purpose: a PDF-only invoice has no `invoices`
@@ -138,8 +146,36 @@ def _persist_cost(calls: list[LLMCallRecord], *, invoice_id: str) -> None:
         return
     with get_engine().begin() as conn:
         telemetry.record(
-            conn, calls, node="vision_extract", thread_id=f"enrich:{invoice_id}"
+            conn, calls, node=node, thread_id=f"enrich:{invoice_id}"
         )
+
+
+def classify_node(state: EnrichmentState, *, gateway: LLMGateway) -> dict[str, Any]:
+    """Cheap tier. Returns an opinion; writes nothing."""
+    data = state.get("extracted")
+    if data is None:
+        return {}
+    calls: list[LLMCallRecord] = []
+    result = run_classify(data, gateway=gateway, calls=calls)
+    _persist_cost(calls, invoice_id=state["invoice_id"], node="classify")
+    return {"classification": result, "llm_calls": calls}
+
+
+def audit_node(state: EnrichmentState, *, gateway: LLMGateway) -> dict[str, Any]:
+    """Second opinion on a different family, then PYTHON compares them."""
+    data = state.get("extracted")
+    proposal = state.get("classification")
+    if data is None or proposal is None:
+        return {}
+    calls: list[LLMCallRecord] = []
+    verdict = run_audit(data, proposal, gateway=gateway, calls=calls)
+    _persist_cost(calls, invoice_id=state["invoice_id"], node="audit")
+    found = dispute(proposal, verdict)
+    return {
+        "audit_verdict": verdict,
+        "llm_calls": calls,
+        "signals": [found] if found else [],
+    }
 
 
 def validate_node(state: EnrichmentState) -> dict[str, Any]:
@@ -252,6 +288,8 @@ def build_enrichment_graph(
         "vision_extract", functools.partial(vision_extract_node, gateway=gw)
     )
     builder.add_node("validate", validate_node)
+    builder.add_node("classify", functools.partial(classify_node, gateway=gw))
+    builder.add_node("audit", functools.partial(audit_node, gateway=gw))
     builder.add_node("signals", signals_node)
     builder.add_node("manual_queue", manual_queue_node)
 
@@ -269,12 +307,11 @@ def build_enrichment_graph(
         {
             "vision_extract": "vision_extract",
             "manual_queue": "manual_queue",
-            # Until M4-C splices classify/audit in front, a clean invoice and a
-            # DATA-error invoice both land here. `route_after_validate` still
-            # returns END; this map sends that outcome to `signals` instead.
-            END: "signals",
+            END: "classify",
         },
     )
+    builder.add_edge("classify", "audit")
+    builder.add_edge("audit", "signals")
     builder.add_edge("signals", END)
     builder.add_edge("manual_queue", END)
 

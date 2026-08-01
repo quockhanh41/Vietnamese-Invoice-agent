@@ -18,6 +18,25 @@ from invoice_agent.llm.gateway import LLMGateway
 
 REAL_XML = pathlib.Path("tests/fixtures/real_samples/viettelpost_gtgt_2.1.0.xml")
 
+
+@pytest.fixture(autouse=True)
+def mock_agent_nodes(monkeypatch):
+    from invoice_agent.agents.models import AuditVerdict, ClassificationResult
+    from invoice_agent.graphs import enrichment
+
+    monkeypatch.setattr(
+        enrichment,
+        "run_classify",
+        lambda *a, **k: ClassificationResult(
+            category="MARKETING", department="MKT", confidence=0.9, reasoning="ok"
+        ),
+    )
+    monkeypatch.setattr(
+        enrichment,
+        "run_audit",
+        lambda *a, **k: AuditVerdict(agrees=True, reason="ok"),
+    )
+
 # Parses into InvoiceData, but the total ignores the line — so `validate` finds
 # an ARITHMETIC_MISMATCH on every attempt and the loop can never converge.
 ALWAYS_INVALID = json.dumps(

@@ -9,15 +9,19 @@ graph TD;
 	parse_xml(parse_xml)
 	vision_extract(vision_extract)
 	validate(validate)
+	classify(classify)
+	audit(audit)
 	signals(signals)
 	manual_queue(manual_queue)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> route_source;
+	audit --> signals;
+	classify --> audit;
 	parse_xml --> validate;
 	route_source -.-> parse_xml;
 	route_source -.-> vision_extract;
+	validate -. &nbsp;__end__&nbsp; .-> classify;
 	validate -.-> manual_queue;
-	validate -. &nbsp;__end__&nbsp; .-> signals;
 	validate -.-> vision_extract;
 	vision_extract --> validate;
 	manual_queue --> __end__;
