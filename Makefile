@@ -1,4 +1,4 @@
-.PHONY: help install dev migrate seed rebuild-profiles generate db-stop db-reset test lint typecheck check lock clean
+.PHONY: help install dev migrate seed rebuild-profiles generate db-stop db-reset test lint typecheck check api lock clean
 
 UV  := uv
 PY  := .venv/bin/python
@@ -18,6 +18,7 @@ help:
 	@echo "  make lint             - ruff"
 	@echo "  make typecheck        - mypy"
 	@echo "  make check            - lint + typecheck + test (chạy trước khi commit)"
+	@echo "  make api              - chạy uvicorn dev server ở port 8000"
 	@echo "  make lock             - Sinh lại requirements.lock từ pyproject.toml"
 	@echo "  make clean            - Xoá cache"
 
@@ -67,6 +68,9 @@ typecheck:
 	.venv/bin/mypy
 
 check: lint typecheck test
+
+api:
+	.venv/bin/uvicorn invoice_agent.api.app:app --reload --port 8000
 
 lock:
 	$(UV) pip compile pyproject.toml --extra dev -o requirements.lock

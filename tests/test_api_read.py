@@ -81,3 +81,61 @@ def test_cost_report_returns_both_real_and_shadow(committed_rows):
     with get_engine().begin() as conn:
         report = queries.cost_report(conn)
     assert set(report) >= {"calls", "succeeded", "cost_usd", "shadow_cost_usd"}
+
+
+# ---------------------------------------------------------------------------
+# Task 2: create_app, /health (both branches), GuardDenied handler
+# ---------------------------------------------------------------------------
+
+
+def test_health_reports_ok_when_postgres_answers(requires_postgres):
+    from fastapi.testclient import TestClient
+
+    from invoice_agent.api.app import create_app
+
+    with TestClient(create_app()) as client:
+        response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "database": "ok"}
+
+
+def test_health_reports_unhealthy_when_postgres_is_gone(monkeypatch, requires_postgres):
+    """A health check that does not touch the database reports healthy while the
+    database is gone, which is worse than having no health check.
+    Spec §6 criterion 5."""
+    from fastapi.testclient import TestClient
+
+    from invoice_agent.api import app as app_module
+    from invoice_agent.api.routes import health as health_module
+
+    def _explode():
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(health_module, "get_engine", _explode)
+    with TestClient(app_module.create_app()) as client:
+        response = client.get("/health")
+    assert response.status_code == 503
+    assert response.json()["database"] == "unreachable"
+
+
+def test_a_guard_denial_is_409_not_500(requires_postgres):
+    """The guard refusing is CORRECT behaviour. A 500 would read as a bug and
+    bury a working safety control in the error logs."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from invoice_agent.api.app import install_error_handlers
+    from invoice_agent.tools.guards import GuardDenied
+
+    app = FastAPI()
+    install_error_handlers(app)
+
+    @app.get("/boom")
+    def boom():
+        raise GuardDenied("invoice has an open flag")
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/boom")
+    assert response.status_code == 409
+    assert "open flag" in response.json()["detail"]
+
