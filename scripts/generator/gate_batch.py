@@ -30,6 +30,8 @@ import pathlib
 from decimal import Decimal
 from typing import Any
 
+from scripts.seed_reference import BUDGETS
+
 # The two members that are NOT XML, named so the composition cannot drift
 # unnoticed again. They are `unreadable_pdf` — deliberately corrupt files —
 # and they are in the batch ON PURPOSE: they exercise the gate's own criterion
@@ -97,28 +99,37 @@ def write_gate_batch(path: pathlib.Path, records: list[dict[str, Any]]) -> None:
     order, so the JSON cannot drift from the corpus it describes.
     """
     chosen = {r["invoice_id"]: r for r in records if r["invoice_id"] in set(GATE_BATCH_IDS)}
-    mkt = sorted(
-        (r for r in chosen.values() if r["department"] == "MKT"),
-        key=lambda r: (r["issue_date"], r["invoice_series"], r["invoice_number"]),
-    )
-    chain: list[dict[str, str]] = []
-    balance = MKT_LIMIT
-    for record in mkt:
-        before = balance
-        balance = before - Decimal(record["total_amount"])
-        chain.append(
-            {
-                "invoice_id": record["invoice_id"],
-                "balance_before": str(before),
-                "balance_after": str(balance),
-            }
+
+    # PER-DEPARTMENT, not MKT-only. M4-D's gate raised 9 BUDGET_BREACH flags and
+    # declared 1; the other 8 were correct behaviour in departments this file
+    # never covered, so its "exact agreement" criterion measured one department
+    # and claimed all of them (spec 2026-08-01-m4d §3's closing note).
+    limits = {dept: limit for dept, _period, _category, limit in BUDGETS}
+    chains: dict[str, list[dict[str, str]]] = {}
+    for dept in sorted({r["department"] for r in chosen.values()}):
+        members = sorted(
+            (r for r in chosen.values() if r["department"] == dept),
+            key=lambda r: (r["issue_date"], r["invoice_series"], r["invoice_number"]),
         )
+        balance = limits[dept]
+        chain = []
+        for record in members:
+            before = balance
+            balance = before - Decimal(record["total_amount"])
+            chain.append(
+                {
+                    "invoice_id": record["invoice_id"],
+                    "balance_before": str(before),
+                    "balance_after": str(balance),
+                }
+            )
+        chains[dept] = chain
 
     payload = {
         "invoice_ids": list(GATE_BATCH_IDS),
         "expected_breach_id": EXPECTED_BREACH_ID,
         "mkt_limit": str(MKT_LIMIT),
-        "balance_after_chain": chain,
+        "balance_chains": chains,
     }
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",

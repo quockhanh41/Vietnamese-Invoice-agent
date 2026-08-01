@@ -85,7 +85,7 @@ def test_generate_emits_gate_batch_json(tmp_path):
     payload = json.loads((out / "gate_batch.json").read_text(encoding="utf-8"))
     assert payload["invoice_ids"] == list(gate_batch.GATE_BATCH_IDS)
     assert payload["expected_breach_id"] == gate_batch.EXPECTED_BREACH_ID
-    assert len(payload["balance_after_chain"]) == 3
+    assert len(payload["balance_chains"]["MKT"]) == 3
 
 
 def _declared_comments() -> dict[str, str]:
@@ -157,4 +157,62 @@ def test_gate_batch_source_types_match_the_declaration(tmp_path):
     assert sorted(pdfs) == sorted(gate_batch.DELIBERATE_PDF_MEMBERS)
     assert all("unreadable_pdf" in by_id[i]["defects"] for i in pdfs)
     assert len(chosen) - len(pdfs) == 28
+
+
+def _write_and_load(tmp_path):
+    out, _records = build(tmp_path)
+    return json.loads((out / "gate_batch.json").read_text(encoding="utf-8"))
+
+
+def _gate_records(tmp_path):
+    _out, records = build(tmp_path)
+    return [r for r in records if r["invoice_id"] in set(gate_batch.GATE_BATCH_IDS)]
+
+
+def _budget_inputs_for(tmp_path, department: str):
+    records = _gate_records(tmp_path)
+    by_id = {r["invoice_id"]: r for r in records if r["department"] == department}
+    return [
+        budget.BudgetInput(
+            invoice_id=r["invoice_id"],
+            issue_date=datetime.date.fromisoformat(r["issue_date"]),
+            invoice_series=r["invoice_series"],
+            invoice_number=r["invoice_number"],
+            amount=Decimal(r["total_amount"]),
+        )
+        for r in (by_id[i] for i in gate_batch.GATE_BATCH_IDS if i in by_id)
+    ]
+
+
+def test_every_department_in_the_batch_declares_a_budget_chain(tmp_path):
+    """M4-D's gate raised 9 BUDGET_BREACH flags; gate_batch.json declared 1.
+    The other 8 were correct behaviour in departments the declaration never
+    covered, so "exact agreement between the declaration and what the batch
+    flags" was measuring one department and claiming all of them."""
+    payload = _write_and_load(tmp_path)
+    departments_in_batch = {r["department"] for r in _gate_records(tmp_path)}
+    assert set(payload["balance_chains"]) == departments_in_batch
+
+
+def test_the_declared_chains_match_domain_budget(tmp_path):
+    """The declaration is arithmetic over the manifest, so it cannot drift from
+    the corpus it describes — the same property `write_gate_batch` already had
+    for MKT, extended to every department."""
+    from decimal import Decimal
+
+    from scripts.seed_reference import BUDGETS
+
+    from invoice_agent.domain import budget as domain_budget
+
+    payload = _write_and_load(tmp_path)
+    limits = {dept: limit for dept, _period, _cat, limit in BUDGETS}
+
+    for dept, chain in payload["balance_chains"].items():
+        inputs = _budget_inputs_for(tmp_path, dept)
+        expected = domain_budget.consume(limits[dept], Decimal("0.8"), inputs)
+        assert [c["invoice_id"] for c in chain] == [c.invoice_id for c in expected]
+        assert [Decimal(c["balance_after"]) for c in chain] == [
+            c.balance_after for c in expected
+        ]
+
 
