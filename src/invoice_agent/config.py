@@ -125,6 +125,11 @@ class Settings(BaseSettings):
     # unanchored already; the directory is listed too, because this repo has
     # leaked PII twice and one layer is not enough (roadmap §1).
     upload_dir: str = "uploads"
+    # Where `ui/` reaches the API. The UI is an HTTP client and nothing else
+    # (spec §2.1); this is the ONLY thing it imports from this package, because
+    # reading an env var directly would reintroduce the scattered-os.getenv debt
+    # M0.2 paid off.
+    api_base_url: str = "http://127.0.0.1:8000"
 
     # --- Batch --------------------------------------------------------------
     # Kiểm soát CHÍNH chống 429 khi fan-out; key rotation chỉ là lưới đỡ.

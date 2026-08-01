@@ -51,6 +51,11 @@ dependencies = [
     # FastAPI raises RuntimeError on ANY multipart route without this. Verified
     # 2026-08-01: not previously installed, because nothing served an upload.
     "python-multipart>=0.0.20",
+    # The demo IS the deliverable (roadmap §0: "Luôn có demo chạy được từ M5"),
+    # so it ships with the package. Floor is 1.28 because `st.testing.v1.AppTest`
+    # — the only thing that can catch an AttributeError in app.py — appeared
+    # there. Verified at install time by tests/test_ui_app.py's import.
+    "streamlit>=1.28",
 ]
 
 [project.optional-dependencies]
