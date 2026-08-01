@@ -177,3 +177,24 @@ def test_hitl_survives_restart(requires_postgres, committed_rows, run):
             child.wait(timeout=5)
         with psycopg.connect(requires_postgres) as conn:
             conn.execute("DELETE FROM app.spike_counter WHERE thread_id = %s", (thread_id,))
+
+
+def test_ci_runs_the_full_ten():
+    """The gate is 10/10, and this is what stops that number from decaying.
+
+    Specified in the M1 plan (docs/superpowers/plans/2026-07-27-hitl-durability.md
+    step 2) and then never written — found 2026-08-01. Three places asserted it
+    existed: `.github/workflows/ci.yml`, `docs/Architecture.md` §11.3 and
+    `docs/Workflow.md`. Without it, deleting `HITL_RUNS: "10"` from the workflow
+    drops CI to the local default of 3, every run still passes, and the gate
+    weakens with nothing going red — the same silent-weakening shape as the
+    corpus step M4-D found missing.
+
+    NOT a skip when the variable is unset. A skip is how the M4-D hole stayed
+    invisible; outside CI there is nothing to assert, so this passes trivially
+    and its only job is to fail inside CI.
+    """
+    if os.getenv("CI", "").lower() in ("true", "1"):
+        assert HITL_RUNS >= 10, (
+            f"CI must set HITL_RUNS>=10 to close the M1 gate, got {HITL_RUNS}"
+        )

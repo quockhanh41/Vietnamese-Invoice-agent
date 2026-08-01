@@ -40,7 +40,14 @@ jobs:
       LLM_MODE: replay
       LANGFUSE_TRACING_ENABLED: "false"
       # Gate M1 đòi 10/10. Local mặc định 3 cho vòng lặp nhanh; CI chạy đủ.
-      # `test_ci_runs_the_full_ten` chặn việc dòng này bị gỡ mà không ai biết.
+      # `test_ci_runs_the_full_ten` chặn việc dòng này bị gỡ mà không ai biết —
+      # test đó được VIẾT ngày 2026-08-01, sau khi phát hiện nó chưa bao giờ tồn
+      # tại dù ci.yml, Architecture.md §11.3 và Workflow.md đều khẳng định là có.
+      #
+      # Từ M5-B, `test_hitl_survives_restart` chạy `approval_graph` THẬT chứ
+      # không phải spike graph, và khẳng định cả hệ quả (đúng MỘT bút toán, MỘT
+      # audit grant) chứ không chỉ số lần node chạy. Nghĩa là 10 vòng ở đây tốn
+      # nhiều thời gian hơn trước, và đó là chủ ý: nó là test portfolio số 1.
       HITL_RUNS: "10"
 
 
@@ -107,7 +114,26 @@ jobs:
         run: make generate
 
       - name: Test (pytest)
-        run: .venv/bin/python -m pytest
+        # `-rs` PRINTS EVERY SKIP AND ITS REASON. A skip is not a pass, and the
+        # step above exists because this repo could not tell the difference: six
+        # tests skipped silently for want of a corpus and CI stayed green over a
+        # failing gate. The step stops that particular cause; this flag makes the
+        # next one legible instead of invisible.
+        #
+        # Measured 2026-08-01 with this workflow's env (LLM_MODE=replay, every
+        # API key unset) on the machine that recorded the fixtures: 671 passed,
+        # ZERO skipped. The expected difference here is
+        # `test_vision_extraction_matches_its_xml_twin[INV-0196]` and
+        # `[INV-0275]`, which skip on CI and not locally: the replay key is
+        # sha256(model, messages, …), a vision message carries the rasterized
+        # PNG, and pdfium does not render byte-identically across OS/arch, so
+        # fixtures recorded on macOS/ARM miss on Ubuntu/x86 (recorded in the
+        # test's own docstring and docs/notes/2026-07-31-m4c-agents.md). M6 owes
+        # a re-record on this platform.
+        #
+        # So: two skips here are the known debt, and any THIRD one is news.
+        run: .venv/bin/python -m pytest -rs
+        run: .venv/bin/python -m pytest -rs
 
   secrets:
     # Job riêng: rò key là lỗi bảo mật, không phải lỗi test. Tách ra thì log

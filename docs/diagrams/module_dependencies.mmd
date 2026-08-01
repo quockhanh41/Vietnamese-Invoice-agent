@@ -1,20 +1,63 @@
 flowchart TD
-    graphs["graphs/enrichment.py"]
-    telemetry["llm/telemetry.py"]
-    domain["domain/<br/>thuần, zero I/O"]
-    llmpkg["llm/gateway · cache · cost · structured"]
-    db["db/ + repositories/"]
-    extraction["extraction/<br/>models · xml_schema · xml_parser · sanitize"]
-    config["config.py"]
+    subgraph T1["Tầng 1 — mặt tiền"]
+        ui["ui/<br/>client · app"]
+        api["api/<br/>app · routes/ · schemas · progress"]
+    end
 
-    graphs --> domain
-    graphs --> extraction
-    graphs --> llmpkg
+    subgraph T2["Tầng 2 — điều phối"]
+        graphs["graphs/<br/>enrichment · batch · approval"]
+    end
+
+    subgraph T3["Tầng 3 — năng lực"]
+        agents["agents/<br/>classification · audit<br/>families · models"]
+        tools["tools/guards.py<br/>cửa DUY NHẤT tới journal_entries"]
+        memory["memory/vendor_profile.py"]
+        telemetry["llm/telemetry.py"]
+        evalpkg["eval/baseline.py"]
+    end
+
+    subgraph T4["Tầng 4 — lõi"]
+        domain["domain/<br/>thuần, zero I/O"]
+        llmpkg["llm/<br/>gateway · cache · cost · structured"]
+        db["db/<br/>models · engine · queries<br/>audit · repositories/"]
+    end
+
+    subgraph T5["Tầng 5 — nền"]
+        extraction["extraction/<br/>models · xml_schema · xml_parser<br/>sanitize · vision"]
+        config["config.py<br/>nơi DUY NHẤT đọc environment"]
+    end
+
+    ui ==>|"httpx — KHÔNG import backend"| api
+    api --> graphs
+    api --> tools
+    api --> db
+
+    graphs --> agents
+    graphs --> tools
+    graphs --> memory
     graphs --> telemetry
+    graphs --> domain
+    graphs --> llmpkg
+    graphs --> db
+    graphs --> extraction
+
+    agents --> domain
+    agents --> llmpkg
+    agents --> extraction
+    tools --> domain
+    tools --> db
+    memory --> domain
+    memory --> db
     telemetry --> llmpkg
     telemetry --> db
+    evalpkg --> db
+
     domain --> extraction
-    llmpkg --> extraction
     db --> extraction
+    extraction -.->|"chỉ vision.py"| llmpkg
+    llmpkg -.->|"chỉ structured.py → sanitize"| extraction
+
+    ui --> config
     llmpkg --> config
     db --> config
+    extraction --> config

@@ -1,23 +1,44 @@
 flowchart TB
-    subgraph PROC["Tiến trình Python (một process, hiện tại là CLI)"]
-        RUNONE["scripts/run_one.py<br/>✅ M3 demo runner"]
-        API["FastAPI 🔲 M5.6"]
-        UI["Streamlit 🔲 M5.7"]
-        MCP["FastMCP 🔲 M7.1"]
-        GRAPH["invoice_agent.graphs"]
-        RUNONE --> GRAPH
-        API -.-> GRAPH
-        UI -.-> API
-        MCP -.-> GRAPH
+    subgraph UIPROC["Tiến trình Streamlit (:8501) — ✅ M5-D"]
+        SB["ui/app.py<br/>4 trang tiếng Việt"]
+        CLIENT["ui/client.py<br/>httpx"]
+        SB --> CLIENT
     end
 
+    subgraph APIPROC["Tiến trình uvicorn (:8000) — ✅ M5-C"]
+        API["api/app.py + 5 route module"]
+        BG["Thread nền<br/>batch_graph.stream()"]
+        PROG["progress.py<br/>SSE, trong RAM — mất khi restart"]
+        API --> BG
+        API --> PROG
+        BG --> PROG
+    end
+
+    subgraph CLI["Tiến trình CLI (chạy rời)"]
+        RUNONE["scripts/run_one.py"]
+        RECOVER["scripts/recover_pending.py"]
+        SEED["scripts/seed_reference.py<br/>+ generate_invoices.py"]
+        MCP["FastMCP 🔲 M7.1"]
+    end
+
+    GRAPH["invoice_agent.graphs<br/>enrichment · batch · approval"]
+
+    CLIENT -->|"HTTP — ranh giới được test chặn"| API
+    BG --> GRAPH
+    API --> GRAPH
+    RUNONE --> GRAPH
+    RECOVER --> GRAPH
+    MCP -.-> GRAPH
+
     subgraph DB["Postgres 17 (pgvector/pgvector:pg17, cổng 5433)"]
-        APP[("schema app<br/>16 bảng — system of record<br/>Alembic sở hữu")]
+        APP[("schema app<br/>16 bảng — system of record<br/>Alembic sở hữu, 15 revision")]
         LG[("schema langgraph<br/>4 bảng checkpoint<br/>PostgresSaver.setup() sở hữu")]
         PUB[("schema public<br/>extension vector")]
     end
 
     GRAPH -->|"role invoice_app<br/>search_path=app,public"| APP
     GRAPH -->|"search_path=langgraph,public"| LG
+    API -->|"db/queries.py — CHỈ ĐỌC"| APP
+    SEED -->|"role chủ sở hữu"| APP
     APP -.-> PUB
     LG -.-> PUB

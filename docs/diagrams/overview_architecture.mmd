@@ -38,12 +38,14 @@ flowchart TB
     end
 
     B3 -->|"Send() × N"| E1
-    E9 --> B4["reconcile_budget: SERIAL Join theo phòng ban"]
+    E9 --> B4["serial_join: MỘT transaction —<br/>persist → profile → near-dup → reconcile_budget<br/>theo thứ tự canonical"]
     E6 --> B4
-    B4 --> B5{"route_outcomes"}
-    B5 -->|26 Hóa đơn Sạch| ACT1["auto_post: Post trực tiếp Sổ cái"]:::actionStyle
-    B5 -->|4 Hóa đơn Có Cờ| ACT2["Ghi DB approvals & Mở Thread Approval"]:::actionStyle
-    ACT2 -.->|"Khởi tạo Thread appr:inv_id"| A1
+    B4 --> B5{"route_outcomes<br/>đọc invoice_flags, KHÔNG đọc graph state"}
+    B5 -->|"0 cờ warn/critical<br/>(đo 2026-08-01: 15)"| ACT1["auto_post: qua tools/guards.py"]:::actionStyle
+    B5 -->|"có cờ warn/critical<br/>(đo 2026-08-01: 12)"| ACT2["open_approval: ghi approvals<br/>& mở thread — KHÔNG chờ"]:::actionStyle
+    ACT2 -.->|"Khởi tạo Thread appr:{db_id}"| A1
+    ACT1 --> B6["finalize: batches.status = completed"]
+    ACT2 --> B6
 
     class BATCH batchStyle;
     class ENRICH enrichStyle;
