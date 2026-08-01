@@ -25,11 +25,19 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 # ngựa kéo (~50 req/ngày/key, tính cả account chứ không phải cả model).
 DEFAULT_MODEL_CHAIN = [
     "groq/llama-3.3-70b-versatile",
-    "groq/openai/gpt-oss-120b",
-    "gemini/gemini-3.5-flash",
     "openrouter/qwen/qwen3-next-80b-a3b-instruct:free",
     "openrouter/meta-llama/llama-3.3-70b-instruct:free",
-    "openai/gpt-4o-mini",
+]
+
+# The Auditor's chain. DISJOINT from DEFAULT_MODEL_CHAIN by family, not by name
+# — design §6.3 wants a different failure mode, and measured 2026-07-31 the
+# default chain contains the same Llama 3.3 70B twice under two providers, so a
+# name-based rule cannot deliver it. `tests/test_auditor_chain.py` asserts
+# disjointness over the CONFIGURED chains, so editing .env into a self-grading
+# setup fails a test rather than quietly ruining the disagreement metric.
+DEFAULT_AUDITOR_CHAIN = [
+    "gemini/gemini-3.5-flash",
+    "groq/openai/gpt-oss-120b",
 ]
 
 # Hai schema sống chung một database — xem design doc §2.10. `langgraph` do
@@ -65,6 +73,9 @@ class Settings(BaseSettings):
     runtime_database_url: str = "postgresql://invoice_app:invoice_app@localhost:5433/invoice_agent"
 
     llm_model_chain: _CsvList = Field(default_factory=lambda: list(DEFAULT_MODEL_CHAIN))
+    auditor_model_chain: _CsvList = Field(
+        default_factory=lambda: list(DEFAULT_AUDITOR_CHAIN)
+    )
     # Vision needs its own chain. Measured 2026-07-29 (spec M3-B §2.1):
     # litellm.supports_vision is False for BOTH groq models and BOTH openrouter
     # models, and groq is first in DEFAULT_MODEL_CHAIN — so a vision call on the
@@ -115,6 +126,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "llm_model_chain",
+        "auditor_model_chain",
         "vision_model_chain",
         "groq_api_keys",
         "gemini_api_keys",
