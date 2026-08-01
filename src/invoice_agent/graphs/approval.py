@@ -210,19 +210,147 @@ def apply_decision_node(state: ApprovalState) -> dict[str, Any]:
     return {"status": "decided"}
 
 
-def build_approval_graph(*, checkpointer: Any = None) -> Any:
+def post_entry_node(state: ApprovalState) -> dict[str, Any]:
+    """Post through the guard, with human authority.
 
+    A `GuardDenied` here PROPAGATES. `auto_post` catches it and routes the
+    invoice to a reviewer, but a reviewer has already decided this one — a
+    denial means the guard and the human disagree, and that has to surface. The
+    thread stays resumable, so the disagreement can be shown to them.
+    """
+    import uuid as _uuid
+
+    from invoice_agent.db.repositories import invoices as invoices_repo
+    from invoice_agent.db.repositories import reference
+    from invoice_agent.domain import accounting
+    from invoice_agent.tools import guards
+
+    invoice_id = _uuid.UUID(state["invoice_id"])
+    approval_id = _uuid.UUID(state["approval_id"])
+
+    with get_engine().begin() as conn:
+        row = invoices_repo.get_by_id(conn, invoice_id)
+        if row is None:
+            raise ValueError(f"invoice not found: {invoice_id}")
+        cat_row = reference.get_category(conn, row["category"]) if row["category"] else None
+        if cat_row is None:
+            raise ValueError(
+                f"{invoice_id}: approved but its category {row['category']!r} has no seeded "
+                "accounts — nothing to book against, and inventing one is what M4-D removed"
+            )
+        accounts = accounting.CategoryAccounts(
+            debit_account=cat_row["debit_account"],
+            debit_name=cat_row["name_vi"],
+            vat_account=cat_row["vat_account"],
+            vat_name="Thuế GTGT được khấu trừ" if cat_row["vat_account"] else None,
+            credit_account=cat_row["credit_account"],
+            credit_name="Phải trả cho người bán",
+        )
+        invoice_data = _rebuild_invoice_data(conn, invoice_id)
+        lines = accounting.build_journal_entry(invoice_data, accounts)
+        entry_id = guards.create_journal_entry(
+            conn,
+            invoice_id=invoice_id,
+            posting_authority="human_approved",
+            approval_id=approval_id,
+            entry_date=invoice_data.issue_date,
+            lines=lines,
+            # The ONLY place `human:` is added. See ApprovalState.decided_by.
+            actor=f"human:{state['decided_by']}",
+        )
+    return {"entry_id": str(entry_id), "status": "posted"}
+
+
+def _rebuild_invoice_data(conn: Any, invoice_id: Any) -> Any:
+    """Rebuild `InvoiceData` from the DATABASE, not from the snapshot.
+
+    The snapshot is stringified JSON built for a human to read, and it may be
+    days old. The journal entry must be computed from the source of truth, by
+    the same `accounting.build_journal_entry` the auto path uses — otherwise
+    the two paths could book different numbers for the same invoice.
+    """
+    from invoice_agent.db.repositories import invoices as invoices_repo
+    from invoice_agent.extraction.models import InvoiceData, InvoiceLine
+
+    row = invoices_repo.get_by_id(conn, invoice_id)
+    if row is None:
+        raise ValueError(f"invoice not found: {invoice_id}")
+    lines = [
+        InvoiceLine(
+            line_no=line["line_no"],
+            description=line["description"],
+            unit=line["unit"],
+            quantity=line["quantity"],
+            unit_price=line["unit_price"],
+            amount=line["amount"],
+            vat_rate=line["vat_rate"],
+            vat_amount=line["vat_amount"],
+            item_kind=line["item_kind"],
+            ext=line["ext"],
+        )
+        for line in invoices_repo.get_lines(conn, invoice_id)
+    ]
+    return InvoiceData(
+        template_no=row["template_no"],
+        invoice_series=row["invoice_series"],
+        invoice_number=row["invoice_number"],
+        seller_tax_code=row["seller_tax_code"],
+        seller_name=None,
+        buyer_tax_code=row["buyer_tax_code"],
+        issue_date=row["issue_date"],
+        currency=row["currency"],
+        exchange_rate=row["exchange_rate"],
+        subtotal=row["subtotal"],
+        vat_amount=row["vat_amount"],
+        total_amount=row["total_amount"],
+        total_in_words=row["total_in_words"],
+        ext=row["ext"],
+        lines=lines,
+    )
+
+
+
+def record_rejection_node(state: ApprovalState) -> dict[str, Any]:
+    import uuid as _uuid
+
+    from invoice_agent.db.repositories import invoices as invoices_repo
+
+    with get_engine().begin() as conn:
+        invoices_repo.set_status(conn, _uuid.UUID(state["invoice_id"]), "rejected")
+    return {"status": "rejected"}
+
+
+def route_after_decision(state: ApprovalState) -> str:
+    """`edited` posts. A reviewer who corrected a field and let the invoice
+    through has approved it — decided in M5-A spec §4.1 so this inherits an
+    answer rather than a guess.
+    """
+    return "post_entry" if state["decision"] in ("approved", "edited") else "record_rejection"
+
+
+def build_approval_graph(*, checkpointer: Any = None) -> Any:
     from langgraph.graph import END, START, StateGraph
 
     builder = StateGraph(ApprovalState)
     builder.add_node("load_snapshot", load_snapshot_node)
     builder.add_node("suggest", suggest_node)
     builder.add_node("approval_gate", approval_gate_node)
+    builder.add_node("apply_decision", apply_decision_node)
+    builder.add_node("post_entry", post_entry_node)
+    builder.add_node("record_rejection", record_rejection_node)
 
     builder.add_edge(START, "load_snapshot")
     builder.add_edge("load_snapshot", "suggest")
     builder.add_edge("suggest", "approval_gate")
-    builder.add_edge("approval_gate", END)
+    builder.add_edge("approval_gate", "apply_decision")
+    builder.add_conditional_edges(
+        "apply_decision",
+        route_after_decision,
+        {"post_entry": "post_entry", "record_rejection": "record_rejection"},
+    )
+    builder.add_edge("post_entry", END)
+    builder.add_edge("record_rejection", END)
 
     return builder.compile(checkpointer=checkpointer)
+
 

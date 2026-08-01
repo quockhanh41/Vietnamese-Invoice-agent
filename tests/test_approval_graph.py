@@ -321,3 +321,110 @@ def test_deciding_an_invoice_closes_its_flags(committed_rows, decision):
     assert rows[0]["resolved_at"] is not None
 
 
+@pytest.mark.parametrize("decision", ["approved", "edited"])
+def test_an_approved_invoice_posts_with_human_authority(committed_rows, decision):
+    from invoice_agent.db.engine import get_engine
+    from invoice_agent.db.repositories import invoices, journal
+
+    db_id, approval_id = _persisted_invoice(committed_rows)
+    state = {
+        **_initial_state(db_id, approval_id),
+        "decision": decision,
+        "decided_by": "ketoan",
+    }
+    state.update(approval.load_snapshot_node(state))
+    approval.apply_decision_node(state)
+    out = approval.post_entry_node(state)
+
+    with get_engine().begin() as conn:
+        entry = journal.get_for_invoice(conn, db_id)
+        assert invoices.get_by_id(conn, db_id)["status"] == "posted"
+    assert entry["posting_authority"] == "human_approved"
+    assert entry["approval_id"] == approval_id
+    assert out["entry_id"] == str(entry["id"])
+
+
+def test_the_audit_actor_is_prefixed_exactly_once(committed_rows):
+    """Spec §4.5. `decided_by` is bare in `approvals`; `human:` is added only
+    here. Prefixing an already-prefixed value yields `human:human:ketoan`, which
+    no constraint rejects and no other test would notice.
+    """
+    from sqlalchemy import select
+
+    from invoice_agent.db import models
+    from invoice_agent.db.engine import get_engine
+
+    db_id, approval_id = _persisted_invoice(committed_rows)
+    state = {
+        **_initial_state(db_id, approval_id),
+        "decision": "approved",
+        "decided_by": "ketoan",
+    }
+    state.update(approval.load_snapshot_node(state))
+    approval.apply_decision_node(state)
+    approval.post_entry_node(state)
+
+    with get_engine().begin() as conn:
+        actors = {
+            r["actor"]
+            for r in conn.execute(
+                select(models.audit_log).where(models.audit_log.c.target_id == str(db_id))
+            ).mappings()
+        }
+    assert actors == {"human:ketoan"}
+
+
+def test_a_rejected_invoice_is_marked_rejected_and_never_posted(committed_rows):
+    from invoice_agent.db.engine import get_engine
+    from invoice_agent.db.repositories import invoices, journal
+
+    db_id, approval_id = _persisted_invoice(committed_rows)
+    state = {
+        **_initial_state(db_id, approval_id),
+        "decision": "rejected",
+        "decided_by": "ketoan",
+        "reason": "hóa đơn trùng",
+    }
+    state.update(approval.load_snapshot_node(state))
+    approval.apply_decision_node(state)
+    approval.record_rejection_node(state)
+
+    with get_engine().begin() as conn:
+        assert journal.get_for_invoice(conn, db_id) is None
+        assert invoices.get_by_id(conn, db_id)["status"] == "rejected"
+
+
+@pytest.mark.parametrize(
+    ("decision", "expected"),
+    [
+        ("approved", "post_entry"),
+        ("edited", "post_entry"),
+        ("rejected", "record_rejection"),
+    ],
+)
+def test_routing_after_the_decision(decision, expected):
+    assert approval.route_after_decision({"decision": decision}) == expected
+
+
+def test_a_guard_denial_in_post_entry_is_not_swallowed(committed_rows):
+    """Spec §4.5. In `auto_post` a denial routes the invoice to a human; here a
+    human has ALREADY decided, so a denial means the guard and the reviewer
+    disagree. Absorbing it would hide exactly the disagreement the guard exists
+    to surface.
+    """
+    from invoice_agent.tools import guards
+
+    db_id, approval_id = _persisted_invoice(committed_rows)
+    state = {
+        **_initial_state(db_id, approval_id),
+        "decision": "approved",
+        "decided_by": "ketoan",
+    }
+    state.update(approval.load_snapshot_node(state))
+    # Deliberately NOT calling apply_decision — the approvals row stays
+    # undecided, which is precisely what the guard refuses.
+    with pytest.raises(guards.GuardDenied):
+        approval.post_entry_node(state)
+
+
+
