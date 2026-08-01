@@ -1,0 +1,48 @@
+# gitleaks configuration.
+#
+# WHY THIS FILE EXISTS. M4-C committed 762 recorded LLM fixtures under
+# `tests/fixtures/llm_cache/`, and every one carries a `"key"` field holding the
+# sha256 that identifies the cached call. gitleaks' `generic-api-key` heuristic
+# sees `"key": "<64 hex chars>"` and reports a credential, so CI went red on
+# 2026-08-01 for a repository containing no leaked credential at all.
+#
+# VERIFIED BEFORE ALLOWLISTING, not after — an allowlist written on the
+# assumption that a finding is false is how a real leak gets waved through. All
+# 762 fixtures were checked on 2026-08-01:
+#   * every `key` is a sha256 whose first 16 hex ARE the filename, i.e. the
+#     cache key `llm/cache.py::make_key` computes — 0 exceptions;
+#   * 0 fixtures contain any configured GROQ/GEMINI/OPENROUTER key verbatim;
+#   * 0 fixtures match `gsk_…` / `AIza…` / `sk-…`.
+# `cache.py` is explicit that the API key is deliberately NOT part of the cache
+# key, precisely so recorded fixtures are safe to commit.
+#
+# ── THE ALLOWLIST WAS WRONG TWICE BEFORE IT WAS RIGHT, so keep the evidence ──
+#
+# Mutation test: plant a correctly-shaped `AIza` + 35-char key inside one of
+# these same fixtures and re-scan. A usable allowlist must still report it.
+#
+#   no allowlist                        -> 762 findings  (planted key among them)
+#   paths + regexes, matchCondition AND ->   2 findings  ❌ planted key MISSED
+#   regexes matching the whole line     -> 762 findings  ❌ never matched at all
+#   regexes matching the SECRET (below) ->   3 findings  ✅ planted key caught
+#
+# The path-scoped version silenced the entire file — the failure mode that makes
+# an allowlist worse than the finding it hides. The line-scoped regex matched
+# nothing, because gitleaks tests an allowlist regex against the SECRET it
+# extracted, not the surrounding text.
+#
+# So exactly one thing is allowlisted: a bare 64-character lowercase hex string.
+# No provider credential has that shape — `gsk_…`, `AIza…` and `sk-…` all fail
+# it — so a real key committed anywhere, including into these very fixtures, is
+# still reported.
+#
+# The lesson §M1 recorded still stands and this does not weaken it: gitleaks
+# finds tokens, not PII, and `.gitignore` remains the only defence for the
+# latter.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "sha256 cache keys in recorded LLM replay fixtures — not credentials"
+regexes = ['''^[0-9a-f]{64}$''']
