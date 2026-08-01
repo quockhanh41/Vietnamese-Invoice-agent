@@ -19,6 +19,7 @@ fail, it just stops PRICE_OUTLIER ever firing.
 
 import operator
 import uuid
+from decimal import Decimal
 from typing import Annotated, Any, TypedDict
 
 from invoice_agent.extraction.models import InvoiceData
@@ -102,3 +103,176 @@ def enrich_one(task: dict[str, Any], *, graph: Any) -> dict[str, Any]:
         ],
         "failed": [],
     }
+
+
+def serial_join(state: BatchState, *, conn: Any = None) -> dict[str, Any]:
+    """Persist, profile, de-duplicate and reconcile — ONE transaction.
+
+    Constraint 2: the batch must never end with invoices recorded and budgets
+    not drawn against them, so this is the batch's single commit point. A
+    failure here loses persistence but not the expensive work: `llm_calls` rows
+    were written inline during enrichment and survive independently.
+    """
+    if conn is not None:
+        return _join(conn, state)
+    from invoice_agent.db.engine import get_engine
+
+    with get_engine().begin() as owned:
+        return _join(owned, state)
+
+
+def _join(conn: Any, state: BatchState) -> dict[str, Any]:
+    from typing import cast
+
+    from sqlalchemy import select
+
+    from invoice_agent.db import models
+    from invoice_agent.db.repositories import (
+        batches,
+        budget_consumption,
+        flags,
+        invoices,
+        vendors,
+    )
+    from invoice_agent.domain import anomaly, findings
+    from invoice_agent.domain import budget as domain_budget
+    from invoice_agent.extraction.models import InvoiceData
+    from invoice_agent.memory import vendor_profile
+
+    survivors = [e for e in state["enriched"] if e.get("extracted") is not None]
+
+    def _canonical_key(e: EnrichedInvoice) -> tuple[Any, str, str]:
+        data = cast(InvoiceData, e["extracted"])
+        return (data.issue_date, data.invoice_series, data.invoice_number)
+
+    ordered = sorted(survivors, key=_canonical_key)
+
+    batch_uuid = (
+        uuid.UUID(state["batch_id"])
+        if isinstance(state["batch_id"], str)
+        else state["batch_id"]
+    )
+    batches.ensure_batch(conn, batch_uuid)
+    persisted: list[dict[str, Any]] = []
+    raised: list[dict[str, Any]] = []
+    db_id_map: dict[str, uuid.UUID] = {}
+    priors: list[anomaly.InvoiceKey] = []
+
+    for e in ordered:
+        inv = cast(InvoiceData, e["extracted"])
+        assert inv.seller_tax_code is not None
+        vendors.ensure_vendor(conn, inv.seller_tax_code, inv.seller_name)
+        db_id = invoices.insert_with_lines(
+            conn,
+            inv,
+            batch_id=batch_uuid,
+            source_type=e["source_type"],
+            source_path=e["source_path"],
+        )
+
+        if db_id is None:
+            raised.append({"invoice_id": e["invoice_id"], "code": findings.DUPLICATE_INVOICE})
+            continue
+
+        db_id_map[e["invoice_id"]] = db_id
+        persisted.append({"invoice_id": e["invoice_id"], "db_id": str(db_id)})
+        vendor_profile.apply_invoice(
+            conn,
+            tax_code=inv.seller_tax_code,
+            amount=Decimal(inv.total_amount),
+            category=getattr(inv, "category", None),
+            department=getattr(inv, "department", None),
+        )
+
+        cand = anomaly.InvoiceKey(
+            seller_tax_code=inv.seller_tax_code,
+            invoice_number=inv.invoice_number,
+            issue_date=inv.issue_date,
+            total_amount=Decimal(inv.total_amount),
+        )
+        near_dup = anomaly.near_duplicate(cand, priors)
+        priors.append(cand)
+
+        if near_dup:
+            flags.raise_flag(
+                conn,
+                db_id,
+                code=near_dup.code,
+                severity=near_dup.severity,
+                raised_by=near_dup.raised_by,
+                detail=near_dup.detail,
+            )
+            raised.append({"invoice_id": e["invoice_id"], "code": near_dup.code})
+
+    # Group survivors by department
+    by_dept: dict[str, list[tuple[EnrichedInvoice, InvoiceData]]] = {}
+    for e in ordered:
+        data_obj = cast(InvoiceData, e["extracted"])
+        dept = getattr(data_obj, "department", None) or "OTHER"
+        by_dept.setdefault(dept, []).append((e, data_obj))
+
+    consumption_out: list[dict[str, Any]] = []
+    for dept in sorted(by_dept.keys()):
+        dept_items = by_dept[dept]
+        first_inv = dept_items[0][1]
+        period = first_inv.issue_date.strftime("%Y-%m")
+
+        stmt = select(models.budgets).where(
+            models.budgets.c.department_code == dept,
+            models.budgets.c.period == period,
+        ).with_for_update()
+        budget_row = conn.execute(stmt).mappings().first()
+
+        limit = Decimal(budget_row["amount_limit"]) if budget_row else Decimal("50000000")
+        warn_pct = Decimal(budget_row["warn_threshold_pct"]) if budget_row else Decimal("0.8")
+
+        inputs = [
+            domain_budget.BudgetInput(
+                invoice_id=e["invoice_id"],
+                issue_date=inv.issue_date,
+                invoice_series=inv.invoice_series,
+                invoice_number=inv.invoice_number,
+                amount=Decimal(inv.total_amount),
+            )
+            for e, inv in dept_items
+        ]
+
+        consumptions = domain_budget.consume(limit, warn_pct, inputs)
+        for c in consumptions:
+            consumption_out.append(
+                {
+                    "invoice_id": c.invoice_id,
+                    "amount": str(c.amount),
+                    "balance_before": str(c.balance_before),
+                    "balance_after": str(c.balance_after),
+                    "sequence_no": c.sequence_no,
+                }
+            )
+            if budget_row and c.invoice_id in db_id_map:
+                budget_consumption.record_consumption(
+                    conn,
+                    budget_id=budget_row["id"],
+                    invoice_id=db_id_map[c.invoice_id],
+                    amount=c.amount,
+                    balance_before=c.balance_before,
+                    balance_after=c.balance_after,
+                    sequence_no=c.sequence_no,
+                )
+            for f in c.findings:
+                raised.append({"invoice_id": c.invoice_id, "code": f.code})
+                if c.invoice_id in db_id_map:
+                    flags.raise_flag(
+                        conn,
+                        db_id_map[c.invoice_id],
+                        code=f.code,
+                        severity=f.severity,
+                        raised_by=f.raised_by,
+                        detail=f.detail,
+                    )
+
+    return {
+        "persisted": persisted,
+        "consumption": consumption_out,
+        "raised": raised,
+    }
+

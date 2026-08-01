@@ -82,3 +82,25 @@ def sample_invoice():
         ).read_bytes()
     )
 
+
+@pytest.fixture
+def three_mkt_invoices():
+    """The corpus's budget case: three MKT invoices whose canonical order is the
+    REVERSE of their invoice-number order, so a sorted implementation and an
+    unsorted one give different answers (defects.py:163)."""
+    import json
+    import pathlib
+
+    from invoice_agent.extraction.xml_parser import parse_invoice_xml
+
+    manifest = pathlib.Path("corpus/manifest.jsonl")
+    if not manifest.exists():
+        pytest.skip("corpus not generated — run `make generate` proposed")
+    rows = {r["invoice_id"]: r for r in map(json.loads, manifest.open(encoding="utf-8"))}
+    out = []
+    for inv_id in ("INV-0001", "INV-0002", "INV-0003"):
+        record = rows[inv_id]
+        out.append((inv_id, parse_invoice_xml(pathlib.Path(record["path"]).read_bytes())))
+    return out
+
+

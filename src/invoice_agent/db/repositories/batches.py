@@ -16,6 +16,17 @@ def create_batch(conn: Connection, label: str | None = None) -> uuid.UUID:
     return batch_id
 
 
+def ensure_batch(conn: Connection, batch_id: uuid.UUID, label: str | None = None) -> None:
+    from sqlalchemy.dialects.postgresql import insert
+
+    stmt = (
+        insert(models.batches)
+        .values(id=batch_id, label=label, status="running")
+        .on_conflict_do_nothing(index_elements=["id"])
+    )
+    conn.execute(stmt)
+
+
 def complete_batch(
     conn: Connection, batch_id: uuid.UUID, *, status: str, invoice_count: int
 ) -> None:
