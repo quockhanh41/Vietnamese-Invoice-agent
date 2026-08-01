@@ -86,3 +86,75 @@ def test_generate_emits_gate_batch_json(tmp_path):
     assert payload["invoice_ids"] == list(gate_batch.GATE_BATCH_IDS)
     assert payload["expected_breach_id"] == gate_batch.EXPECTED_BREACH_ID
     assert len(payload["balance_after_chain"]) == 3
+
+
+def _declared_comments() -> dict[str, str]:
+    """Parse the per-id comments in the frozen list.
+
+    Format, as written by the M4-A discovery script:
+        "INV-0001",  # MKT / MARKETING — budget_overrun, new_vendor
+    """
+    import pathlib
+    import re
+
+    source = pathlib.Path("scripts/generator/gate_batch.py").read_text(encoding="utf-8")
+    out = {}
+    for m in re.finditer(r'"(INV-\d+)",\s*#\s*(.+)', source):
+        out[m.group(1)] = m.group(2).strip()
+    return out
+
+
+def test_gate_batch_comments_still_describe_their_invoices(tmp_path):
+    """The assertion whose absence let the batch drift.
+
+    Measured 2026-08-01: INV-0122 and INV-0123 were commented "clean" while the
+    corpus had made them `unreadable_pdf`. M4-B's regeneration shifted
+    `_allocate_indices` consumption, so the frozen ids moved to different
+    invoices — and every existing assertion (count, existence, defect coverage,
+    MKT membership, breach chain) still passed, because none of them looks at
+    what an id actually IS.
+
+    This parses the comments and checks them against the corpus, so the next
+    regeneration that moves an id fails loudly instead of silently.
+    """
+    _out, records = build(tmp_path)
+    by_id = {r["invoice_id"]: r for r in records}
+    comments = _declared_comments()
+
+    assert set(comments) == set(gate_batch.GATE_BATCH_IDS), (
+        "every frozen id needs a comment and vice versa"
+    )
+
+    wrong = []
+    for inv_id, comment in comments.items():
+        record = by_id[inv_id]
+        head, _, defect_text = comment.partition("—")
+        dept, _, category = head.strip().partition("/")
+        expected_defects = (
+            set()
+            if defect_text.strip() == "clean"
+            else {d.strip() for d in defect_text.split(",") if d.strip()}
+        )
+        actual = set(record["defects"])
+        if dept.strip() != record["department"] or category.strip() != record["category"]:
+            wrong.append(f"{inv_id}: comment says {head.strip()}, corpus says "
+                         f"{record['department']} / {record['category']}")
+        if expected_defects != actual:
+            wrong.append(f"{inv_id}: comment says {expected_defects or 'clean'}, "
+                         f"corpus says {actual or 'clean'}")
+    assert not wrong, wrong
+
+
+def test_gate_batch_source_types_match_the_declaration(tmp_path):
+    """Two members are deliberately `unreadable_pdf` — they exercise "one
+    corrupt file does not kill the batch" inside the gate itself rather than in
+    a contrived side test. Pinned so neither the count nor the intent drifts."""
+    _out, records = build(tmp_path)
+    by_id = {r["invoice_id"]: r for r in records}
+    chosen = [by_id[i] for i in gate_batch.GATE_BATCH_IDS]
+
+    pdfs = [r["invoice_id"] for r in chosen if r["source_type"] != "xml"]
+    assert sorted(pdfs) == sorted(gate_batch.DELIBERATE_PDF_MEMBERS)
+    assert all("unreadable_pdf" in by_id[i]["defects"] for i in pdfs)
+    assert len(chosen) - len(pdfs) == 28
+

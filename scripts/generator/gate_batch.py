@@ -30,6 +30,22 @@ import pathlib
 from decimal import Decimal
 from typing import Any
 
+# The two members that are NOT XML, named so the composition cannot drift
+# unnoticed again. They are `unreadable_pdf` — deliberately corrupt files —
+# and they are in the batch ON PURPOSE: they exercise the gate's own criterion
+# that one corrupt file lands in `failed`/`manual_queue` without killing the
+# batch, inside the gate rather than in a contrived side test. M3-C established
+# they reach `manual_queue` without spending a token, so they need no fixture
+# and the gate still replays with no API key.
+#
+# They arrived by accident, not design: M4-B's regeneration shifted
+# `_allocate_indices` consumption and moved these two ids onto different
+# invoices, while every assertion then in `test_gate_batch.py` kept passing
+# because none looked at what an id actually was (spec 2026-08-01-m4d §1.1).
+# Keeping them is a decision; the two tests added with this comment are what
+# make it a decision rather than a drift.
+DELIBERATE_PDF_MEMBERS: tuple[str, ...] = ("INV-0122", "INV-0123")
+
 # ⚠️ FROZEN LIST — ids discovered from the corpus regenerated at
 # count=300, seed=42 by plan 2026-07-31-m4a Task 7 step 1. If regeneration moves
 # a defect off one of these, tests/test_gate_batch.py goes red rather than the
@@ -41,16 +57,16 @@ GATE_BATCH_IDS: tuple[str, ...] = (
     "INV-0060",  # OPS / TOOLS — wrong_vat_rate
     "INV-0070",  # OPS / TOOLS — exact_duplicate
     "INV-0080",  # SALES / MARKETING — near_duplicate
-    "INV-0088",  # OPS / LOGISTICS — price_outlier, new_vendor
-    "INV-0089",  # ADMIN / UTILITIES — price_outlier, new_vendor
+    "INV-0088",  # OPS / LOGISTICS — price_outlier
+    "INV-0089",  # ADMIN / UTILITIES — price_outlier
     "INV-0005",  # OPS / LOGISTICS — clean
     "INV-0007",  # OPS / TOOLS — clean
     "INV-0009",  # IT / IT_SERVICES — clean
     "INV-0011",  # SALES / LOGISTICS — clean
     "INV-0013",  # OPS / TOOLS — clean
     "INV-0015",  # IT / IT_SERVICES — clean
-    "INV-0122",  # IT / IT_SERVICES — clean
-    "INV-0123",  # ADMIN / OFFICE_SUPPLIES — clean
+    "INV-0122",  # IT / IT_SERVICES — unreadable_pdf
+    "INV-0123",  # ADMIN / OFFICE_SUPPLIES — unreadable_pdf
     "INV-0124",  # OPS / LOGISTICS — clean
     "INV-0125",  # ADMIN / UTILITIES — clean
     "INV-0126",  # OPS / TOOLS — clean
