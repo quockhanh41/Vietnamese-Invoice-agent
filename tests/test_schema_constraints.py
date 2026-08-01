@@ -236,29 +236,31 @@ def test_one_invoice_cannot_be_posted_twice(runtime_conn):
         )
 
 
-def test_no_production_caller_of_journal_repository():
-    """Spec §6.1 — an ORDERING RISK made measurable.
+def test_only_the_guard_may_call_the_journal_repository():
+    """Was `test_no_production_caller_of_journal_repository`. M5.3 has landed,
+    so the repository now HAS a production caller — exactly one. Its docstring
+    said to delete this test; narrowing it to an allowlist keeps the invariant
+    that made the original worth writing, at the cost of one line.
 
-    This repository can create a journal entry, and its code-layer guard
-    (`tools/guards.py`, item 5.3) does not exist until M5. Until then the
-    protections are the DB constraints above plus the fact that NOTHING CALLS
-    IT. That last one is an assumption, so it gets asserted.
-
-    When M5.3 lands, DELETE this test and let
-    `test_never_post_without_approval.py` take over.
+    `tools/guards.py` is the only door because it holds the checks: the
+    approvals re-read, the open-flag predicate and the idempotency fork. A
+    second caller bypasses all three.
     """
     import pathlib
 
+    ALLOWED = {"journal.py", "guards.py"}
     src = pathlib.Path("src/invoice_agent")
     offenders = [
         p
         for p in src.rglob("*.py")
-        if "repositories.journal" in p.read_text(encoding="utf-8")
-        or "repositories import journal" in p.read_text(encoding="utf-8")
+        if p.name not in ALLOWED
+        and (
+            "repositories.journal" in p.read_text(encoding="utf-8")
+            or "repositories import journal" in p.read_text(encoding="utf-8")
+        )
     ]
-    offenders = [p for p in offenders if p.name != "journal.py"]
     assert not offenders, (
-        f"journal repository gained a production caller before its guard exists: {offenders}"
+        f"journal repository must be reached through tools/guards.py: {offenders}"
     )
 
 
