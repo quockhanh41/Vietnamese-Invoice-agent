@@ -139,3 +139,66 @@ def test_a_guard_denial_is_409_not_500(requires_postgres):
     assert response.status_code == 409
     assert "open flag" in response.json()["detail"]
 
+
+# ---------------------------------------------------------------------------
+# Task 3: /invoices and /reports
+# ---------------------------------------------------------------------------
+
+
+def _client():
+    from fastapi.testclient import TestClient
+
+    from invoice_agent.api.app import create_app
+
+    return TestClient(create_app())
+
+
+def test_get_invoice_returns_lines_and_open_flags(committed_rows):
+    db_id, _ = _persisted_invoice(committed_rows, flag=("PRICE_OUTLIER", "warn", "anomaly"))
+    with _client() as client:
+        response = client.get(f"/invoices/{db_id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["invoice"]["id"] == str(db_id)
+    assert body["lines"], "a reviewer needs the line items"
+    assert [f["code"] for f in body["flags"]] == ["PRICE_OUTLIER"]
+
+
+def test_get_an_unknown_invoice_is_404():
+    with _client() as client:
+        assert client.get(f"/invoices/{uuid.uuid4()}").status_code == 404
+
+
+def test_list_invoices_passes_its_filters_through(committed_rows):
+    db_id, _ = _persisted_invoice(committed_rows)
+    with _client() as client:
+        hit = client.get("/invoices", params={"department": "ADMIN"}).json()
+        miss = client.get("/invoices", params={"department": "MKT"}).json()
+    assert str(db_id) in [r["id"] for r in hit]
+    assert str(db_id) not in [r["id"] for r in miss]
+
+
+def test_every_report_endpoint_answers(committed_rows):
+    _persisted_invoice(committed_rows, flag=("PRICE_OUTLIER", "warn", "anomaly"))
+    with _client() as client:
+        assert client.get("/reports/budgets").status_code == 200
+        assert client.get("/reports/flags").status_code == 200
+        assert client.get("/reports/posting").status_code == 200
+        cost = client.get("/reports/cost")
+    assert cost.status_code == 200
+    assert "shadow_cost_usd" in cost.json()
+
+
+def test_the_budget_report_sends_money_as_strings(committed_rows):
+    """Amounts cross the wire as STRINGS. JSON numbers are IEEE 754 doubles and
+    this system decided at M1 that money is Decimal — 21618409.09000000 appears
+    in a real fixture, and a float loses the last đồng.
+
+    FastAPI's default encoder converts Decimal → float, silently discarding the
+    declared scale. budget_report stringifies at source so no caller can forget.
+    """
+    with _client() as client:
+        rows = client.get("/reports/budgets", params={"period": "2026-07"}).json()
+    mkt = next(r for r in rows if r["department_code"] == "MKT")
+    assert isinstance(mkt["amount_limit"], str)
+    assert mkt["amount_limit"] == "50000000"
