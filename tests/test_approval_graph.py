@@ -246,3 +246,78 @@ def test_the_gate_node_has_no_side_effect_beyond_the_interrupt():
             "nothing else — M1.5 measured that this node runs twice across a restart"
         )
 
+
+def test_apply_decision_commits_so_a_separate_connection_can_see_it(committed_rows):
+    """Spec §2.3 — the boundary that can rot silently.
+
+    `post_entry`'s guard re-reads `approvals` from Postgres. If the two nodes
+    shared a transaction the guard would read its own caller's uncommitted
+    write, verify nothing, and pass every ordinary test. So this asserts the
+    decision is visible from a connection the node never touched.
+    """
+    from invoice_agent.db.engine import get_engine
+    from invoice_agent.db.repositories import approvals as approvals_repo
+
+    db_id, approval_id = _persisted_invoice(committed_rows)
+    state = {
+        **_initial_state(db_id, approval_id),
+        "decision": "approved",
+        "decided_by": "ketoan",
+        "reason": "ok",
+    }
+    approval.apply_decision_node(state)
+
+    with get_engine().begin() as other:
+        row = approvals_repo.get_approval(other, approval_id)
+    assert row["decision"] == "approved"
+    assert row["decided_by"] == "ketoan", "decided_by is stored BARE, no human: prefix"
+
+
+def test_apply_decision_accepts_no_connection_parameter():
+    """Static guard on the same property. A `conn=` parameter is the one change
+    that would let a caller hand `apply_decision` the transaction `post_entry`
+    later reads on — re-creating the defect above with the behavioural test
+    still green, because the test above opens its own connection either way.
+    """
+    import inspect
+
+    assert "conn" not in inspect.signature(approval.apply_decision_node).parameters
+
+
+@pytest.mark.parametrize("decision", ["approved", "rejected"])
+def test_deciding_an_invoice_closes_its_flags(committed_rows, decision):
+    """M5-A spec §8 question 1, answered. A human has adjudicated the flags
+    either way. Left open, `invoices.status` says `flagged` forever,
+    `route_outcomes` keeps treating the invoice as blocked, and M5-C's queue
+    re-serves invoices somebody already decided.
+
+    The rows are NOT deleted — `resolved_at` is set, so §10.4's flag
+    false-positive metric can still count them.
+    """
+    from sqlalchemy import select
+
+    from invoice_agent.db import models
+    from invoice_agent.db.engine import get_engine
+    from invoice_agent.db.repositories import flags
+
+    db_id, approval_id = _persisted_invoice(
+        committed_rows, flag=("PRICE_OUTLIER", "warn", "anomaly")
+    )
+    state = {
+        **_initial_state(db_id, approval_id),
+        "decision": decision,
+        "decided_by": "ketoan",
+    }
+    approval.apply_decision_node(state)
+
+    with get_engine().begin() as conn:
+        assert flags.open_flags_for(conn, db_id) == []
+        rows = list(
+            conn.execute(
+                select(models.invoice_flags).where(models.invoice_flags.c.invoice_id == db_id)
+            ).mappings()
+        )
+    assert len(rows) == 1, "the flag row must survive; only resolved_at changes"
+    assert rows[0]["resolved_at"] is not None
+
+

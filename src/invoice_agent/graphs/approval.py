@@ -170,7 +170,48 @@ def approval_gate_node(state: ApprovalState) -> dict[str, Any]:
     }
 
 
+def apply_decision_node(state: ApprovalState) -> dict[str, Any]:
+    """Record the decision and close the flags. OWNS ITS TRANSACTION.
+
+    NO `conn` PARAMETER, deliberately. `post_entry` re-reads `approvals` from
+    Postgres to verify the decision persisted (design §5.3 step 2). If a caller
+    could hand this node the same transaction `post_entry` later reads on, the
+    guard would be verifying its own caller's uncommitted write — indistinguish-
+    able from a working guard in every test that does not mutate for it
+    (spec §2.3). Accepting no connection makes that arrangement unexpressible.
+
+    Flags are resolved on BOTH outcomes, which answers M5-A spec §8 question 1:
+    a human has adjudicated them either way. `resolved_at` is set; nothing is
+    deleted, so the false-positive metric can still count them. Note the
+    consequence: the DB trigger stops blocking `auto_clean` for this invoice.
+    It cannot be re-posted regardless — `UNIQUE(invoice_id)` and M5-A's
+    idempotency fork both hold.
+    """
+    import uuid as _uuid
+
+    from invoice_agent.db.repositories import approvals as approvals_repo
+    from invoice_agent.db.repositories import flags
+
+    invoice_id = _uuid.UUID(state["invoice_id"])
+    approval_id = _uuid.UUID(state["approval_id"])
+
+    with get_engine().begin() as conn:
+        approvals_repo.record_decision(
+            conn,
+            approval_id,
+            decision=state["decision"],
+            decided_by=state["decided_by"],
+            reason=state.get("reason"),
+            field_corrections=state.get("corrections"),
+        )
+        for row in flags.open_flags_for(conn, invoice_id):
+            flags.resolve_flag(conn, row["id"])
+
+    return {"status": "decided"}
+
+
 def build_approval_graph(*, checkpointer: Any = None) -> Any:
+
     from langgraph.graph import END, START, StateGraph
 
     builder = StateGraph(ApprovalState)
