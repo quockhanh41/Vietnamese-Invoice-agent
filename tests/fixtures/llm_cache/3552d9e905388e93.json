@@ -12,10 +12,10 @@
     }
   ],
   "model": "gemini/gemini-3.5-flash",
-  "recorded_at": "2026-08-01T01:17:49.189798+00:00",
-  "response": "{\n  \"agrees\": false,\n  \"proposed_category\": \"UTILITIES\",\n  \"proposed_department\": \"ADMIN\",\n  \"reason\": \"Nhà cung cấp là 'HỘ KINH DOANH XÂY DỰNG MINH ANH' chuyên về lĩnh vực xây dựng, không phù hợp với dịch vụ 'quảng cáo trực tuyến'. Rất có thể đây là chi phí sửa chữa, cải tạo văn phòng hoặc thi công phần cứng nhưng bị ghi sai dòng hàng hoặc phân loại nhầm bản chất. Cần phân loại về UTILITIES và bộ phận ADMIN để kiểm tra lại thực tế thi công.\"\n}",
+  "recorded_at": "2026-08-01T08:20:43.013453+00:00",
+  "response": "{\n  \"agrees\": false,\n  \"proposed_category\": \"OFFICE_SUPPLIES\",\n  \"proposed_department\": \"ADMIN\",\n  \"reason\": \"Nhà cung cấp là 'HỘ KINH DOANH XÂY DỰNG MINH ANH' chuyên về lĩnh vực xây dựng, không có chức năng cung cấp dịch vụ quảng cáo trực tuyến. Việc ghi nhận chi phí quảng cáo từ nhà cung cấp này là cực kỳ phi lý và có rủi ro thuế rất cao. Nhiều khả năng đây là chi phí sửa chữa, cải tạo văn phòng được hợp thức hóa sai lệch, hoặc hóa đơn không hợp lệ. Cần chuyển về bộ phận ADMIN kiểm tra lại bản chất dịch vụ xây dựng/sửa chữa.\"\n}",
   "usage": {
-    "completion_tokens": 791,
+    "completion_tokens": 769,
     "prompt_tokens": 474
   }
 }

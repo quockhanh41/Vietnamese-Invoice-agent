@@ -1,5 +1,5 @@
 {
-  "error": null,
+  "error": "RateLimitError: litellm.RateLimitError: RateLimitError: GroqException - {\"error\":{\"message\":\"Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kx9r2xzseersae573gmgbhxt` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 99965, Requested 2525. Please try again in 35m51.359999999s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing\",\"type\":\"tokens\",\"code\":\"rate_limit_exceeded\"}}\n",
   "key": "8dfe12c682bcbd50f2cadcd2e65876460a0dabcba59ab3ddecda5c442d4688d4",
   "messages": [
     {
@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-01T01:48:17.545347+00:00",
-  "response": "{\n  \"category\": \"TOOLS\",\n   \"department\": \"OPS\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dựa vào nội dung hóa đơn, dòng hàng mua dụng cụ sửa chữa cho bộ phận kỹ thuật\"\n}",
+  "recorded_at": "2026-08-01T08:20:45.725686+00:00",
+  "response": "",
   "usage": {
-    "completion_tokens": 52,
-    "prompt_tokens": 477
+    "completion_tokens": 0,
+    "prompt_tokens": 437
   }
 }

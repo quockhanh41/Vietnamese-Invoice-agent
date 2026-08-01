@@ -12,7 +12,7 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-01T01:19:52.208749+00:00",
+  "recorded_at": "2026-08-01T08:20:37.469397+00:00",
   "response": "{\n  \"category\": \"TOOLS\",\n   \"department\": \"OPS\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Máy móc nhỏ phục vụ xưởng lắp ráp thường được sử dụng trong hoạt động sản xuất, thuộc phạm vi của bộ phận vận hành (OPS) và được phân loại vào danh mục công cụ (TOOLS).\"\n}",
   "usage": {
     "completion_tokens": 76,

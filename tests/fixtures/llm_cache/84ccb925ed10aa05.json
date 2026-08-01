@@ -1,5 +1,5 @@
 {
-  "error": null,
+  "error": "RateLimitError: litellm.RateLimitError: RateLimitError: GroqException - {\"error\":{\"message\":\"Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kx9r2xzseersae573gmgbhxt` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 99967, Requested 521. Please try again in 7m1.632s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing\",\"type\":\"tokens\",\"code\":\"rate_limit_exceeded\"}}\n",
   "key": "84ccb925ed10aa05fe1903fec5ce926653ecbd1b8d903af0878ed837dd113600",
   "messages": [
     {
@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-01T01:47:58.490493+00:00",
-  "response": "{\n  \"category\": \"UTILITIES\",\n   \"department\": \"OPS\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Phí sử dụng điện năng khu vực kho\"\n}",
+  "recorded_at": "2026-08-01T08:20:43.980739+00:00",
+  "response": "",
   "usage": {
-    "completion_tokens": 42,
-    "prompt_tokens": 471
+    "completion_tokens": 0,
+    "prompt_tokens": 431
   }
 }

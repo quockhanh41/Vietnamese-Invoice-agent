@@ -188,7 +188,30 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
 
     for e in ordered:
         inv = cast(InvoiceData, e["extracted"])
-        assert inv.seller_tax_code is not None
+        if inv.seller_tax_code is None:
+            # RECORDED AND SKIPPED, never asserted. This was a bare
+            # `assert inv.seller_tax_code is not None`, and the first LIVE run
+            # of this batch — 2026-08-01, the max_concurrency measurement in
+            # docs/notes/2026-08-01-m5b-approval-graph.md — died on it: a vision
+            # extraction returned no seller tax code and the AssertionError took
+            # the WHOLE batch with it, all 30 invoices.
+            #
+            # Replay could never surface this. The recorded fixture always
+            # carries a tax code, so the assert never fires; only a live model
+            # produces the omission.
+            #
+            # Two things were wrong with it. It broke M4-D's constraint that one
+            # bad file must not end the batch — the reason `enrich_one` wraps
+            # every task in try/except. And `assert` is stripped under
+            # `python -O`, so the "protection" evaporates in exactly the
+            # deployment that needs it most.
+            #
+            # An invoice with no seller MST cannot be given an identity (the
+            # `invoices.seller_tax_code` NOT NULL column comment), so there is
+            # nothing to persist. It is surfaced with the vocabulary that
+            # already exists for it and the walk continues.
+            raised.append({"invoice_id": e["invoice_id"], "code": findings.TAX_CODE_MISSING})
+            continue
         vendors.ensure_vendor(conn, inv.seller_tax_code, inv.seller_name)
         cls = e.get("classification")
         db_id = invoices.insert_with_lines(

@@ -1,5 +1,5 @@
 {
-  "error": null,
+  "error": "RateLimitError: litellm.RateLimitError: RateLimitError: GroqException - {\"error\":{\"message\":\"Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kx9r2xzseersae573gmgbhxt` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 99965, Requested 528. Please try again in 7m5.952s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing\",\"type\":\"tokens\",\"code\":\"rate_limit_exceeded\"}}\n",
   "key": "5b4ae9a86e58daee2d926835def5ce6dc28f3bb0bda5bce9db677de1fd66cf3a",
   "messages": [
     {
@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-01T01:48:23.172626+00:00",
-  "response": "{\n  \"category\": \"IT_SERVICES\",\n   \"department\": \"IT\",\n   \"confidence\": 0.9,\n   \"reasoning\": \"Dịch vụ bảo trì hệ thống mạng nội bộ liên quan đến công nghệ thông tin\"\n}",
+  "recorded_at": "2026-08-01T08:20:45.426017+00:00",
+  "response": "",
   "usage": {
-    "completion_tokens": 51,
-    "prompt_tokens": 478
+    "completion_tokens": 0,
+    "prompt_tokens": 438
   }
 }

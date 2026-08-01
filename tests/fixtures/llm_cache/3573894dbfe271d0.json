@@ -1,5 +1,5 @@
 {
-  "error": "BadRequestError: litellm.BadRequestError: GeminiException BadRequestError - {\n  \"error\": {\n    \"code\": 403,\n    \"message\": \"Your project has been denied access. Please contact support.\",\n    \"status\": \"PERMISSION_DENIED\"\n  }\n}\n",
+  "error": null,
   "key": "3573894dbfe271d071325f348026ae7d4765e962f1973067a823a6a357339af9",
   "messages": [
     {
@@ -12,10 +12,10 @@
     }
   ],
   "model": "gemini/gemini-3.5-flash",
-  "recorded_at": "2026-08-01T01:48:07.630564+00:00",
-  "response": "",
+  "recorded_at": "2026-08-01T08:18:41.644297+00:00",
+  "response": "{\n  \"agrees\": false,\n  \"proposed_category\": \"TOOLS\",\n  \"proposed_department\": \"MKT\",\n  \"reason\": \"Phần mềm thiết kế đồ họa thường được sử dụng bởi nhân viên thiết kế thuộc bộ phận Marketing để phục vụ hoạt động truyền thông, quảng cáo, không phải do bộ phận IT sử dụng trực tiếp. Chi phí này cần được phân bổ về bộ phận MKT và phân loại vào nhóm TOOLS (công cụ/phần mềm làm việc).\"\n}",
   "usage": {
-    "completion_tokens": 0,
-    "prompt_tokens": 580
+    "completion_tokens": 863,
+    "prompt_tokens": 482
   }
 }

@@ -1,5 +1,5 @@
 {
-  "error": null,
+  "error": "RateLimitError: litellm.RateLimitError: RateLimitError: GroqException - {\"error\":{\"message\":\"Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kx9r2xzseersae573gmgbhxt` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 99966, Requested 2526. Please try again in 35m53.088s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing\",\"type\":\"tokens\",\"code\":\"rate_limit_exceeded\"}}\n",
   "key": "64278ec5c3bfec84f4af0717652608cb68e8dcf6b55d17e16a072157f604aca9",
   "messages": [
     {
@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-01T01:48:06.670775+00:00",
-  "response": "{\n  \"category\": \"IT_SERVICES\",\n   \"department\": \"IT\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Hóa đơn bao gồm mua license phần mềm thiết kế đồ họa\"\n}",
+  "recorded_at": "2026-08-01T08:20:44.481300+00:00",
+  "response": "",
   "usage": {
-    "completion_tokens": 47,
-    "prompt_tokens": 478
+    "completion_tokens": 0,
+    "prompt_tokens": 438
   }
 }

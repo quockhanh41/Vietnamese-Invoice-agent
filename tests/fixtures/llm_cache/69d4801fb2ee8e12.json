@@ -12,7 +12,7 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-01T01:46:30.697905+00:00",
+  "recorded_at": "2026-08-01T08:20:38.413735+00:00",
   "response": "{\n  \"category\": \"LOGISTICS\",\n   \"department\": \"OPS\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Phí last-mile delivery khu vực nội đô liên quan đến vận chuyển và giao hàng\"\n}",
   "usage": {
     "completion_tokens": 50,

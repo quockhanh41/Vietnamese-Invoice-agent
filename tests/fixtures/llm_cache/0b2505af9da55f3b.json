@@ -1,5 +1,5 @@
 {
-  "error": null,
+  "error": "RateLimitError: litellm.RateLimitError: RateLimitError: GroqException - {\"error\":{\"message\":\"Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kx9r2xzseersae573gmgbhxt` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 99967, Requested 516. Please try again in 6m57.312s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing\",\"type\":\"tokens\",\"code\":\"rate_limit_exceeded\"}}\n",
   "key": "0b2505af9da55f3b67734fddb0ee2a50f15327adb950639a9297a83bb9d64a4f",
   "messages": [
     {
@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-01T01:47:55.828601+00:00",
-  "response": "{\n  \"category\": \"LOGISTICS\",\n   \"department\": \"OPS\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Phụ phí xăng dầu tuyến đường dài liên quan đến vận chuyển và giao nhận hàng hóa\"\n}",
+  "recorded_at": "2026-08-01T08:20:43.973927+00:00",
+  "response": "",
   "usage": {
-    "completion_tokens": 52,
-    "prompt_tokens": 466
+    "completion_tokens": 0,
+    "prompt_tokens": 426
   }
 }

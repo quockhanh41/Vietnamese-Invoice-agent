@@ -1,5 +1,5 @@
 {
-  "error": null,
+  "error": "RateLimitError: litellm.RateLimitError: RateLimitError: GroqException - {\"error\":{\"message\":\"Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kx9r2xzseersae573gmgbhxt` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 99972, Requested 519. Please try again in 7m4.224s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing\",\"type\":\"tokens\",\"code\":\"rate_limit_exceeded\"}}\n",
   "key": "b28d15532c116fe8ff7d3ac5fedb5c870714cd6e0d4ca9909141da66ef953e64",
   "messages": [
     {
@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-01T01:17:03.521930+00:00",
-  "response": "{\n  \"category\": \"MARKETING\",\n   \"department\": \"MKT\",\n   \"confidence\": 0.9,\n   \"reasoning\": \"Chi phí quảng cáo trực tuyến\"\n}",
+  "recorded_at": "2026-08-01T08:20:39.628672+00:00",
+  "response": "",
   "usage": {
-    "completion_tokens": 40,
-    "prompt_tokens": 472
+    "completion_tokens": 0,
+    "prompt_tokens": 432
   }
 }

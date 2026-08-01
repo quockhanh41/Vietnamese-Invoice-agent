@@ -245,3 +245,31 @@ def test_an_info_only_invoice_is_validated_not_flagged(owner_conn):
     row = invoices_repo.get_by_id(owner_conn, uuid.UUID(result["persisted"][0]["db_id"]))
     assert row["status"] == "validated"
 
+
+
+def test_an_invoice_with_no_seller_tax_code_is_skipped_not_fatal(owner_conn):
+    """The defect the FIRST LIVE RUN found, 2026-08-01.
+
+    `_join` held a bare `assert inv.seller_tax_code is not None`. A live vision
+    extraction returned an invoice without one and the AssertionError took the
+    whole 30-invoice batch down with it.
+
+    Replay cannot reach this: the recorded fixture always carries a tax code, so
+    the assert never fires. Only a live model produces the omission — which is
+    the argument for having run the batch live at all.
+
+    Two things were wrong with the assert. It broke M4-D's constraint that one
+    bad file must not end the batch, and `assert` is stripped under `python -O`,
+    so it disappears in exactly the deployment that needs it.
+    """
+    from invoice_agent.domain import findings
+
+    state = _state_with_one_invoice(owner_conn)
+    state["enriched"][0]["extracted"] = state["enriched"][0]["extracted"].model_copy(
+        update={"seller_tax_code": None}
+    )
+
+    result = batch.serial_join(state, conn=owner_conn)
+
+    assert result["persisted"] == [], "an invoice with no MST has no identity to store"
+    assert {r["code"] for r in result["raised"]} == {findings.TAX_CODE_MISSING}

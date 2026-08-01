@@ -1,5 +1,5 @@
 {
-  "error": null,
+  "error": "RateLimitError: litellm.RateLimitError: RateLimitError: GroqException - {\"error\":{\"message\":\"Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kx9r2xzseersae573gmgbhxt` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 99965, Requested 517. Please try again in 6m56.448s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing\",\"type\":\"tokens\",\"code\":\"rate_limit_exceeded\"}}\n",
   "key": "3cf81f7bdff9eb6e91a64561911379a041bc53b7672754d456c9958ae1c65bd4",
   "messages": [
     {
@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-01T01:48:26.138841+00:00",
-  "response": "{\n  \"category\": \"OFFICE_SUPPLIES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Hóa đơn có nội dung 'Consumables văn phòng' cho thấy đây là chi phí liên quan đến văn phòng\"\n}",
+  "recorded_at": "2026-08-01T08:20:46.085724+00:00",
+  "response": "",
   "usage": {
-    "completion_tokens": 59,
-    "prompt_tokens": 467
+    "completion_tokens": 0,
+    "prompt_tokens": 427
   }
 }
