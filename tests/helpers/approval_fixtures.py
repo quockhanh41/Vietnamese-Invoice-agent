@@ -44,7 +44,7 @@ def committed_rows(requires_postgres):
             )
 
 
-def _persisted_invoice(created, *, category="OFFICE_SUPPLIES", flag=None):
+def _persisted_invoice(created, *, category="OFFICE_SUPPLIES", flag=None, batch_id: uuid.UUID | None = None):
     """Commit one invoice, optionally flagged, and open an approval for it.
 
     Returns (invoice_db_id, approval_id).
@@ -60,7 +60,8 @@ def _persisted_invoice(created, *, category="OFFICE_SUPPLIES", flag=None):
 
     with get_owner_engine().begin() as conn:
         db_id = invoices.insert_with_lines(
-            conn, data, source_type="xml", category=category, department="ADMIN"
+            conn, data, source_type="xml", category=category, department="ADMIN",
+            batch_id=batch_id,
         )
         assert db_id is not None
         created.append(db_id)
