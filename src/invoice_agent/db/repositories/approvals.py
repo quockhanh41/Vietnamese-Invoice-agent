@@ -69,3 +69,41 @@ def get_approval(conn: Connection, approval_id: uuid.UUID) -> dict[str, Any] | N
         .first()
     )
     return dict(row) if row else None
+
+
+def record_context(
+    conn: Connection,
+    approval_id: uuid.UUID,
+    *,
+    interrupt_payload: dict[str, Any],
+    flags_snapshot: dict[str, Any],
+    suggestions: dict[str, Any],
+) -> None:
+    """Fill the columns design §2.8 specifies, from the node BEFORE the gate.
+
+    Not from the gate: `approval_gate` must contain `interrupt()` and nothing
+    else, because M1.5 measured that node re-running from the top on resume.
+    """
+    conn.execute(
+        models.approvals.update()
+        .where(models.approvals.c.id == approval_id)
+        .values(
+            interrupt_payload=interrupt_payload,
+            flags_snapshot=flags_snapshot,
+            suggestions=suggestions,
+        )
+    )
+
+
+def get_by_invoice(conn: Connection, invoice_id: uuid.UUID) -> dict[str, Any] | None:
+    """The most recent approval for an invoice. `submit_decision` resolves a
+    thread through this."""
+    stmt = (
+        select(models.approvals)
+        .where(models.approvals.c.invoice_id == invoice_id)
+        .order_by(models.approvals.c.requested_at.desc())
+        .limit(1)
+    )
+    row = conn.execute(stmt).mappings().first()
+    return dict(row) if row else None
+
