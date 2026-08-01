@@ -1,4 +1,4 @@
-.PHONY: help install dev migrate seed rebuild-profiles generate db-stop db-reset test lint typecheck check api lock clean
+.PHONY: help install dev migrate seed rebuild-profiles generate db-stop db-reset test lint typecheck check api demo lock clean
 
 UV  := uv
 PY  := .venv/bin/python
@@ -19,6 +19,7 @@ help:
 	@echo "  make typecheck        - mypy"
 	@echo "  make check            - lint + typecheck + test (chạy trước khi commit)"
 	@echo "  make api              - chạy uvicorn dev server ở port 8000"
+	@echo "  make demo             - chạy API + Streamlit UI cùng lúc"
 	@echo "  make lock             - Sinh lại requirements.lock từ pyproject.toml"
 	@echo "  make clean            - Xoá cache"
 
@@ -71,6 +72,12 @@ check: lint typecheck test
 
 api:
 	.venv/bin/uvicorn invoice_agent.api.app:app --reload --port 8000
+
+demo:
+	@echo "API  → http://127.0.0.1:8000"
+	@echo "UI   → http://127.0.0.1:8501"
+	.venv/bin/uvicorn invoice_agent.api.app:app --port 8000 & \
+	.venv/bin/streamlit run src/invoice_agent/ui/app.py --server.port 8501 --server.headless true
 
 lock:
 	$(UV) pip compile pyproject.toml --extra dev -o requirements.lock
