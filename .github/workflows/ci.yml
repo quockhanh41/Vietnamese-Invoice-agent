@@ -85,10 +85,26 @@ jobs:
       # Lock chỉ có nghĩa nếu không ai resolve lại sau nó.
       # Cùng lệnh với Makefile, nên CI chạy đúng thứ dev chạy.
       - name: Lint (ruff)
-        run: .venv/bin/ruff check src tests migrations
+        run: .venv/bin/ruff check src tests migrations scripts
 
       - name: Typecheck (mypy)
         run: .venv/bin/mypy
+
+      - name: Seed reference data
+        # `budgets` rows are what `reconcile_budget` locks and draws against.
+        # Without them the serial join finds no budget row and skips every
+        # department — the batch tests then measure nothing.
+        run: .venv/bin/python -m scripts.seed_reference
+
+      - name: Generate corpus (300 invoices, seed 42)
+        # WITHOUT THIS, M4's GATE DOES NOT RUN IN CI. Measured 2026-08-01 by
+        # hiding `corpus/` and re-running: 6 tests SKIP, including
+        # `test_budget_serialization` — portfolio test 3 of the six that plan §8
+        # calls the portfolio — and `test_gate_batch_end_to_end_replay`, which is
+        # M4's entire gate. Both skip silently, so CI stayed green over a commit
+        # whose gate test failed locally. The corpus is deterministic from
+        # (count=300, seed=42) and gitignored, so it must be built here.
+        run: make generate
 
       - name: Test (pytest)
         run: .venv/bin/python -m pytest

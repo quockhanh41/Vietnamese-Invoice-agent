@@ -34,6 +34,7 @@ class EnrichedInvoice(TypedDict):
     invoice_id: str
     source_path: str
     source_type: str
+    department: str
     extracted: InvoiceData | None
     findings: list[Any]
     signals: list[Any]
@@ -49,6 +50,8 @@ class BatchState(TypedDict):
     failed: Annotated[list[dict[str, str]], operator.add]
     persisted: list[dict[str, Any]]
     consumption: list[dict[str, Any]]
+    raised: list[dict[str, Any]]
+    unroutable: list[str]
     auto: list[str]
     needs_approval: list[str]
     status: str
@@ -91,16 +94,28 @@ def enrich_one(task: dict[str, Any], *, graph: Any) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - a bad file must not end the batch
         return {"enriched": [], "failed": [{"invoice_id": invoice_id, "error": str(exc)}]}
 
+    extracted = result.get("extracted")
+    # No `or "MKT"` default. A department this wrapper cannot determine is a
+    # fact to carry, not a value to invent — the serial join skips an invoice it
+    # cannot route rather than reconciling it against somebody else's budget.
+    dept = task.get("department") or getattr(extracted, "department", None)
     return {
         "enriched": [
             {
-                "invoice_id": invoice_id,
+                "invoice_id": task["invoice_id"],
                 "source_path": task["source_path"],
                 "source_type": task["source_type"],
-                "extracted": result.get("extracted"),
-                "findings": result.get("findings") or [],
-                "signals": result.get("signals") or [],
-                "status": result.get("status") or "",
+                "department": dept,
+                "extracted": extracted,
+                "findings": result.get("findings", []),
+                "signals": result.get("signals", []),
+                # PROPAGATED, not overwritten. `manual_queue_node` returns
+                # `{"status": "manual_queue"}` (enrichment.py:196) — a CONTROLLED
+                # give-up, which is a different outcome from a successful
+                # enrichment. Hardcoding "enriched" here made the two
+                # indistinguishable, and M5's reviewer queue is exactly what
+                # needs to tell them apart.
+                "status": result.get("status") or "enriched",
             }
         ],
         "failed": [],
@@ -206,18 +221,27 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
             )
             raised.append({"invoice_id": e["invoice_id"], "code": near_dup.code})
 
-    # Group survivors by department
-    by_dept: dict[str, list[tuple[EnrichedInvoice, InvoiceData]]] = {}
+    # Group survivors by (department, period). BOTH matter: `budgets` is keyed
+    # UNIQUE(department_code, period, category), so grouping by department alone
+    # and taking one invoice's period would draw a July invoice against an
+    # August budget the moment a batch spans a month boundary.
+    by_dept_period: dict[tuple[str, str], list[tuple[EnrichedInvoice, InvoiceData]]] = {}
+    unroutable: list[str] = []
     for e in ordered:
         data_obj = cast(InvoiceData, e["extracted"])
-        dept = getattr(data_obj, "department", None) or "OTHER"
-        by_dept.setdefault(dept, []).append((e, data_obj))
+        dept = e.get("department") or getattr(data_obj, "department", None)
+        if not dept:
+            # NOT defaulted to a department. Reconciling an invoice against an
+            # arbitrary budget spends somebody else's money on paper and emits a
+            # BUDGET_BREACH nobody can trace. Recorded and skipped instead.
+            unroutable.append(e["invoice_id"])
+            continue
+        period = data_obj.issue_date.strftime("%Y-%m")
+        by_dept_period.setdefault((dept, period), []).append((e, data_obj))
 
     consumption_out: list[dict[str, Any]] = []
-    for dept in sorted(by_dept.keys()):
-        dept_items = by_dept[dept]
-        first_inv = dept_items[0][1]
-        period = first_inv.issue_date.strftime("%Y-%m")
+    for (dept, period) in sorted(by_dept_period.keys()):
+        dept_items = by_dept_period[(dept, period)]
 
         stmt = select(models.budgets).where(
             models.budgets.c.department_code == dept,
@@ -225,8 +249,21 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
         ).with_for_update()
         budget_row = conn.execute(stmt).mappings().first()
 
-        limit = Decimal(budget_row["amount_limit"]) if budget_row else Decimal("50000000")
-        warn_pct = Decimal(budget_row["warn_threshold_pct"]) if budget_row else Decimal("0.8")
+        if not budget_row:
+            # NO FABRICATED FALLBACK. This read `Decimal("50000000")` when the
+            # row was missing, so a department with no seeded budget was
+            # reconciled against an INVENTED limit and could emit a
+            # BUDGET_BREACH derived from a number with no provenance — against
+            # CLAUDE.md's rule that every non-obvious constant carries date +
+            # measurement + report filename, and against the premise that flags
+            # come from the source of truth. An unbudgeted department is
+            # recorded and skipped; §10.4's false-positive rate is the metric
+            # this protects.
+            unroutable.extend(e["invoice_id"] for e, _inv in dept_items)
+            continue
+
+        limit = Decimal(budget_row["amount_limit"])
+        warn_pct = Decimal(budget_row["warn_threshold_pct"])
 
         inputs = [
             domain_budget.BudgetInput(
@@ -234,7 +271,7 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
                 issue_date=inv.issue_date,
                 invoice_series=inv.invoice_series,
                 invoice_number=inv.invoice_number,
-                amount=Decimal(inv.total_amount),
+                amount=inv.total_amount,
             )
             for e, inv in dept_items
         ]
@@ -276,6 +313,12 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
         "persisted": persisted,
         "consumption": consumption_out,
         "raised": raised,
+        # Invoices no budget could be found for — no department, or no budgets
+        # row for (department, period). Surfaced rather than silently dropped:
+        # an invoice that was persisted but never drawn against a budget is a
+        # real state a reviewer has to see, and the previous code hid it behind
+        # an invented 50,000,000 limit.
+        "unroutable": unroutable,
     }
 
 

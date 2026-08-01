@@ -8,11 +8,22 @@ from invoice_agent.graphs import batch
 from invoice_agent.memory import vendor_profile
 
 
-def _enriched(invoice, invoice_id):
+def _enriched(invoice, invoice_id, department="MKT"):
+    """`department` is EXPLICIT, because nothing can derive it.
+
+    `InvoiceData` has no department field — the department comes from the
+    manifest (or, later, from `classify`), and the batch graph passes it in via
+    the task dict. These helpers previously omitted it and `_join` supplied a
+    hardcoded "MKT" default, so every test invoice routed to MKT whatever it
+    actually was: `test_the_budget_chain_matches_domain_budget` was passing
+    because everything fell into one department, not because routing worked.
+    Found 2026-08-01 when the fabricated default was removed.
+    """
     return {
         "invoice_id": invoice_id,
         "source_path": f"corpus/{invoice_id}.xml",
         "source_type": "xml",
+        "department": department,
         "extracted": invoice,
         "findings": [],
         "signals": [],
