@@ -22,12 +22,18 @@ from typing import Any
 from sqlalchemy import Connection
 
 from invoice_agent.db import audit
-from invoice_agent.db.repositories import approvals, invoices, journal
+from invoice_agent.db.repositories import approvals, flags, invoices, journal
 from invoice_agent.domain import accounting
 
 # Decisions that authorise a post. `edited` is here deliberately: a reviewer who
 # corrected a field and let the invoice through has approved it (spec §4.1).
 POSTING_DECISIONS = ("approved", "edited")
+
+# The SAME predicate migration 13 gave the trigger. Two layers, one rule: an
+# open `warn` or `critical` flag blocks auto_clean, `info` does not. Task 7's
+# status write reads this tuple too, so the three places cannot drift apart
+# without the mutation in the closeout note going red.
+BLOCKING_SEVERITIES = ("warn", "critical")
 
 ACTION = "tool.create_journal_entry"
 
@@ -116,6 +122,25 @@ def create_journal_entry(
                 actor=actor,
                 invoice_id=invoice_id,
                 reason=f"approval was {approval['decision']}",
+            )
+    else:  # auto_clean
+        if approval_id is not None:
+            raise _deny(
+                actor=actor,
+                invoice_id=invoice_id,
+                reason="auto_clean must not carry an approval_id",
+            )
+        blocking = [
+            f
+            for f in flags.open_flags_for(conn, invoice_id)
+            if f["severity"] in BLOCKING_SEVERITIES
+        ]
+        if blocking:
+            raise _deny(
+                actor=actor,
+                invoice_id=invoice_id,
+                reason="invoice has an open flag",
+                codes=sorted({f["code"] for f in blocking}),
             )
 
     entry_id = journal.create_entry_with_lines(

@@ -193,3 +193,82 @@ def test_an_approved_or_edited_approval_posts(runtime_conn, sample_invoice, deci
     assert entry["approval_id"] == approval_id
     assert invoices.get_by_id(runtime_conn, invoice_id)["status"] == "posted"
     assert any(r["allowed"] for r in _audit_rows(invoice_id))
+
+
+def test_auto_clean_is_denied_when_a_warn_flag_is_open(runtime_conn, sample_invoice):
+    from invoice_agent.db.repositories import flags
+    from invoice_agent.domain import findings
+
+    invoice_id = _insert_invoice(runtime_conn, sample_invoice)
+    flags.raise_flag(
+        runtime_conn,
+        invoice_id,
+        code=findings.PRICE_OUTLIER,
+        severity="warn",
+        raised_by="anomaly",
+    )
+    with pytest.raises(guards.GuardDenied, match="open flag"):
+        guards.create_journal_entry(
+            runtime_conn,
+            invoice_id=invoice_id,
+            posting_authority="auto_clean",
+            entry_date=date(2026, 7, 1),
+            lines=BALANCED,
+            actor="system",
+        )
+    assert [r for r in _audit_rows(invoice_id) if not r["allowed"]]
+
+
+def test_auto_clean_posts_over_an_info_flag(runtime_conn, sample_invoice):
+    """`info` is context for a human, never a block (spec §0 constraint 3).
+    NEW_VENDOR fires on every vendor's first sighting — 51 across the corpus —
+    so blocking on it makes the auto path unreachable."""
+    from invoice_agent.db.repositories import flags
+    from invoice_agent.domain import findings
+
+    invoice_id = _insert_invoice(runtime_conn, sample_invoice)
+    flags.raise_flag(
+        runtime_conn,
+        invoice_id,
+        code=findings.NEW_VENDOR,
+        severity="info",
+        raised_by="vendor_memory",
+    )
+    entry_id = guards.create_journal_entry(
+        runtime_conn,
+        invoice_id=invoice_id,
+        posting_authority="auto_clean",
+        entry_date=date(2026, 7, 1),
+        lines=BALANCED,
+        actor="system",
+    )
+    entry = journal.get_for_invoice(runtime_conn, invoice_id)
+    assert entry["id"] == entry_id
+    assert entry["posting_authority"] == "auto_clean"
+    assert entry["approval_id"] is None
+
+
+def test_auto_clean_refuses_to_carry_an_approval_id(runtime_conn, sample_invoice):
+    """A caller passing both is confused about which path it is on, and
+    `ck_journal_human_approved_needs_approval` would not catch it — that CHECK
+    only constrains the human_approved direction."""
+    invoice_id = _insert_invoice(runtime_conn, sample_invoice)
+    approval_id = approvals.open_approval(
+        runtime_conn,
+        invoice_id=invoice_id,
+        thread_id=f"appr:{invoice_id}",
+        interrupt_payload={},
+        flags_snapshot={},
+        suggestions={},
+    )
+    with pytest.raises(guards.GuardDenied, match="auto_clean"):
+        guards.create_journal_entry(
+            runtime_conn,
+            invoice_id=invoice_id,
+            posting_authority="auto_clean",
+            approval_id=approval_id,
+            entry_date=date(2026, 7, 1),
+            lines=BALANCED,
+            actor="system",
+        )
+
