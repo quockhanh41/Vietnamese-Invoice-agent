@@ -22,7 +22,42 @@ import pathlib
 import random
 import uuid
 
+import pytest
+
 from invoice_agent.graphs import batch
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _cleanup_batch_graph_commits():
+    """Truncate committed DB rows after this module.
+
+    `test_gate_batch_end_to_end_replay` exercises the full `batch_graph.invoke()`
+    path, which commits via `get_engine().begin()` — the real production path,
+    not `runtime_conn`. That leaves vendor stats and invoice rows committed in
+    the shared dev DB. Without cleanup, tests in *later* modules that rely on a
+    clean vendor-stats baseline (e.g. `test_vendor_profile`) fail with counts
+    off by however many corpus invoices share their tax codes.
+
+    The `_reset_db_state` session fixture resets *before* the session; this one
+    resets *after* this module so the remainder of the session is clean.
+    """
+    yield  # run the tests first
+    from sqlalchemy import text
+
+    from invoice_agent.db.engine import get_owner_engine
+
+    with get_owner_engine().begin() as conn:
+        conn.execute(text("TRUNCATE app.invoices CASCADE"))
+        conn.execute(
+            text(
+                "UPDATE app.vendors"
+                " SET invoice_count=0, total_amount=0, sum_sq_amount=0,"
+                "     avg_amount=NULL, stddev_amount=NULL"
+                " WHERE invoice_count != 0"
+                "    OR total_amount != 0"
+                "    OR sum_sq_amount != 0"
+            )
+        )
 
 
 def _enriched(invoice, invoice_id):

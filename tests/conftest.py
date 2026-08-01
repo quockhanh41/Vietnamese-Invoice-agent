@@ -21,6 +21,35 @@ import pytest
 from invoice_agent.config import get_settings
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _reset_db_state(requires_postgres) -> None:  # type: ignore[misc]
+    """Truncate mutable app tables before every test session.
+
+    This makes the suite idempotent against runs that crashed before rollback
+    could fire (e.g. SIGKILL, OOM, ad-hoc manual DB writes).  The owner role
+    is needed for TRUNCATE CASCADE; the runtime role cannot do this.
+
+    Only runs when Postgres is reachable (depends on `requires_postgres`).
+    """
+    from sqlalchemy import text
+
+    from invoice_agent.db.engine import get_owner_engine
+
+    engine = get_owner_engine()
+    with engine.begin() as conn:
+        conn.execute(text("TRUNCATE app.invoices CASCADE"))
+        conn.execute(
+            text(
+                "UPDATE app.vendors"
+                " SET invoice_count=0, total_amount=0, sum_sq_amount=0,"
+                "     avg_amount=NULL, stddev_amount=NULL"
+                " WHERE invoice_count != 0"
+                "    OR total_amount != 0"
+                "    OR sum_sq_amount != 0"
+            )
+        )
+
+
 @pytest.fixture(scope="session")
 def requires_postgres() -> str:
     """DSN nghiệp vụ, đã kiểm là nối được. Skip có lý do rõ ràng nếu chưa `make dev`.
