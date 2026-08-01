@@ -13,7 +13,7 @@ from sqlalchemy import Connection, func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from invoice_agent.db import models
-from invoice_agent.db.repositories import vendors
+from invoice_agent.db.repositories import reference, vendors
 from invoice_agent.extraction.models import InvoiceData
 
 
@@ -46,12 +46,28 @@ def insert_with_lines(
     source_type: str = "xml",
     source_path: str | None = None,
     raw_xml: str | None = None,
+    category: str | None = None,
+    department: str | None = None,
 ) -> uuid.UUID | None:
     """Persist an InvoiceData plus its lines. Returns None if it is a duplicate."""
     if not data.seller_tax_code:
         raise MissingSellerTaxCode(
             f"{data.invoice_series}/{data.invoice_number}: no seller tax code; route to manual_queue"
         )
+
+    # `category` and `department` are FKs to the seeded reference tables, so a
+    # value the model invented cannot be written at all. The lookup exists so the
+    # batch gets a routable invoice instead of an IntegrityError — measured
+    # 2026-08-01: a live gemini-3.5-flash verdict proposed
+    # OFFICE_REPAIR_MAINTENANCE, a category no seed row carries
+    # (agents/models.py). NULL routes the invoice to a human; nothing is
+    # coerced to a neighbouring category.
+    if category is not None and reference.get_category(conn, category) is None:
+        category = None
+    if department is not None and not any(
+        d["code"] == department for d in reference.list_departments(conn)
+    ):
+        department = None
 
     vendors.ensure_vendor(conn, data.seller_tax_code, name=data.seller_name)
 
@@ -76,6 +92,8 @@ def insert_with_lines(
             "source_type": source_type,
             "source_path": source_path,
             "raw_xml": raw_xml,
+            "category": category,
+            "department": department,
             "status": "extracted",
         },
     )

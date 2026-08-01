@@ -38,6 +38,11 @@ class EnrichedInvoice(TypedDict):
     extracted: InvoiceData | None
     findings: list[Any]
     signals: list[Any]
+    # Read by `_join` to persist `invoices.category`/`department`, and by
+    # `auto_post` to pick TT133 accounts. Carried rather than re-derived: the
+    # classification is an LLM output and re-running it in the serial join would
+    # both cost tokens and risk a different answer than the one that was scored.
+    classification: Any
     status: str
 
 
@@ -109,6 +114,7 @@ def enrich_one(task: dict[str, Any], *, graph: Any) -> dict[str, Any]:
                 "extracted": extracted,
                 "findings": result.get("findings", []),
                 "signals": result.get("signals", []),
+                "classification": result.get("classification"),
                 # PROPAGATED, not overwritten. `manual_queue_node` returns
                 # `{"status": "manual_queue"}` (enrichment.py:196) — a CONTROLLED
                 # give-up, which is a different outcome from a successful
@@ -155,6 +161,7 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
     from invoice_agent.domain import budget as domain_budget
     from invoice_agent.extraction.models import InvoiceData
     from invoice_agent.memory import vendor_profile
+    from invoice_agent.tools import guards
 
     survivors = [e for e in state["enriched"] if e.get("extracted") is not None]
 
@@ -179,12 +186,15 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
         inv = cast(InvoiceData, e["extracted"])
         assert inv.seller_tax_code is not None
         vendors.ensure_vendor(conn, inv.seller_tax_code, inv.seller_name)
+        cls = e.get("classification")
         db_id = invoices.insert_with_lines(
             conn,
             inv,
             batch_id=batch_uuid,
             source_type=e["source_type"],
             source_path=e["source_path"],
+            category=getattr(cls, "category", None),
+            department=e.get("department") or getattr(cls, "department", None),
         )
 
         if db_id is None:
@@ -193,6 +203,23 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
 
         db_id_map[e["invoice_id"]] = db_id
         persisted.append({"invoice_id": e["invoice_id"], "db_id": str(db_id)})
+
+        # Gap 1 (spec §1.1). Every finding and signal the enrichment produced
+        # becomes a row, because the trigger and the reviewer queue both read
+        # this table and neither can see graph state. `severity`/`raised_by`
+        # come from CODE_REGISTRY via `findings.make`, so a caller cannot
+        # declare its own — and every source it can produce is already in
+        # FLAG_SOURCES, so no CHECK needs widening.
+        for finding in (*e.get("findings", []), *e.get("signals", [])):
+            flags.raise_flag(
+                conn,
+                db_id,
+                code=finding.code,
+                severity=finding.severity,
+                raised_by=finding.raised_by,
+                detail=finding.detail,
+            )
+
         vendor_profile.apply_invoice(
             conn,
             tax_code=inv.seller_tax_code,
@@ -308,6 +335,19 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
                         raised_by=f.raised_by,
                         detail=f.detail,
                     )
+
+    # Status is set LAST and read back from the table, not accumulated in
+    # Python. Budget flags are raised after the per-invoice loop, so an invoice
+    # that is clean at insert time can acquire a BUDGET_BREACH before this node
+    # returns — computing status earlier would record it as `validated` while
+    # `invoice_flags` says otherwise, and the guard reads the table.
+    for _invoice_key, db_id in db_id_map.items():
+        blocking = [
+            f
+            for f in flags.open_flags_for(conn, db_id)
+            if f["severity"] in guards.BLOCKING_SEVERITIES
+        ]
+        invoices.set_status(conn, db_id, "flagged" if blocking else "validated")
 
     return {
         "persisted": persisted,

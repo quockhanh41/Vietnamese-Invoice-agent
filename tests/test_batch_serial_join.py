@@ -104,3 +104,144 @@ def test_failed_invoices_are_not_persisted(runtime_conn):
     )
     assert out["persisted"] == []
     assert out["consumption"] == []
+
+
+def _state_with_one_invoice(
+    conn, *, findings=None, signals=None, category=None, department="ADMIN"
+) -> dict:
+    """A minimal BatchState carrying exactly one enriched invoice."""
+    import pathlib
+
+    from invoice_agent.extraction.xml_parser import parse_invoice_xml
+
+    data = parse_invoice_xml(
+        pathlib.Path("tests/fixtures/real_samples/viettelpost_gtgt_2.1.0.xml").read_bytes()
+    ).model_copy(update={"invoice_number": uuid.uuid4().hex[:8]})
+    return {
+        "batch_id": str(uuid.uuid4()),
+        "inputs": [],
+        "enriched": [
+            {
+                "invoice_id": "INV-TEST",
+                "source_path": "x.xml",
+                "source_type": "xml",
+                "department": department,
+                "extracted": data,
+                "findings": findings or [],
+                "signals": signals or [],
+                "classification": None if category is None else _fake_classification(category, department),
+                "status": "enriched",
+            }
+        ],
+        "failed": [],
+        "persisted": [],
+        "consumption": [],
+        "raised": [],
+        "unroutable": [],
+        "auto": [],
+        "needs_approval": [],
+        "status": "",
+    }
+
+
+def _fake_classification(category: str, department: str):
+    """A stand-in for ClassificationResult that carries only the two fields
+    `_join` reads. The real model is a frozen Literal-constrained pydantic
+    model, and `OFFICE_REPAIR_MAINTENANCE` is deliberately NOT in its Literal —
+    so the out-of-seed test could not construct one."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(category=category, department=department)
+
+
+def test_validation_findings_reach_the_invoice_flags_table(owner_conn):
+    """Gap 1. Before M5-A, batch.py raised flags ONLY for duplicates and budgets
+    (batch.py:214 and :303 were the only callers), so every validation finding
+    and every signal was discarded when the batch ended — and the
+    forbid_auto_clean_with_open_flags trigger, the DATABASE layer of the safety
+    property, fired on an almost-empty table."""
+    from invoice_agent.db.repositories import flags
+    from invoice_agent.domain import findings
+
+    state = _state_with_one_invoice(
+        owner_conn,
+        findings=[findings.make(findings.ARITHMETIC_MISMATCH, expected="100", actual="110")],
+        signals=[findings.make(findings.NEW_VENDOR, tax_code="0100000003")],
+    )
+    result = batch.serial_join(state, conn=owner_conn)
+
+    db_id = uuid.UUID(result["persisted"][0]["db_id"])
+    codes = {f["code"] for f in flags.open_flags_for(owner_conn, db_id)}
+    assert findings.ARITHMETIC_MISMATCH in codes
+    assert findings.NEW_VENDOR in codes
+
+
+def test_the_classified_category_and_department_are_persisted(owner_conn):
+    """Gap 2. insert_with_lines omitted both columns, so the classification
+    result was discarded and auto_post had no category from which to pick TT133
+    accounts."""
+    from invoice_agent.db.repositories import invoices as invoices_repo
+
+    state = _state_with_one_invoice(
+        owner_conn, category="OFFICE_SUPPLIES", department="ADMIN"
+    )
+    result = batch.serial_join(state, conn=owner_conn)
+
+    row = invoices_repo.get_by_id(owner_conn, uuid.UUID(result["persisted"][0]["db_id"]))
+    assert row["category"] == "OFFICE_SUPPLIES"
+    assert row["department"] == "ADMIN"
+
+
+def test_a_category_outside_the_seed_lands_as_NULL_not_invented(owner_conn):
+    """Spec §0 constraint 4. A model proposed OFFICE_REPAIR_MAINTENANCE live on
+    2026-08-01 (agents/models.py). A category the seed does not know becomes
+    NULL, which routes the invoice to a human — it is never coerced to a
+    neighbouring category and never written raw, which would raise IntegrityError
+    against the FK and kill the batch."""
+    from invoice_agent.db.repositories import invoices as invoices_repo
+
+    state = _state_with_one_invoice(owner_conn, category="OFFICE_REPAIR_MAINTENANCE")
+    result = batch.serial_join(state, conn=owner_conn)
+
+    row = invoices_repo.get_by_id(owner_conn, uuid.UUID(result["persisted"][0]["db_id"]))
+    assert row["category"] is None
+
+
+def test_status_reflects_whether_a_blocking_flag_persisted(owner_conn):
+    """Gap 3. `set_status` had zero callers, so every invoice sat at 'extracted'
+    forever and nothing downstream could tell a clean invoice from a flagged
+    one."""
+    from invoice_agent.db.repositories import invoices as invoices_repo
+    from invoice_agent.domain import findings
+
+    clean = _state_with_one_invoice(owner_conn)
+    clean_result = batch.serial_join(clean, conn=owner_conn)
+    clean_row = invoices_repo.get_by_id(
+        owner_conn, uuid.UUID(clean_result["persisted"][0]["db_id"])
+    )
+    assert clean_row["status"] == "validated"
+
+    dirty = _state_with_one_invoice(
+        owner_conn,
+        findings=[findings.make(findings.ARITHMETIC_MISMATCH, expected="1", actual="2")],
+    )
+    dirty_result = batch.serial_join(dirty, conn=owner_conn)
+    dirty_row = invoices_repo.get_by_id(
+        owner_conn, uuid.UUID(dirty_result["persisted"][0]["db_id"])
+    )
+    assert dirty_row["status"] == "flagged"
+
+
+def test_an_info_only_invoice_is_validated_not_flagged(owner_conn):
+    """NEW_VENDOR alone must not read as a defect — the same rule as the trigger
+    and the guard, in a third place, so all three can be shown to agree."""
+    from invoice_agent.db.repositories import invoices as invoices_repo
+    from invoice_agent.domain import findings
+
+    state = _state_with_one_invoice(
+        owner_conn, signals=[findings.make(findings.NEW_VENDOR, tax_code="0100000003")]
+    )
+    result = batch.serial_join(state, conn=owner_conn)
+    row = invoices_repo.get_by_id(owner_conn, uuid.UUID(result["persisted"][0]["db_id"]))
+    assert row["status"] == "validated"
+
