@@ -64,9 +64,7 @@ def insert_with_lines(
     # coerced to a neighbouring category.
     if category is not None and reference.get_category(conn, category) is None:
         category = None
-    if department is not None and not any(
-        d["code"] == department for d in reference.list_departments(conn)
-    ):
+    if department is not None and reference.get_department(conn, department) is None:
         department = None
 
     vendors.ensure_vendor(conn, data.seller_tax_code, name=data.seller_name)

@@ -404,43 +404,64 @@ def enrich_one_task_node(task: Any) -> dict[str, Any]:
     return enrich_one(task, graph=enrichment_graph)
 
 
-def route_outcomes_node(state: BatchState) -> dict[str, Any]:
-    """Split into auto and needs_approval.
+def route_outcomes_node(state: BatchState, *, conn: Any = None) -> dict[str, Any]:
+    """Split into auto and needs_approval, reading `invoice_flags`.
 
-    Design §0 constraint 5: produces lists that nothing consumes until M5.
-    Deliberate.
+    READS THE TABLE, NOT GRAPH STATE — a correction, not a preference. Measured
+    2026-08-01 on the 30-invoice gate batch: routing on the in-memory
+    `findings`/`signals` a fan-out task returned sent **8 invoices to the auto
+    path that the guard then refused, every one of them for `BUDGET_BREACH`**.
+    Budget findings are computed in `serial_join`, AFTER the fan-out, so they can
+    never appear in a task's own result — this node was structurally blind to the
+    entire budget family.
+
+    The system stayed safe, because the guard re-reads Postgres and denied all
+    eight. But every batch then wrote eight `audit_log` denial rows, which read
+    as eight safety refusals when they were one routing bug. Roadmap principle 5
+    — do not trust graph state, trust the database — governs routing exactly as
+    it governs the guard, and running the same predicate over the same rows is
+    what makes the two agree by construction rather than by coincidence.
+
+    SEVERITY decides, not the mere existence of a flag. Measured 2026-08-01:
+    routing on "any finding" sent 28 of 28 enriched invoices to a reviewer and
+    left `auto` empty, because `NEW_VENDOR` fires on every vendor's FIRST
+    sighting — 51 across the corpus (docs/notes/2026-07-31-m4b-vendor-memory.md).
+    `info` asserts something is NEW, true every time it fires, not that something
+    is WRONG. `warn` and `critical` assert a defect and do require a person.
     """
+    if conn is not None:
+        return _route(conn, state)
+    from invoice_agent.db.engine import get_engine
+
+    with get_engine().begin() as owned:
+        return _route(owned, state)
+
+
+def _route(conn: Any, state: BatchState) -> dict[str, Any]:
+    from invoice_agent.db.repositories import flags
+    from invoice_agent.tools import guards
+
+    db_ids = {p["invoice_id"]: uuid.UUID(p["db_id"]) for p in state.get("persisted") or []}
+
     auto: list[str] = []
     needs_approval: list[str] = []
 
-    def _needs_a_human(entry: EnrichedInvoice) -> bool:
-        """SEVERITY decides, not the mere existence of a finding.
-
-        Measured 2026-08-01 on the gate batch: routing on "any finding or
-        signal" sent 28 of 28 enriched invoices to a reviewer and left `auto`
-        empty. The cause is `NEW_VENDOR`, which `signals` raises on every
-        vendor's FIRST sighting — on a fresh database that is nearly every
-        invoice, and M4-B measured 51 first sightings across the corpus.
-
-        `NEW_VENDOR` is severity `info`: it asserts something is NEW, which is
-        true every time it fires, not that something is WRONG. M4-B already made
-        severity the discriminator for the flag false-positive metric
-        (docs/notes/2026-07-31-m4b-vendor-memory.md) and the same line applies
-        here — otherwise "every invoice from a new supplier needs a human" makes
-        the auto path unreachable and the reviewer queue worthless.
-
-        `warn` and `critical` assert a defect and do require a person.
-        """
-        for item in (*(entry.get("findings") or []), *(entry.get("signals") or [])):
-            severity = getattr(item, "severity", None) or (
-                item.get("severity") if isinstance(item, dict) else None
-            )
-            if severity in ("warn", "critical"):
-                return True
-        return False
-
     for e in state.get("enriched") or []:
-        if _needs_a_human(e):
+        db_id = db_ids.get(e["invoice_id"])
+        if db_id is None:
+            # Enriched but never persisted — a duplicate the natural key
+            # rejected, or an invoice the join could not store. There is nothing
+            # to post and a person has to see it. These previously reached
+            # `auto_post` and were bounced there; deciding it here keeps `auto`
+            # meaning "postable" rather than "not yet known to be unpostable".
+            needs_approval.append(e["invoice_id"])
+            continue
+        blocking = [
+            f
+            for f in flags.open_flags_for(conn, db_id)
+            if f["severity"] in guards.BLOCKING_SEVERITIES
+        ]
+        if blocking:
             needs_approval.append(e["invoice_id"])
         else:
             auto.append(e["invoice_id"])

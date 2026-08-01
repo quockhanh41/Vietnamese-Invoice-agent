@@ -13,6 +13,15 @@ def list_departments(conn: Connection) -> list[dict[str, Any]]:
     return [dict(r) for r in conn.execute(select(models.departments)).mappings()]
 
 
+def get_department(conn: Connection, code: str) -> dict[str, Any] | None:
+    row = (
+        conn.execute(select(models.departments).where(models.departments.c.code == code))
+        .mappings()
+        .first()
+    )
+    return dict(row) if row else None
+
+
 def get_category(conn: Connection, code: str) -> dict[str, Any] | None:
     row = (
         conn.execute(
