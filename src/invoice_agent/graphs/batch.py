@@ -59,6 +59,7 @@ class BatchState(TypedDict):
     unroutable: list[str]
     auto: list[str]
     needs_approval: list[str]
+    posted: list[dict[str, Any]]
     status: str
 
 
@@ -466,6 +467,86 @@ def finalize_node(state: BatchState) -> dict[str, Any]:
     return {"status": "completed"}
 
 
+def auto_post_node(state: BatchState) -> dict[str, Any]:
+    """Post every clean invoice through the guard — design §4's auto_post arm.
+
+    WHAT THIS IS ALLOWED TO BOOK, stated because it is M5-A's one real risk.
+    The account codes come from the invoice's category, which the
+    ClassificationAgent chose (95.4% accurate, M4-C). The LLM proposes; the
+    category -> account map is deterministic seed data; zero open warn/critical
+    flags is enforced by the database. A MIS-CLASSIFIED CLEAN INVOICE THEREFORE
+    BOOKS TO 6421 INSTEAD OF 6422 WITH NOBODY LOOKING. That is an accuracy cost,
+    not a breach of the safety property — the LLM still never toggles a flag and
+    never decides that posting is permitted.
+
+    ONE TRANSACTION PER INVOICE. A single bad entry must not roll back every
+    other entry in the batch; the same argument `enrich_one`'s try/except makes
+    for the fan-out, applied to the write path.
+    """
+    from invoice_agent.db.engine import get_engine
+    from invoice_agent.db.repositories import invoices as invoices_repo
+    from invoice_agent.db.repositories import reference
+    from invoice_agent.domain import accounting
+    from invoice_agent.tools import guards
+
+    db_ids = {p["invoice_id"]: uuid.UUID(p["db_id"]) for p in state.get("persisted") or []}
+    by_id = {e["invoice_id"]: e for e in state.get("enriched") or []}
+
+    posted: list[dict[str, Any]] = []
+    still_auto: list[str] = []
+    to_human: list[str] = list(state.get("needs_approval") or [])
+
+    for invoice_key in state.get("auto") or []:
+        db_id = db_ids.get(invoice_key)
+        entry = by_id.get(invoice_key)
+        extracted = entry.get("extracted") if entry else None
+        if db_id is None or entry is None or extracted is None:
+            # Routed rather than dropped: an invoice in `auto` that never
+            # persisted is a state a reviewer has to see. M4-D added
+            # `unroutable` for the same reason.
+            to_human.append(invoice_key)
+            continue
+
+        with get_engine().begin() as conn:
+            row = invoices_repo.get_by_id(conn, db_id)
+            category = row["category"] if row else None
+            cat_row = reference.get_category(conn, category) if category else None
+            if cat_row is None:
+                to_human.append(invoice_key)
+                continue
+
+            accounts = accounting.CategoryAccounts(
+                debit_account=cat_row["debit_account"],
+                debit_name=cat_row["name_vi"],
+                vat_account=cat_row["vat_account"],
+                vat_name="Thuế GTGT được khấu trừ" if cat_row["vat_account"] else None,
+                credit_account=cat_row["credit_account"],
+                credit_name="Phải trả cho người bán",
+            )
+            lines = accounting.build_journal_entry(extracted, accounts)
+            try:
+                entry_id = guards.create_journal_entry(
+                    conn,
+                    invoice_id=db_id,
+                    posting_authority="auto_clean",
+                    entry_date=extracted.issue_date,
+                    lines=lines,
+                    actor="system",
+                )
+            except guards.GuardDenied:
+                # The guard already wrote the audit row, on its own connection,
+                # so it survives this transaction being abandoned.
+                to_human.append(invoice_key)
+                continue
+
+        posted.append(
+            {"invoice_id": invoice_key, "db_id": str(db_id), "entry_id": str(entry_id)}
+        )
+        still_auto.append(invoice_key)
+
+    return {"posted": posted, "auto": still_auto, "needs_approval": to_human}
+
+
 def build_batch_graph(*, max_concurrency: int = 5) -> Any:
     """Compile the batch workflow graph.
 
@@ -483,6 +564,7 @@ def build_batch_graph(*, max_concurrency: int = 5) -> Any:
     builder.add_node("enrich_one", enrich_one_task_node)  # type: ignore[arg-type]
     builder.add_node("serial_join", serial_join)
     builder.add_node("route_outcomes", route_outcomes_node)
+    builder.add_node("auto_post", auto_post_node)
     builder.add_node("finalize", finalize_node)
 
     builder.add_edge(START, "ingest")
@@ -491,7 +573,8 @@ def build_batch_graph(*, max_concurrency: int = 5) -> Any:
     builder.add_conditional_edges("fan_out", fan_out_router, ["enrich_one"])
     builder.add_edge("enrich_one", "serial_join")
     builder.add_edge("serial_join", "route_outcomes")
-    builder.add_edge("route_outcomes", "finalize")
+    builder.add_edge("route_outcomes", "auto_post")
+    builder.add_edge("auto_post", "finalize")
     builder.add_edge("finalize", END)
 
     return builder.compile()
