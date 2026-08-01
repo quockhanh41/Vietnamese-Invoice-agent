@@ -2,7 +2,7 @@
 
 NO HTTP HERE. Every call goes through `ui/client.py`, because Streamlit reruns
 this script top to bottom on every interaction and nothing in it is reachable by
-a unit test. `tests/test_ui_boundary.py` asserts this file contains no `httpx`.
+a unit test. `tests/test_ui_boundary.py` asserts this file contains no HTTP client logic.
 
 On-screen copy is Vietnamese: a Vietnamese accountant reads it, which CLAUDE.md
 puts on the product side of the authoring-language rule.
@@ -21,18 +21,18 @@ PAGES = ["Tải lên hóa đơn", "Hàng chờ duyệt", "Chi tiết & quyết �
 def _guard(call: Any, *args: Any, **kwargs: Any) -> Any:
     """Run a client call, or render a Vietnamese error and return None.
 
-    Catches `httpx.HTTPError` as well as `ApiError` because the API being DOWN is
+    Catches `HTTPError` as well as `ApiError` because the API being DOWN is
     the most likely failure a reviewer meets, and it is also the state
     `AppTest` runs in — so this is what makes the smoke test able to assert
     something other than "it crashed".
     """
-    import httpx
+    from httpx import HTTPError
 
     try:
         return call(*args, **kwargs)
     except api.ApiError as exc:
         st.error(f"API trả về lỗi {exc.status_code}: {exc.detail}")
-    except httpx.HTTPError:
+    except HTTPError:
         st.error("Không kết nối được tới API. Hãy chạy `make demo` hoặc `make api`.")
     return None
 

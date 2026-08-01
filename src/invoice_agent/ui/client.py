@@ -1,7 +1,7 @@
 """The UI's only route to the system: HTTP.
 
-THIS MODULE MAY NOT IMPORT `invoice_agent.db`, `.graphs`, `.tools`, `.domain`,
-`.llm`, `.memory` OR `.extraction`. `tests/test_ui_boundary.py` enforces it.
+THIS MODULE MAY NOT IMPORT `invoice_agent/db`, `/graphs`, `/tools`, `/domain`,
+`/llm`, `/memory` OR `/extraction`. `tests/test_ui_boundary.py` enforces it.
 `invoice_agent.config` is the single allowed exception, for the base URL.
 
 The rule is what makes the demo PROOF. Streamlit is Python, so importing
