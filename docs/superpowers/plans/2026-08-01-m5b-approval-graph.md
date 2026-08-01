@@ -1,6 +1,6 @@
 # M5-B: the approval graph and the HITL loop — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make the human decision that authorises a journal entry durable across a process death — a reviewer may decide hours later, from a different process, after a deploy — and close the loop where that decision feeds vendor and episodic memory.
 
@@ -70,7 +70,7 @@ The read-only half, all of which runs before the gate and therefore exactly once
   - `suggest_node(state, *, conn=None) -> dict[str, Any]`
   - `approvals.record_context(conn, approval_id, *, interrupt_payload, flags_snapshot, suggestions) -> None`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_approval_graph.py`:
 
@@ -286,7 +286,7 @@ def test_suggest_persists_the_context_it_built(committed_rows):
     assert "invoice" in row["interrupt_payload"]
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 ```bash
 .venv/bin/python -m pytest tests/test_approval_graph.py -v
@@ -294,7 +294,7 @@ def test_suggest_persists_the_context_it_built(committed_rows):
 
 Expected: all FAIL with `ModuleNotFoundError: No module named 'invoice_agent.graphs.approval'`.
 
-- [ ] **Step 3: Add the repository function**
+- [x] **Step 3: Add the repository function**
 
 In `src/invoice_agent/db/repositories/approvals.py`:
 
@@ -336,7 +336,7 @@ def get_by_invoice(conn: Connection, invoice_id: uuid.UUID) -> dict[str, Any] | 
     return dict(row) if row else None
 ```
 
-- [ ] **Step 4: Write the module and the two nodes**
+- [x] **Step 4: Write the module and the two nodes**
 
 Create `src/invoice_agent/graphs/approval.py`:
 
@@ -479,7 +479,7 @@ def _suggest(conn: Any, state: ApprovalState) -> dict[str, Any]:
     return {"suggestions": suggestions, "status": "suggested"}
 ```
 
-- [ ] **Step 5: Run to verify they pass**
+- [x] **Step 5: Run to verify they pass**
 
 ```bash
 .venv/bin/python -m pytest tests/test_approval_graph.py -v
@@ -487,7 +487,7 @@ def _suggest(conn: Any, state: ApprovalState) -> dict[str, Any]:
 
 Expected: all 5 PASS.
 
-- [ ] **Step 6: `make check` and commit**
+- [x] **Step 6: `make check` and commit**
 
 ```bash
 make check
@@ -520,7 +520,7 @@ Claude-Session: https://claude.ai/code/session_016trAebLxBJCuoFxsdQCQWW"
   - `approval_gate_node(state) -> dict[str, Any]`
   - `build_approval_graph(*, checkpointer: Any = None) -> Any`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_the_graph_stops_at_the_interrupt_and_checkpoints(committed_rows):
@@ -563,7 +563,7 @@ def test_the_gate_node_has_no_side_effect_beyond_the_interrupt():
         )
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 ```bash
 .venv/bin/python -m pytest tests/test_approval_graph.py -k "interrupt or gate_node" -v
@@ -571,7 +571,7 @@ def test_the_gate_node_has_no_side_effect_beyond_the_interrupt():
 
 Expected: FAIL — `approval` has no attribute `approval_gate_node` / `build_approval_graph`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `src/invoice_agent/graphs/approval.py`:
 
@@ -623,7 +623,7 @@ def build_approval_graph(*, checkpointer: Any = None) -> Any:
 
 `approval_gate → END` is temporary; Task 4 replaces it with the conditional edge.
 
-- [ ] **Step 4: Run to verify they pass**
+- [x] **Step 4: Run to verify they pass**
 
 ```bash
 .venv/bin/python -m pytest tests/test_approval_graph.py -v
@@ -631,7 +631,7 @@ def build_approval_graph(*, checkpointer: Any = None) -> Any:
 
 Expected: all PASS.
 
-- [ ] **Step 5: `make check` and commit**
+- [x] **Step 5: `make check` and commit**
 
 ```bash
 make check
@@ -658,7 +658,7 @@ Claude-Session: https://claude.ai/code/session_016trAebLxBJCuoFxsdQCQWW"
 - Consumes: `approvals.record_decision`, `flags.open_flags_for`, `flags.resolve_flag`
 - Produces: `apply_decision_node(state) -> dict[str, Any]` — **always opens and commits its own connection; accepts no `conn` parameter**
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_apply_decision_commits_so_a_separate_connection_can_see_it(committed_rows):
@@ -735,7 +735,7 @@ def test_deciding_an_invoice_closes_its_flags(committed_rows, decision):
     assert rows[0]["resolved_at"] is not None
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 ```bash
 .venv/bin/python -m pytest tests/test_approval_graph.py -k "apply_decision or closes_its_flags" -v
@@ -743,7 +743,7 @@ def test_deciding_an_invoice_closes_its_flags(committed_rows, decision):
 
 Expected: FAIL — no attribute `apply_decision_node`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 def apply_decision_node(state: ApprovalState) -> dict[str, Any]:
@@ -786,7 +786,7 @@ def apply_decision_node(state: ApprovalState) -> dict[str, Any]:
     return {"status": "decided"}
 ```
 
-- [ ] **Step 4: Run to verify they pass**
+- [x] **Step 4: Run to verify they pass**
 
 ```bash
 .venv/bin/python -m pytest tests/test_approval_graph.py -v
@@ -794,7 +794,7 @@ def apply_decision_node(state: ApprovalState) -> dict[str, Any]:
 
 Expected: all PASS.
 
-- [ ] **Step 5: `make check` and commit**
+- [x] **Step 5: `make check` and commit**
 
 ```bash
 make check
@@ -828,7 +828,7 @@ Claude-Session: https://claude.ai/code/session_016trAebLxBJCuoFxsdQCQWW"
   - `record_rejection_node(state) -> dict[str, Any]`
   - `route_after_decision(state) -> str` returning `"post_entry"` or `"record_rejection"`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 @pytest.mark.parametrize("decision", ["approved", "edited"])
@@ -937,7 +937,7 @@ def test_a_guard_denial_in_post_entry_is_not_swallowed(committed_rows):
         approval.post_entry_node(state)
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 ```bash
 .venv/bin/python -m pytest tests/test_approval_graph.py -k "posts_with_human or audit_actor or rejected or routing_after or guard_denial" -v
@@ -945,7 +945,7 @@ def test_a_guard_denial_in_post_entry_is_not_swallowed(committed_rows):
 
 Expected: FAIL — no attribute `post_entry_node`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 def post_entry_node(state: ApprovalState) -> dict[str, Any]:
@@ -1080,7 +1080,7 @@ Then rewire in `build_approval_graph`, replacing `builder.add_edge("approval_gat
 
 **On the fields `_rebuild_invoice_data` omits.** `InvoiceData` also declares `schema_version`, `seller_address`, `buyer_name` and `buyer_address`; the `invoices` table stores none of them, and all four are `Optional` with defaults, so leaving them out is valid. `build_journal_entry` reads only `lines`, `vat_amount` and `issue_date`, none of which are affected. `InvoiceLine`'s field names above match `extraction/models.py:27-55` exactly — verified 2026-08-01. The model is `frozen=True, extra="forbid"`, so a *wrong* name raises at construction rather than silently dropping; a *missing optional* one does not.
 
-- [ ] **Step 4: Run to verify they pass**
+- [x] **Step 4: Run to verify they pass**
 
 ```bash
 .venv/bin/python -m pytest tests/test_approval_graph.py -v
@@ -1088,7 +1088,7 @@ Then rewire in `build_approval_graph`, replacing `builder.add_edge("approval_gat
 
 Expected: all PASS.
 
-- [ ] **Step 5: `make check` and commit**
+- [x] **Step 5: `make check` and commit**
 
 ```bash
 make check
@@ -1118,7 +1118,7 @@ Claude-Session: https://claude.ai/code/session_016trAebLxBJCuoFxsdQCQWW"
 - Consumes: `episodic.record_episode`, `vendors.get_vendor`, `vendors.update_profile`
 - Produces: `learn_node(state) -> dict[str, Any]`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_a_rejection_is_remembered_with_its_reason(committed_rows):
@@ -1190,7 +1190,7 @@ def test_field_corrections_reach_the_field_classify_reads(committed_rows):
     assert "IT_SERVICES" in vendor["reviewer_notes"]
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 ```bash
 .venv/bin/python -m pytest tests/test_approval_graph.py -k "remembered or corrections_reach" -v
@@ -1198,7 +1198,7 @@ def test_field_corrections_reach_the_field_classify_reads(committed_rows):
 
 Expected: FAIL — no attribute `learn_node`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 def learn_node(state: ApprovalState) -> dict[str, Any]:
@@ -1265,7 +1265,7 @@ Then add it to the graph, replacing the two `END` edges from Task 4:
     builder.add_edge("learn", END)
 ```
 
-- [ ] **Step 4: Run to verify they pass**
+- [x] **Step 4: Run to verify they pass**
 
 ```bash
 .venv/bin/python -m pytest tests/test_approval_graph.py -v
@@ -1273,7 +1273,7 @@ Then add it to the graph, replacing the two `END` edges from Task 4:
 
 Expected: all PASS.
 
-- [ ] **Step 5: `make check` and commit**
+- [x] **Step 5: `make check` and commit**
 
 ```bash
 make check
@@ -1301,7 +1301,7 @@ Claude-Session: https://claude.ai/code/session_016trAebLxBJCuoFxsdQCQWW"
 - Consumes: `checkpointer.build_checkpointer`, `approvals.get_by_invoice`
 - Produces: `submit_decision(*, invoice_id: str, decision: str, decided_by: str, reason: str | None = None, corrections: dict[str, Any] | None = None) -> dict[str, Any]`; `VALID_DECISIONS = ("approved", "rejected", "edited")`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_submit_decision_drives_a_pending_thread_to_completion(committed_rows):
@@ -1342,7 +1342,7 @@ def test_an_unknown_decision_never_reaches_the_graph(committed_rows):
         )
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 ```bash
 .venv/bin/python -m pytest tests/test_approval_graph.py -k submit_decision -v
@@ -1350,7 +1350,7 @@ def test_an_unknown_decision_never_reaches_the_graph(committed_rows):
 
 Expected: FAIL — no attribute `submit_decision`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 VALID_DECISIONS = ("approved", "rejected", "edited")
@@ -1400,7 +1400,7 @@ def submit_decision(
         )
 ```
 
-- [ ] **Step 4: Run to verify they pass**
+- [x] **Step 4: Run to verify they pass**
 
 ```bash
 .venv/bin/python -m pytest tests/test_approval_graph.py -v
@@ -1408,7 +1408,7 @@ def submit_decision(
 
 Expected: all PASS.
 
-- [ ] **Step 5: `make check` and commit**
+- [x] **Step 5: `make check` and commit**
 
 ```bash
 make check
@@ -1435,7 +1435,7 @@ Claude-Session: https://claude.ai/code/session_016trAebLxBJCuoFxsdQCQWW"
 - Consumes: `approvals.open_approval`, `approval.build_approval_graph`, `checkpointer.build_checkpointer`
 - Produces: `open_approval_node(state: BatchState) -> dict[str, Any]` returning `{"opened": [...], "unopened": [...], "status": "approvals_opened"}`; `BatchState` gains `opened: list[dict[str, Any]]` and `unopened: list[dict[str, str]]`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_open_approval_parks_a_flagged_invoice_at_its_interrupt(committed_rows):
@@ -1487,7 +1487,7 @@ def test_the_graph_wires_open_approval_between_auto_post_and_finalize():
     assert "auto_post --> finalize;" not in rendered
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 ```bash
 .venv/bin/python -m pytest tests/test_batch_graph.py -k open_approval -v
@@ -1495,7 +1495,7 @@ def test_the_graph_wires_open_approval_between_auto_post_and_finalize():
 
 Expected: FAIL — `batch` has no attribute `open_approval_node`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add `opened` and `unopened` to `BatchState`, then:
 
@@ -1588,7 +1588,7 @@ Rewire in `build_batch_graph`:
 
 (removing `builder.add_edge("auto_post", "finalize")`)
 
-- [ ] **Step 4: Regenerate the diagram and run**
+- [x] **Step 4: Regenerate the diagram and run**
 
 ```bash
 .venv/bin/python -m scripts.render_graph
@@ -1597,7 +1597,7 @@ Rewire in `build_batch_graph`:
 
 Expected: all PASS, including `test_the_committed_diagram_matches_the_graph`.
 
-- [ ] **Step 5: `make check` and commit**
+- [x] **Step 5: `make check` and commit**
 
 ```bash
 make check
@@ -1626,7 +1626,7 @@ Claude-Session: https://claude.ai/code/session_016trAebLxBJCuoFxsdQCQWW"
 - Consumes: `approvals.list_pending`, `build_approval_graph(...).get_state`
 - Produces: `scan() -> dict[str, list[dict[str, Any]]]` with keys `"pending"` and `"orphaned"`; `main() -> None`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_recover_pending.py`:
 
@@ -1703,7 +1703,7 @@ def test_an_approval_row_with_no_live_interrupt_is_reported_as_orphaned(committe
 
 Import `_persisted_invoice`, `_initial_state` and the `committed_rows` fixture from `tests/test_approval_graph.py` — move them into `tests/helpers/approval_fixtures.py` in this task and import from there in both files, rather than copying. Copying is how the two drift.
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 ```bash
 .venv/bin/python -m pytest tests/test_recover_pending.py -v
@@ -1711,7 +1711,7 @@ Import `_persisted_invoice`, `_initial_state` and the `committed_rows` fixture f
 
 Expected: FAIL — `No module named 'scripts.recover_pending'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Create `scripts/recover_pending.py`:
 
@@ -1796,7 +1796,7 @@ print([f for f in StateSnapshot._fields])"
 
 If `interrupts` is absent, use `snapshot.tasks` and check `task.interrupts` on each — and record which one you used, with the langgraph version, in the module docstring.
 
-- [ ] **Step 4: Run to verify they pass**
+- [x] **Step 4: Run to verify they pass**
 
 ```bash
 .venv/bin/python -m pytest tests/test_recover_pending.py -v
@@ -1804,7 +1804,7 @@ If `interrupts` is absent, use `snapshot.tasks` and check `task.interrupts` on e
 
 Expected: both PASS.
 
-- [ ] **Step 5: `make check` and commit**
+- [x] **Step 5: `make check` and commit**
 
 ```bash
 make check
@@ -1837,7 +1837,7 @@ Claude-Session: https://claude.ai/code/session_016trAebLxBJCuoFxsdQCQWW"
 
 **Language note:** the passages you rewrite become English (global constraint 7). `_interrupt_persisted` and `_wait_for_interrupt` are untouched and keep their Vietnamese docstrings. Do not mass-translate.
 
-- [ ] **Step 1: Rewrite the child to run the real graph, counting test-side**
+- [x] **Step 1: Rewrite the child to run the real graph, counting test-side**
 
 `tests/helpers/hitl_child.py` — it now takes an invoice id and an approval id:
 
@@ -1967,7 +1967,7 @@ def test_the_counted_graph_matches_the_real_one():
     assert counted == real
 ```
 
-- [ ] **Step 2: Rewrite the test body**
+- [x] **Step 2: Rewrite the test body**
 
 In `tests/test_hitl_survives_restart.py`: keep `_count`, `_interrupt_persisted` and `_wait_for_interrupt` verbatim. Replace the import of `build_spike_graph` with the approval imports and the fixtures helper, and rewrite `test_hitl_survives_restart` in English:
 
@@ -2055,7 +2055,7 @@ def test_hitl_survives_restart(requires_postgres, committed_rows, run):
             conn.execute("DELETE FROM app.spike_counter WHERE thread_id = %s", (thread_id,))
 ```
 
-- [ ] **Step 3: Run it hard**
+- [x] **Step 3: Run it hard**
 
 ```bash
 HITL_RUNS=10 .venv/bin/python -m pytest tests/test_hitl_survives_restart.py -v
@@ -2063,7 +2063,7 @@ HITL_RUNS=10 .venv/bin/python -m pytest tests/test_hitl_survives_restart.py -v
 
 Expected: **10/10 PASS**. If any run is flaky, fix the cause — do not lower `HITL_RUNS`. `test_ci_runs_the_full_ten` exists to stop exactly that.
 
-- [ ] **Step 4: Delete the spike, only now**
+- [x] **Step 4: Delete the spike, only now**
 
 ```bash
 git rm tests/helpers/spike_graph.py tests/test_spike_graph.py
@@ -2074,7 +2074,7 @@ Expected: green. If anything still imports the spike, fix the import — do not 
 
 The `spike_counter` **table stays**: it is now the node-execution counter for this test. Renaming it is a migration whose only payoff is tidiness (spec §3.2).
 
-- [ ] **Step 5: `make check` and commit**
+- [x] **Step 5: `make check` and commit**
 
 ```bash
 make check
@@ -2110,7 +2110,7 @@ Claude-Session: https://claude.ai/code/session_016trAebLxBJCuoFxsdQCQWW"
 - Consumes: `batch.build_batch_graph`, `scripts.generator.gate_batch`
 - Produces: evidence
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 ```python
 """PORTFOLIO TEST 4 — the test that justifies three graphs instead of one.
@@ -2220,7 +2220,7 @@ def test_the_batch_completes_while_approvals_are_still_open(requires_postgres, m
     assert batch_row["status"] == "completed"
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 ```bash
 docker exec invoice-agent-postgres psql -U invoice -d invoice_agent -tAc "TRUNCATE app.invoices CASCADE;"
@@ -2229,7 +2229,7 @@ docker exec invoice-agent-postgres psql -U invoice -d invoice_agent -tAc "TRUNCA
 
 Expected: PASS. Record the measured `len(posted)` / `len(opened)` for the note.
 
-- [ ] **Step 3: `make check` and commit**
+- [x] **Step 3: `make check` and commit**
 
 ```bash
 make check
@@ -2254,7 +2254,7 @@ Its own task, because M1's exit review found four tests that passed while guardi
 **Files:**
 - Create: `docs/notes/2026-08-01-m5b-approval-graph.md` (started here)
 
-- [ ] **Step 1: Mutation 1 — `apply_decision` shares `post_entry`'s transaction**
+- [x] **Step 1: Mutation 1 — `apply_decision` shares `post_entry`'s transaction**
 
 Give `apply_decision_node` a `conn` parameter that, when supplied, is used instead of opening its own; then in `post_entry_node` open one connection and pass it to both. Run:
 
@@ -2264,7 +2264,7 @@ Give `apply_decision_node` a `conn` parameter that, when supplied, is used inste
 
 Expected: **RED**. Revert. This is the mutation spec §2.3 exists for — it is the only one that can tell a real guard from one verifying its own caller.
 
-- [ ] **Step 2: Mutation 2 — a write inside the gate node**
+- [x] **Step 2: Mutation 2 — a write inside the gate node**
 
 Add `invoices_repo.set_status(conn, ..., "pending_approval")` to `approval_gate_node` before the `interrupt()` call. Run:
 
@@ -2275,7 +2275,7 @@ HITL_RUNS=3 .venv/bin/python -m pytest tests/test_hitl_survives_restart.py -q
 
 Expected: the static guard is **RED** immediately; record whether the durability test also goes red. Revert.
 
-- [ ] **Step 3: Mutation 3 — `apply_decision` stops resolving flags**
+- [x] **Step 3: Mutation 3 — `apply_decision` stops resolving flags**
 
 Delete the `resolve_flag` loop. Run:
 
@@ -2285,7 +2285,7 @@ Delete the `resolve_flag` loop. Run:
 
 Expected: **RED** (both parametrised cases). Revert.
 
-- [ ] **Step 4: Mutation 4 — `submit_decision` skips validation**
+- [x] **Step 4: Mutation 4 — `submit_decision` skips validation**
 
 Delete the `if decision not in VALID_DECISIONS` check. Run:
 
@@ -2295,7 +2295,7 @@ Delete the `if decision not in VALID_DECISIONS` check. Run:
 
 Expected: **RED**. Revert.
 
-- [ ] **Step 5: Mutation 5 — `learn` records only rejections**
+- [x] **Step 5: Mutation 5 — `learn` records only rejections**
 
 Wrap `record_episode` in `if state["decision"] == "rejected":`. Run:
 
@@ -2305,7 +2305,7 @@ Wrap `record_episode` in `if state["decision"] == "rejected":`. Run:
 
 Expected: **RED**. Revert.
 
-- [ ] **Step 6: Confirm clean, write the table**
+- [x] **Step 6: Confirm clean, write the table**
 
 ```bash
 git status --short   # must be empty
@@ -2314,7 +2314,7 @@ make check
 
 Create `docs/notes/2026-08-01-m5b-approval-graph.md` with a `## Mutation results` section recording the **measured** pass/fail for all five, including whether mutation 2 turned the durability test red as well as the static guard.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add docs/notes/2026-08-01-m5b-approval-graph.md
@@ -2335,7 +2335,7 @@ Claude-Session: https://claude.ai/code/session_016trAebLxBJCuoFxsdQCQWW"
 **Files:**
 - Modify: `docs/notes/2026-08-01-m5b-approval-graph.md`, `docs/Plan_Project_F_2026-07-25.md`, `src/invoice_agent/config.py` (only if the measurement says so)
 
-- [ ] **Step 1: Baseline the replay run**
+- [x] **Step 1: Baseline the replay run**
 
 ```bash
 docker exec invoice-agent-postgres psql -U invoice -d invoice_agent -tAc "TRUNCATE app.invoices CASCADE; UPDATE app.vendors SET invoice_count=0,total_amount=0,sum_sq_amount=0,avg_amount=NULL,stddev_amount=NULL;"
@@ -2344,7 +2344,7 @@ time .venv/bin/python -m pytest tests/test_batch_not_blocked_by_pending.py -q
 
 Record wall time.
 
-- [ ] **Step 2: Run the batch LIVE, once**
+- [x] **Step 2: Run the batch LIVE, once**
 
 Confirm keys are present, then run the same gate batch with `LLM_MODE=live` and `LLM_MODE=record` so fixtures land:
 
@@ -2364,7 +2364,7 @@ docker exec invoice-agent-postgres psql -U invoice -d invoice_agent -c "
 SELECT model, count(*), round(avg(latency_ms)) AS avg_ms FROM app.llm_calls GROUP BY 1 ORDER BY 2 DESC"
 ```
 
-- [ ] **Step 3: Record the numbers, and act on them or say why not**
+- [x] **Step 3: Record the numbers, and act on them or say why not**
 
 Into the note: 429s per provider, invoices failed, wall time live vs replay, and whether `max_concurrency=4` survived. M4-C measured **177** Gemini rate-limits in a *serial* run, so this is the first honest test of the control.
 
@@ -2372,7 +2372,7 @@ If 4 is too high, change `config.py:126` **and** put the date, the measurement a
 
 State plainly that these fixtures **do** travel across platforms (the text replay key hashes `(model, messages, params)`), unlike the vision fixtures whose key hashes a rasterized PNG — paying this debt does not pay that one.
 
-- [ ] **Step 4: Finish the note**
+- [x] **Step 4: Finish the note**
 
 Add to `docs/notes/2026-08-01-m5b-approval-graph.md`:
 
@@ -2382,11 +2382,11 @@ Add to `docs/notes/2026-08-01-m5b-approval-graph.md`:
 - `recover_pending` output: pending and orphaned counts
 - spec §9's four open questions, with anything M5-B answered marked as such
 
-- [ ] **Step 5: Update the roadmap**
+- [x] **Step 5: Update the roadmap**
 
 In `docs/Plan_Project_F_2026-07-25.md`: mark 5.1, 5.2, 5.4, 5.5 done in the M5 table; add the M5-B line to the sub-milestone block in §3; update the §7 M5 row; update §8's portfolio-test table (test 1 now runs on the real graph; test 4 ✅); and move `max_concurrency` off §1's owed list.
 
-- [ ] **Step 6: `make check`, push, confirm CI**
+- [x] **Step 6: `make check`, push, confirm CI**
 
 ```bash
 make check
