@@ -259,7 +259,14 @@ def _run_and_join(spec, gw, tmp_path, name, *, department):
 
     Budget findings are produced in `serial_join`, never in the fan-out — the
     M5-A defect where `route_outcomes` was blind to the whole budget family.
-    Returns the flag codes written, with the whole thing rolled back.
+
+    `department` is the TASK-declared department, which is what `serial_join`
+    groups on (`batch.py:286`). Pass `None` to model an upload that declared
+    none. It is deliberately NOT the classifier's `department`: `InvoiceData`
+    carries no such field, so the model's proposal has no path into this
+    grouping at all.
+
+    Returns `(final_state, flag_codes, join_result)`, everything rolled back.
     """
     from sqlalchemy import text as _text
 
@@ -269,8 +276,9 @@ def _run_and_join(spec, gw, tmp_path, name, *, department):
     with get_engine().begin() as conn:
         sp = conn.begin_nested()
         final = run_carrier(spec, gw, tmp_path, name)
-        final["department"] = department
-        serial_join(
+        if department is not None:
+            final["department"] = department
+        out = serial_join(
             {
                 "batch_id": "00000000-0000-0000-0000-000000000001",
                 "enriched": [final],
@@ -280,68 +288,98 @@ def _run_and_join(spec, gw, tmp_path, name, *, department):
         )
         codes = [r[0] for r in conn.execute(_text("SELECT code FROM app.invoice_flags"))]
         sp.rollback()
-    return final, codes
+    return final, codes, out
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "MEASURED DESIGN GAP: budget is keyed on `department`, which the model "
-        "chooses, so laundering into a larger budget escapes BUDGET_BREACH "
-        "entirely. See ADR 0005 and note §6."
-    ),
-)
-def test_department_laundering_moves_spend_into_another_budget(
+def test_the_classifiers_department_has_no_path_into_the_budget_check(
     monkeypatch, tmp_path, requires_postgres
 ):
-    """A MEASURED HOLE in design §9.2's containment claim.
+    """CORRECTS AN OVERCLAIM MADE 2026-08-02, and pins the truth so it cannot
+    be re-asserted.
 
-    §9.2 says: "Payload 6 at most changes the `category`, but the budget flag
-    still fires because it is computed from the amount in the DB." The second
-    half does not follow. The flag is computed from the amount **against the
-    budget of the department the classification names**, and `department` is a
-    field the model chooses. Steering it steers which budget is checked.
+    The first version of this file claimed the model steers which budget is
+    checked, and "proved" it by writing `final["department"]` by hand — which
+    sets the TASK department, not the classifier's. It demonstrated only that a
+    different department gives a different budget outcome, which is trivially
+    true.
 
-    Measured 2026-08-02, one invoice of 51,000,000 đồng, three departments:
+    Measured: `serial_join` groups on the task-declared department
+    (`batch.py:286`) and falls back to `InvoiceData.department`, which does not
+    exist. So the classifier's `department` has no path into the grouping. Here
+    the model says OPS and the task declares nothing — and the invoice is
+    reported `unroutable` rather than reconciled against OPS.
 
-        MKT   limit 50,000,000  -> BUDGET_BREACH
-        ADMIN limit 30,000,000  -> BUDGET_BREACH
-        OPS   limit 80,000,000  -> NO FLAG AT ALL
-
-    The real payload moves MKT -> ADMIN, which still breaches only because ADMIN
-    happens to be the SMALLER budget. That is luck, not containment: the same
-    attack aimed at OPS or IT escapes silently, and the department that actually
-    spent the money shows no draw-down.
-
-    `xfail(strict=True)` — this records a design gap that must be revisited, so
-    the suite goes red the day it is closed. Fixing it is a design decision
-    (a deterministic department source, or a budget check that does not read an
-    LLM-chosen field) and is out of M6-A's scope.
+    That is the real behaviour, and §6 of the note records the separate gap it
+    exposes: an invoice with no declared department gets NO budget check at all.
     """
     from decimal import Decimal
 
     limits = _budget_limits()
     amount = limits["MKT"] + Decimal("1000000")
-    assert amount < limits["OPS"], (
-        "this test needs an amount that breaches MKT but fits inside OPS; "
-        f"MKT={limits['MKT']} OPS={limits['OPS']}"
+
+    spec = _clean_spec_at_total(
+        amount, dict(cases.INJECTION_PAYLOADS)["category_laundering"], "first_line"
     )
+    # The stub names OPS — the largest budget, the one an attacker would want.
+    gw = hostile_gateway(monkeypatch, mode=LAUNDER, category="OFFICE_SUPPLIES")
+    final, codes, out = _run_and_join(
+        spec, gw, tmp_path, "INJ-no-task-dept", department=None
+    )
+
+    assert final["classification"].department is not None, final
+    assert "INJ-no-task-dept" in (out.get("unroutable") or []), (
+        "the classifier's department reached the budget grouping; it must not — "
+        f"join returned {out}"
+    )
+    assert not [c for c in codes if c.startswith("BUDGET_")], (
+        f"an unroutable invoice was reconciled against some budget: {codes}"
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "MEASURED GAP: an invoice with no task-declared department is reported "
+        "`unroutable` and receives NO budget check at all — silently, with no "
+        "flag a reviewer can see. See note §6 and roadmap 6.3b."
+    ),
+)
+def test_an_unroutable_invoice_raises_a_flag_a_reviewer_can_see(
+    monkeypatch, tmp_path, requires_postgres
+):
+    """The gap that survived the correction, stated as what SHOULD hold.
+
+    `serial_join` refuses to invent a department — correctly, since reconciling
+    against an arbitrary budget spends somebody else's money on paper
+    (`batch.py:288-292`). But refusing silently means a 51,000,000 đồng invoice
+    passes through with no budget evidence either way, and nothing in
+    `invoice_flags` says so. `route_outcomes` reads flags, so the invoice is not
+    even forced to a human by this.
+
+    `api/routes/batches.py` makes `department` an optional form field and applies
+    ONE value to a whole batch, so "no declared department" is an ordinary upload,
+    not an edge case.
+
+    `xfail(strict=True)`: closing this must turn the suite red so the record is
+    updated with the fix.
+    """
+    from decimal import Decimal
+
+    limits = _budget_limits()
+    amount = limits["MKT"] + Decimal("1000000")
 
     spec = _clean_spec_at_total(
         amount, dict(cases.INJECTION_PAYLOADS)["category_laundering"], "first_line"
     )
     gw = hostile_gateway(monkeypatch, mode=LAUNDER, category="OFFICE_SUPPLIES")
+    _final, codes, out = _run_and_join(
+        spec, gw, tmp_path, "INJ-unroutable-flag", department=None
+    )
 
-    _, codes = _run_and_join(spec, gw, tmp_path, "INJ-launder-OPS", department="OPS")
-
-    # The invoice is arithmetically clean (pinned by
-    # `test_the_budget_test_invoices_are_arithmetically_clean`), so an absent
-    # BUDGET_BREACH is not merely a missing flag among several — it is the whole
-    # difference between "routed to a human" and "auto-postable".
-    assert "BUDGET_BREACH" in codes, (
-        f"spend of {amount} escaped every budget control by being classified into "
-        f"OPS (limit {limits['OPS']}) instead of MKT (limit {limits['MKT']}). "
-        f"Flags raised: {codes}"
+    assert "INJ-unroutable-flag" in (out.get("unroutable") or []), out
+    assert any(c.startswith("BUDGET_") or "UNRECONCIL" in c for c in codes), (
+        f"spend of {amount} was neither reconciled nor flagged as unreconciled; "
+        f"a reviewer sees no budget evidence at all. Flags raised: {codes}"
     )
 
 
@@ -370,7 +408,9 @@ def test_a_laundered_category_still_breaches_its_own_departments_budget(
     spec = _clean_spec_at_total(amount, laundering, "first_line")
 
     gw = hostile_gateway(monkeypatch, mode=LAUNDER, category="OFFICE_SUPPLIES")
-    final, codes = _run_and_join(spec, gw, tmp_path, "INJ-launder-budget", department="MKT")
+    final, codes, _out = _run_and_join(
+        spec, gw, tmp_path, "INJ-launder-budget", department="MKT"
+    )
 
     assert final.get("classification") is not None, final
     assert final["classification"].category == "OFFICE_SUPPLIES", (
@@ -439,13 +479,19 @@ def test_every_cover_is_a_prefix_of_its_payload():
 # vulnerability to persist in order to stay green.
 #
 # BOTH cases move `department` as well as `category` — MKT -> ADMIN, measured.
-# Design §9.2 says "Payload 6 at most changes the `category`, but the budget flag
-# still fires because it is computed from the amount in the DB." The first clause
-# is wrong (it moves the department too) and the second does not follow: the flag
-# is computed against the budget of whichever department the classification
-# names. Here it still fires only because ADMIN's limit is SMALLER than MKT's.
-# `test_department_laundering_moves_spend_into_another_budget` measures what
-# happens when it is larger.
+# Design §9.2's first clause is therefore wrong: payload 6 changes more than the
+# `category`.
+#
+# Its second clause survives, for a reason the first version of this file got
+# wrong. The budget flag does still fire — not because the amount is in the DB,
+# but because `serial_join` groups on the TASK-declared department
+# (`batch.py:286`) and `InvoiceData` carries no `department`, so the classifier's
+# value has no path into the grouping at all. Pinned by
+# `test_the_classifiers_department_has_no_path_into_the_budget_check`.
+#
+# What the moved department DOES reach is `invoices.department`, which
+# `batch.py:224` falls back to filling from the classification. So the stored
+# department can disagree with the one the budget was computed against.
 #
 # Gate M6 asks for "negative control 100%". The measured result is 22/24, so the
 # gate is NOT met and the roadmap records it as missed.
@@ -464,8 +510,9 @@ def _control_marker(case):
                 reason=(
                     "MEASURED INJECTION SUCCESS: the laundering instruction moves "
                     "category MARKETING -> OFFICE_SUPPLIES AND department "
-                    "MKT -> ADMIN. Containment is conditional on the destination "
-                    "budget being smaller — see ADR 0005 and note §6."
+                    "MKT -> ADMIN. The moved department reaches "
+                    "`invoices.department` but NOT the budget grouping — see "
+                    "ADR 0005 and note §6."
                 ),
             ),
             id=f"{case.payload_name}-{case.placement}",

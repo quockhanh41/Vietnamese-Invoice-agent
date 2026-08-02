@@ -1,6 +1,33 @@
 # Spec — M6-A2: a deterministic `department`, so the LLM cannot choose which budget is checked
 
-> **Date**: 2026-08-02 · **Milestone**: M6-A2 (closes roadmap item 6.3b) · **Status**: design approved
+> ## ⛔ SUPERSEDED 2026-08-02, THE SAME DAY IT WAS WRITTEN. DO NOT IMPLEMENT.
+>
+> **§1's premise is false.** This spec was built on a claim that the LLM's `department` selects which
+> budget an invoice is checked against. It does not: `serial_join` groups on the **task-declared**
+> department (`batch.py:286`) and `InvoiceData` carries no `department`, so the classifier's value has
+> no path into the grouping. The measurement that appeared to prove otherwise set the department by
+> hand, and therefore measured nothing about the model. Full account in
+> `docs/notes/2026-08-02-m6a-injection.md` §6.1.
+>
+> **Kept, not deleted**, because two of its findings survive independently and a replacement spec
+> should not have to rediscover them:
+>
+> - **§1.1 — deriving `department` from `category` would be circular.** `generate_invoices.py:69`
+>   already maps `MARKETING→MKT` and `OFFICE_SUPPLIES→ADMIN`, so resolving department from an
+>   LLM-chosen category reintroduces the very channel it claims to close.
+> - **§1.2 — `modal_department` is last-write-wins, not a mode** (`vendor_profile.py:100-101`). Any
+>   design treating it as vendor history is treating one unverified LLM output as a record.
+>
+> The real, measured gaps are different and are recorded as roadmap item 6.3b: an invoice with no
+> declared department receives **no budget check at all, silently**, and `invoices.department` is
+> filled from the classifier when the task declares none. Neither is an injection issue. A
+> replacement spec addressing those has not been written yet.
+>
+> **Original text below, unedited.**
+
+---
+
+> **Date**: 2026-08-02 · **Milestone**: M6-A2 (closes roadmap item 6.3b) · **Status**: SUPERSEDED
 >
 > Reads with `docs/superpowers/specs/2026-08-02-m6-security-observability-eval-design.md` (M6),
 > `docs/notes/2026-08-02-m6a-injection.md` §6 (the measurement that motivates this), and

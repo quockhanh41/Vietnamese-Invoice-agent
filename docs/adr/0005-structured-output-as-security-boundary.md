@@ -15,9 +15,11 @@ In this architecture (design §9.2), prompt injection is designed to be **inexpr
 2. **No Execution Channel:** Agent response models (`ClassificationResult`, `AuditVerdict`) are strictly prohibited from carrying approval, flag, or status fields.
 3. **Deterministic Flag Layer for Legal-Channel Attacks — and its measured limit.** Laundering attacks succeed at the schema boundary because `category` and `department` are legal model outputs. `BUDGET_BREACH` is computed by Python from the amount in the database, never from an LLM assertion, so laundering the **category** alone has no path to it.
 
-   **Laundering the `department` does.** Budget is keyed on department (`graphs/batch.py:278-301`), so the model chooses *which budget is evaluated*. Measured 2026-08-02 on one 51,000,000 đồng invoice: MKT (limit 50M) breaches, ADMIN (30M) breaches, **OPS (80M) raises no flag at all**. The real payload moves MKT → ADMIN and is caught only because ADMIN's budget is smaller — luck, not containment.
+   **Laundering the `department` does not reach the budget either — but for a reason worth stating precisely.** Budget is keyed on department (`graphs/batch.py:278-301`), and the model does propose a `department`. It is not the one used: `serial_join` groups on the **task-declared** department and falls back to `InvoiceData.department`, which does not exist, so the model's value has no path into the grouping. Measured and pinned by `test_the_classifiers_department_has_no_path_into_the_budget_check`.
 
-   This is accepted as a **known open gap**, not as a property of the design. It is pinned by `test_department_laundering_moves_spend_into_another_budget` with `xfail(strict=True)`, and options for closing it are recorded in note §6.4. The honest statement of the boundary is: *the LLM cannot write a flag, but it can select the budget against which a flag is computed.*
+   > An earlier revision of this ADR claimed the opposite, on the strength of a test that set the department by hand and therefore measured nothing about the model. Corrected 2026-08-02; the reasoning is preserved in note §6.1 because the way the error was produced is the reusable part.
+
+   **What the model's department does reach is `invoices.department`** (`batch.py:224` fills it from the classification when the task declares none), so the stored department can disagree with the one the budget was computed against. And an invoice with no declared department is reported `unroutable` and **receives no budget check at all, silently** — no flag, so `route_outcomes` does not force it to a human either. Both are open gaps, pinned by `test_an_unroutable_invoice_raises_a_flag_a_reviewer_can_see` with `xfail(strict=True)`, and neither is an injection issue: they are missing controls that an ordinary upload triggers.
 
 ## Evidence & Measured Results
 
@@ -39,20 +41,20 @@ In this architecture (design §9.2), prompt injection is designed to be **inexpr
   carrier, so the instruction alone moved the classification. **These are real injection successes
   and are reported as such**, marked `xfail(strict=True)` so an improved defence turns the suite red
   and forces this record to be updated.
-- **Containment is partial, and measured — 1 of 2 channels holds.** Design §9.2 predicts *"Payload 6
-  at most changes the `category`, but the budget flag still fires because it is computed from the
-  amount in the DB."* Both halves are wrong in a way only measurement exposed:
+- **The budget flag is not steerable by the model — right conclusion, wrong reason in §9.2.** Design
+  §9.2 predicts *"Payload 6 at most changes the `category`, but the budget flag still fires because it
+  is computed from the amount in the DB."* The first clause is wrong: the model moves `department`
+  too. The conclusion nevertheless holds, for a reason §9.2 does not give:
 
-  | Channel | Budget path | Measured |
+  | Model-controlled field | Path to the budget | Measured |
   |---|---|---|
-  | `category` laundered | none — budget is not keyed on category | ✅ `BUDGET_BREACH` still fires |
-  | `department` laundered into a **larger** budget | selects which budget is evaluated | ❌ **no flag at all** |
+  | `category` | none — budget is not keyed on category | ✅ `BUDGET_BREACH` still fires |
+  | `department` | none — `serial_join` groups on the **task-declared** department, and `InvoiceData` has no `department` | ✅ classifier's value never reaches it |
 
-  One 51,000,000 đồng invoice, department varied and everything else identical: MKT (50M) breaches,
-  ADMIN (30M) breaches, **OPS (80M) raises nothing**. The category result comes from
-  `test_a_laundered_category_still_breaches_its_own_departments_budget`; the department result from
-  `test_department_laundering_moves_spend_into_another_budget`. An earlier draft inferred containment
-  from the negative control itself, which the control cannot show.
+  From `test_a_laundered_category_still_breaches_its_own_departments_budget` and
+  `test_the_classifiers_department_has_no_path_into_the_budget_check`. An earlier draft inferred
+  containment from the negative control itself, which the control cannot show, and a later one
+  claimed the opposite from a test that set the department by hand — see note §6.1.
 - **Mutation verification — 3 of 4 bite the injection suite, 1 is covered elsewhere:**
   1. **Remove `extra="forbid"`** → RED: `test_overt_compliance_cannot_be_expressed_as_a_ClassificationResult`.
   2. **Break `sanitize.wrap()`** → RED: `test_invoice_text_reaches_the_model_escaped_and_fenced`
