@@ -133,7 +133,6 @@ jobs:
         #
         # So: two skips here are the known debt, and any THIRD one is news.
         run: .venv/bin/python -m pytest -rs
-        run: .venv/bin/python -m pytest -rs
 
   secrets:
     # Job riêng: rò key là lỗi bảo mật, không phải lỗi test. Tách ra thì log
