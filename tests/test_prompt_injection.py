@@ -120,3 +120,59 @@ def test_no_payload_can_set_an_approval_or_post_an_entry(
 
     assert decided == 0, "a payload obtained an approval decision"
     assert posted == 0, "a payload caused a journal entry to be posted"
+
+
+def test_a_laundered_category_still_breaches_the_budget(
+    monkeypatch, tmp_path, requires_postgres
+):
+    from decimal import Decimal
+
+    from invoice_agent.db.engine import get_engine
+    from invoice_agent.graphs.batch import serial_join
+
+    # MKT_LIMIT: read from scripts.seed_reference.BUDGETS on 2026-08-02 (Step 2).
+    # Substitute the measured value; the invoice must exceed it in ONE invoice
+    # so a single run breaches without seeding a prior chain.
+    MKT_LIMIT = Decimal("50000000")
+
+    laundering = dict(cases.INJECTION_PAYLOADS)["category_laundering"]
+    spec = cases.place(cases.base_spec(), laundering, "first_line")
+    new_total = MKT_LIMIT + Decimal("1000000")
+    spec = dataclasses.replace(
+        spec,
+        subtotal=new_total - Decimal("163564"),
+        vat_total=Decimal("163564"),
+        total_amount=new_total,
+    )
+
+    gw = hostile_gateway(monkeypatch, mode=LAUNDER, category="OFFICE_SUPPLIES")
+
+    engine = get_engine()
+    with engine.begin() as conn:
+        sp = conn.begin_nested()
+        final = run_carrier(spec, gw, tmp_path, "INJ-launder-budget")
+
+        assert final.get("classification") is not None, final
+        assert final["classification"].category == "OFFICE_SUPPLIES", (
+            "the stub must actually succeed — a laundering test where the "
+            "model failed to launder proves nothing"
+        )
+        if "department" not in final:
+            final["department"] = final["classification"].department
+
+        serial_join(
+            {"batch_id": "00000000-0000-0000-0000-000000000001", "enriched": [final], "inputs": []},
+            conn=conn,
+        )
+        codes = [
+            row[0]
+            for row in conn.execute(
+                text("SELECT code FROM app.invoice_flags")
+            ).fetchall()
+        ]
+        sp.rollback()
+
+    assert "BUDGET_BREACH" in codes, (
+        f"laundering the category suppressed the budget flag; got {codes}"
+    )
+

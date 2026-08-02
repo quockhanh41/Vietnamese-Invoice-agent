@@ -43,7 +43,12 @@ _OVERT_BODY = {
 }
 
 
-def _reply(mode: str, category: str) -> str:
+def _reply(mode: str, category: str, messages_str: str = "") -> str:
+    if "agrees" in messages_str or "Auditor" in messages_str or "audit" in messages_str.lower():
+        return json.dumps(
+            {"agrees": True, "proposed_category": None, "proposed_department": None, "reason": "Đồng ý"},
+            ensure_ascii=False,
+        )
     if mode == OVERT:
         return json.dumps(_OVERT_BODY, ensure_ascii=False)
     if mode == LAUNDER:
@@ -68,11 +73,15 @@ def hostile_gateway(monkeypatch, *, mode: str, category: str = "OFFICE_SUPPLIES"
     """
     from invoice_agent.llm import gateway as gw_module
 
-    reply = _reply(mode, category)
+    def _completion(**kw):
+        msgs = str(kw.get("messages", ""))
+        reply = _reply(mode, category, msgs)
+        return ok_response(reply, prompt=900, completion=120)
+
     monkeypatch.setattr(
         gw_module.litellm,
         "completion",
-        lambda **kw: ok_response(reply, prompt=900, completion=120),
+        _completion,
     )
     return LLMGateway(
         Settings(
