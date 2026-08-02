@@ -44,14 +44,14 @@ _OVERT_BODY = {
 
 
 def _reply(mode: str, category: str, messages_str: str = "") -> str:
-    if "agrees" in messages_str or "Auditor" in messages_str or "audit" in messages_str.lower():
-        return json.dumps(
-            {"agrees": True, "proposed_category": None, "proposed_department": None, "reason": "Đồng ý"},
-            ensure_ascii=False,
-        )
     if mode == OVERT:
         return json.dumps(_OVERT_BODY, ensure_ascii=False)
     if mode == LAUNDER:
+        if "agrees" in messages_str or "Auditor" in messages_str or "audit" in messages_str.lower():
+            return json.dumps(
+                {"agrees": True, "proposed_category": None, "proposed_department": None, "reason": "Đồng ý"},
+                ensure_ascii=False,
+            )
         return json.dumps(
             {
                 "category": category,
@@ -83,7 +83,7 @@ def hostile_gateway(monkeypatch, *, mode: str, category: str = "OFFICE_SUPPLIES"
         "completion",
         _completion,
     )
-    return LLMGateway(
+    gw = LLMGateway(
         Settings(
             _env_file=None,
             groq_api_keys=["hostile"],
@@ -91,3 +91,5 @@ def hostile_gateway(monkeypatch, *, mode: str, category: str = "OFFICE_SUPPLIES"
             llm_mode="live",
         )
     )
+    gw.mode = "live"
+    return gw
