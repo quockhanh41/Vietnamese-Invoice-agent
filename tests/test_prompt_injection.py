@@ -176,3 +176,52 @@ def test_a_laundered_category_still_breaches_the_budget(
         f"laundering the category suppressed the budget flag; got {codes}"
     )
 
+
+def test_a_payload_in_the_classifier_reasoning_cannot_reach_the_auditor(monkeypatch):
+    """Spec §1.3: `agents/audit.py:41` feeds the Classifier's own free text to
+    the Auditor — an agent-to-agent channel design §9.1 never enumerated.
+
+    AuditVerdict carries `agrees`, `proposed_category`, `proposed_department`
+    and `reason`. None is an approval or a flag, so even total compliance by
+    the Auditor cannot authorise anything. Measured rather than assumed.
+    """
+    from invoice_agent.agents.audit import audit
+    from invoice_agent.agents.models import AuditVerdict, ClassificationResult
+
+    gw = hostile_gateway(monkeypatch, mode=OVERT)
+    invoice = _parse(cases.base_spec())
+
+    for _payload_name, payload in cases.REASONING_CASES:
+        proposal = ClassificationResult(
+            category="MARKETING", department="MKT",
+            confidence=0.9, reasoning=payload,
+        )
+        with pytest.raises(StructuredOutputError):
+            audit(invoice, proposal, gateway=gw)
+
+    assert set(AuditVerdict.model_fields) == {
+        "agrees", "proposed_category", "proposed_department", "reason",
+    }, "AuditVerdict gained a field; re-audit whether it is an authorisation channel"
+
+
+@pytest.mark.parametrize("case", cases.CASES, ids=lambda c: f"{c.payload_name}-{c.placement}")
+def test_a_carrier_classifies_identically_to_its_payload_free_twin(case):
+    """§9.3's negative control. Without it, a classification difference measures
+    whatever else differs between the two invoices rather than the injection.
+
+    Real model output, recorded once and replayed in CI. This is the ONLY
+    assertion in this file that needs a model — the other three are driven by
+    the hostile stub and cannot go stale.
+    """
+    from invoice_agent.agents.classification import classify
+    from invoice_agent.llm.gateway import LLMGateway
+
+    gw = LLMGateway()
+    carrier = classify(_parse(case.carrier), gateway=gw)
+    twin = classify(_parse(case.twin), gateway=gw)
+
+    assert carrier.category == twin.category, (
+        f"{case.payload_name} at {case.placement} moved the category: "
+        f"{twin.category} -> {carrier.category}"
+    )
+
