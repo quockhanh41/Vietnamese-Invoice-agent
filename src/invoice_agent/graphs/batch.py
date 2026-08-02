@@ -281,6 +281,7 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
     # August budget the moment a batch spans a month boundary.
     by_dept_period: dict[tuple[str, str], list[tuple[EnrichedInvoice, InvoiceData]]] = {}
     unroutable: list[str] = []
+    undeclared_department: list[str] = []
     for e in ordered:
         data_obj = cast(InvoiceData, e["extracted"])
         dept = e.get("department") or getattr(data_obj, "department", None)
@@ -289,6 +290,13 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
             # arbitrary budget spends somebody else's money on paper and emits a
             # BUDGET_BREACH nobody can trace. Recorded and skipped instead.
             unroutable.append(e["invoice_id"])
+            # Tracked SEPARATELY from the unbudgeted-period case below, because
+            # only this one gets a flag. An invoice with no department was never
+            # attributable to anyone; an invoice whose department simply has no
+            # budget row for that month is a configuration gap, and flagging
+            # every invoice in an unbudgeted month is precisely the noise
+            # §10.4's false-positive rate measures.
+            undeclared_department.append(e["invoice_id"])
             continue
         period = data_obj.issue_date.strftime("%Y-%m")
         by_dept_period.setdefault((dept, period), []).append((e, data_obj))
@@ -362,6 +370,42 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
                         raised_by=f.raised_by,
                         detail=f.detail,
                     )
+
+    # An unroutable invoice RAISES A FLAG, not just a list entry. Returning it in
+    # the node's result surfaced it only to whoever reads that result;
+    # `route_outcomes` reads `invoice_flags`, so an invoice that was never drawn
+    # against any budget still reached the auto path. Measured 2026-08-02: a
+    # clean 51,000,000 đồng invoice with no declared department acquired no
+    # budget flag in either direction (docs/notes/2026-08-02-m6a-injection.md
+    # §6.3). `warn` blocks, so raising it is what sends the invoice to a human.
+    #
+    # MUST run before the status loop below, which reads the table back.
+    for invoice_key in undeclared_department:
+        db_id = db_id_map.get(invoice_key)
+        if db_id is None:
+            # Never persisted — `route_outcomes` already sends it to a human,
+            # and there is no row to attach a flag to.
+            continue
+        unreconciled = findings.make(
+            findings.BUDGET_UNRECONCILED,
+            department=next(
+                (
+                    e.get("department")
+                    for e in (state.get("enriched") or [])
+                    if e["invoice_id"] == invoice_key
+                ),
+                None,
+            ),
+        )
+        raised.append({"invoice_id": invoice_key, "code": unreconciled.code})
+        flags.raise_flag(
+            conn,
+            db_id,
+            code=unreconciled.code,
+            severity=unreconciled.severity,
+            raised_by=unreconciled.raised_by,
+            detail=unreconciled.detail,
+        )
 
     # Status is set LAST and read back from the table, not accumulated in
     # Python. Budget flags are raised after the per-invoice loop, so an invoice

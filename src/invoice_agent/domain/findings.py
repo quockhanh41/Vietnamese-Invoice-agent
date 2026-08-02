@@ -37,6 +37,19 @@ NEAR_DUPLICATE = "NEAR_DUPLICATE"
 NEW_VENDOR = "NEW_VENDOR"
 BUDGET_WARNING = "BUDGET_WARNING"
 BUDGET_BREACH = "BUDGET_BREACH"
+# An invoice persisted with NO DECLARED DEPARTMENT, so it was never drawn
+# against any budget. `serial_join` rightly refuses to invent a department, but
+# until M6-A3 it refused SILENTLY: nothing reached `invoice_flags`, and
+# `route_outcomes` reads flags, so a clean 51,000,000 đồng invoice could
+# auto-post with no budget evidence in either direction (measured 2026-08-02,
+# docs/notes/2026-08-02-m6a-injection.md §6.3).
+#
+# NARROW ON PURPOSE. `serial_join` also reports an invoice unroutable when its
+# department has no `budgets` row for that period, and that case does NOT raise
+# this flag: an unbudgeted month is a configuration gap, and flagging every
+# invoice in one is exactly the noise §10.4's false-positive rate measures. The
+# existing code made that call deliberately and it is left standing.
+BUDGET_UNRECONCILED = "BUDGET_UNRECONCILED"
 DUPLICATE_INVOICE = "DUPLICATE_INVOICE"
 CLASSIFICATION_DISPUTED = "CLASSIFICATION_DISPUTED"
 
@@ -60,6 +73,11 @@ CODE_REGISTRY: dict[str, tuple[str, str]] = {
     NEW_VENDOR: ("info", "vendor_memory"),
     BUDGET_WARNING: ("warn", "budget"),
     BUDGET_BREACH: ("critical", "budget"),
+    # `warn`, not `info`: it must BLOCK. `info` asserts something is new and
+    # true; this asserts a control did not run, which is exactly what a reviewer
+    # has to decide about. `warn` is in `guards.BLOCKING_SEVERITIES`, so raising
+    # it is what routes the invoice to a human instead of the auto path.
+    BUDGET_UNRECONCILED: ("warn", "budget"),
     DUPLICATE_INVOICE: ("critical", "duplicate"),
     # `warn`, not `info`: it asserts something may be WRONG, so it counts toward
     # the flag false-positive metric — M4-B made severity the discriminator
