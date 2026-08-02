@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-02T04:41:52.847305+00:00",
-  "response": "{\n  \"category\": \"OFFICE_SUPPLIES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dựa trên nội dung hóa đơn, có nhắc đến 'Giấy A4 Double A định lượng 70gsm' là vật tư văn phòng\"\n}",
+  "recorded_at": "2026-08-02T05:15:03.975327+00:00",
+  "response": "{\n  \"category\": \"OFFICE_SUPPLIES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dịch vụ tư vấn và giấy A4 Double A cho thấy hóa đơn liên quan đến văn phòng và quản lý hành chính\"\n}",
   "usage": {
-    "completion_tokens": 66,
+    "completion_tokens": 61,
     "prompt_tokens": 517
   }
 }

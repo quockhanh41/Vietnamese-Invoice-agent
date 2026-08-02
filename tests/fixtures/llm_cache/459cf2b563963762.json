@@ -12,8 +12,8 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-02T04:42:08.751572+00:00",
-  "response": "{\n  \"category\": \"IT_SERVICES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dịch vụ tư vấn quản trị doanh nghiệp và dịch vụ tư vấn quản trị gợi ý về dịch vụ hỗ trợ quản lý, phù hợp với danh mục IT_SERVICES và phòng ban ADMIN\"\n}",
+  "recorded_at": "2026-08-02T05:15:21.700729+00:00",
+  "response": "{\n  \"category\": \"IT_SERVICES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dịch vụ tư vấn quản trị doanh nghiệp và dịch vụ tư vấn quản trị gợi ý về dịch vụ hỗ trợ doanh nghiệp, phù hợp với danh mục IT_SERVICES và phòng ban ADMIN\"\n}",
   "usage": {
     "completion_tokens": 73,
     "prompt_tokens": 511

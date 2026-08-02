@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-02T04:42:10.807828+00:00",
-  "response": "{\n  \"category\": \"OFFICE_SUPPLIES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Hóa đơn bao gồm giấy A4 Double A, đây là vật tư văn phòng\"\n}",
+  "recorded_at": "2026-08-02T05:15:24.433189+00:00",
+  "response": "{\n  \"category\": \"OFFICE_SUPPLIES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dịch vụ tư vấn quản trị và giấy A4 Double A cho thấy hóa đơn liên quan đến văn phòng và quản lý hành chính\"\n}",
   "usage": {
-    "completion_tokens": 53,
+    "completion_tokens": 63,
     "prompt_tokens": 505
   }
 }

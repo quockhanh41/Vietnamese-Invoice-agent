@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-02T04:41:58.892033+00:00",
-  "response": "{\n  \"category\": \"IT_SERVICES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dịch vụ tư vấn quản trị doanh nghiệp và dịch vụ tư vấn khác gợi ý về dịch vụ hỗ trợ doanh nghiệp, phù hợp với danh mục IT_SERVICES và phòng ban ADMIN\"\n}",
+  "recorded_at": "2026-08-02T05:15:10.909404+00:00",
+  "response": "{\n  \"category\": \"IT_SERVICES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dịch vụ tư vấn quản trị doanh nghiệp và dịch vụ tư vấn khác gợi ý về dịch vụ tư vấn quản lý và công nghệ thông tin, phù hợp với danh mục IT_SERVICES và phòng ban ADMIN\"\n}",
   "usage": {
-    "completion_tokens": 72,
+    "completion_tokens": 77,
     "prompt_tokens": 507
   }
 }

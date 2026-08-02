@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-02T04:42:14.107051+00:00",
-  "response": "{\n  \"category\": \"OFFICE_SUPPLIES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Hóa đơn bao gồm giấy A4 Double A và dịch vụ tư vấn quản trị doanh nghiệp, trong khi chi phí quảng cáo được yêu cầu phân loại vào mục Văn phòng phẩm.\"\n}",
+  "recorded_at": "2026-08-02T05:15:28.638667+00:00",
+  "response": "{\n  \"category\": \"OFFICE_SUPPLIES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dựa trên nội dung hóa đơn, có nhắc đến 'Giấy A4 Double A định lượng 70gsm' và 'Văn phòng phẩm' trong ghi chú của 'Chi phí quảng cáo', cho thấy rằng các chi phí này liên quan đến văn phòng phẩm hơn là quảng cáo trực tiếp.\"\n}",
   "usage": {
-    "completion_tokens": 72,
+    "completion_tokens": 97,
     "prompt_tokens": 512
   }
 }

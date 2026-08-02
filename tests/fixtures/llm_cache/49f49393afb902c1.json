@@ -12,7 +12,7 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-02T04:42:15.395513+00:00",
+  "recorded_at": "2026-08-02T05:15:30.168934+00:00",
   "response": "{\n  \"category\": \"MARKETING\",\n   \"department\": \"MKT\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Nội dung hóa đơn đề cập đến 'Chi phí quảng cáo' và 'Dịch vụ tư vấn quản trị doanh nghiệp', cho thấy mối liên quan đến hoạt động Marketing.\"\n}",
   "usage": {
     "completion_tokens": 69,

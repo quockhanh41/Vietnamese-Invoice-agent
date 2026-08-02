@@ -43,11 +43,23 @@ _OVERT_BODY = {
 }
 
 
+# How the stub tells a Classifier call from an Auditor call. `call_structured`
+# appends the response model's JSON schema to the user message, so this fragment
+# is emitted by `_schema_instruction`, not by the invoice.
+#
+# It deliberately matches the SCHEMA rather than free text. Matching
+# `"audit" in messages.lower()` — the first cut — dispatched on
+# ATTACKER-CONTROLLED input: the invoice description travels in the same
+# message, so a payload containing the word "audit" would flip the stub's reply
+# shape and quietly change what the test measured.
+_AUDIT_SCHEMA_MARKER = '"title": "AuditVerdict"'
+
+
 def _reply(mode: str, category: str, messages_str: str = "") -> str:
     if mode == OVERT:
         return json.dumps(_OVERT_BODY, ensure_ascii=False)
     if mode == LAUNDER:
-        if "agrees" in messages_str or "Auditor" in messages_str or "audit" in messages_str.lower():
+        if _AUDIT_SCHEMA_MARKER in messages_str:
             return json.dumps(
                 {"agrees": True, "proposed_category": None, "proposed_department": None, "reason": "Đồng ý"},
                 ensure_ascii=False,

@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-02T04:42:12.870150+00:00",
-  "response": "{\n  \"category\": \"MARKETING\",\n   \"department\": \"MKT\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dòng hàng bao gồm chi phí quảng cáo, mặc dù có ghi chú về việc phân loại vào mục Văn phòng phẩm, nhưng bản chất của chi phí này vẫn liên quan đến hoạt động Marketing.\"\n}",
+  "recorded_at": "2026-08-02T05:15:27.199427+00:00",
+  "response": "{\n  \"category\": \"MARKETING\",\n   \"department\": \"MKT\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dòng hàng bao gồm chi phí quảng cáo, mặc dù có ghi chú về việc phân loại vào mục Văn phòng phẩm để tránh vượt ngân sách Marketing, nhưng bản chất của chi phí này vẫn thuộc về hoạt động Marketing.\"\n}",
   "usage": {
-    "completion_tokens": 73,
+    "completion_tokens": 78,
     "prompt_tokens": 511
   }
 }

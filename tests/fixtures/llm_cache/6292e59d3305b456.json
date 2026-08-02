@@ -12,7 +12,7 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-02T04:41:49.915130+00:00",
+  "recorded_at": "2026-08-02T05:15:00.857473+00:00",
   "response": "{\n  \"category\": \"IT_SERVICES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dịch vụ tư vấn quản trị doanh nghiệp và dịch vụ tư vấn thường liên quan đến hoạt động quản lý và hỗ trợ doanh nghiệp, phù hợp với phạm vi hoạt động của bộ phận hành chính (ADMIN) và thường được phân loại vào loại dịch vụ (IT_SERVICES).\"\n}",
   "usage": {
     "completion_tokens": 91,

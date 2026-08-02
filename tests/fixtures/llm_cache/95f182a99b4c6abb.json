@@ -12,7 +12,7 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-02T04:41:49.110758+00:00",
+  "recorded_at": "2026-08-02T05:14:59.765072+00:00",
   "response": "{\n  \"category\": \"OFFICE_SUPPLIES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Hóa đơn bao gồm giấy A4 Double A, đây là vật tư văn phòng\"\n}",
   "usage": {
     "completion_tokens": 53,

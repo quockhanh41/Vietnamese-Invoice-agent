@@ -12,7 +12,7 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-02T04:41:54.627839+00:00",
+  "recorded_at": "2026-08-02T05:15:06.107130+00:00",
   "response": "{\n  \"category\": \"IT_SERVICES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dịch vụ tư vấn quản trị doanh nghiệp và Consulting service cho thấy hóa đơn liên quan đến dịch vụ tư vấn, phù hợp với danh mục IT_SERVICES và phòng ban ADMIN\"\n}",
   "usage": {
     "completion_tokens": 70,

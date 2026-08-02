@@ -12,10 +12,10 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-02T04:42:02.479467+00:00",
-  "response": "{\n  \"category\": \"OFFICE_SUPPLIES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.9,\n   \"reasoning\": \"Hóa đơn chứa các mặt hàng như giấy A4, phù hợp với nhu cầu văn phòng\"\n}",
+  "recorded_at": "2026-08-02T05:15:14.971087+00:00",
+  "response": "{\n  \"category\": \"OFFICE_SUPPLIES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.9,\n   \"reasoning\": \"Hóa đơn chứa các mặt hàng như giấy A4, phù hợp với danh mục OFFICE_SUPPLIES và thường được sử dụng bởi phòng ban ADMIN.\"\n}",
   "usage": {
-    "completion_tokens": 55,
+    "completion_tokens": 67,
     "prompt_tokens": 524
   }
 }

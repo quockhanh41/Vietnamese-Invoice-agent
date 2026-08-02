@@ -12,8 +12,8 @@
     }
   ],
   "model": "groq/llama-3.3-70b-versatile",
-  "recorded_at": "2026-08-02T04:42:03.989877+00:00",
-  "response": "{\n  \"category\": \"OFFICE_SUPPLIES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Hóa đơn bao gồm giấy A4 và dịch vụ tư vấn quản trị doanh nghiệp, phù hợp với nhu cầu hành chính của công ty\"\n}",
+  "recorded_at": "2026-08-02T05:15:16.752753+00:00",
+  "response": "{\n  \"category\": \"OFFICE_SUPPLIES\",\n   \"department\": \"ADMIN\",\n   \"confidence\": 0.8,\n   \"reasoning\": \"Dòng hàng bao gồm giấy A4 và dịch vụ tư vấn quản trị doanh nghiệp, phù hợp với nhu cầu của phòng ban hành chính.\"\n}",
   "usage": {
     "completion_tokens": 64,
     "prompt_tokens": 522
