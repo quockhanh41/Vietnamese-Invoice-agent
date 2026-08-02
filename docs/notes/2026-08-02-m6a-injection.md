@@ -142,8 +142,13 @@ plan specified:
 ```
 E  invoice_agent.llm.cache.LLMReplayMiss: LLM_MODE=replay and no fixture matched
    any model in the chain [...]. First miss: No fixture for
-   model=groq/llama-3.3-70b-versatile key=f74db1c6e49b4b52.
+   model=groq/llama-3.3-70b-versatile, cache key <16-hex prompt digest>.
 ```
+
+> The digest is elided deliberately. Pasted verbatim, the error reads
+> `key=<16 hex chars>`, which gitleaks' `generic-api-key` rule matches — this note failed the
+> `secrets` job on run `30734144866` for a value that is a hash of a prompt, not a credential.
+> A doc describing a security fix should not be the thing that breaks the secret scan.
 
 Red — but for a **cache-key change**, not for escaping. Unwrapping alters the prompt text, so the
 replay key misses; *any* prompt edit produces the same red. No assertion in the suite depended on

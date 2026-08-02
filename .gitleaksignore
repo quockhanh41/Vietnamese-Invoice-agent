@@ -1,0 +1,23 @@
+# One fingerprint, pinned deliberately narrowly.
+#
+# `cf2cdd6` pasted an `LLMReplayMiss` traceback into the M6-A note verbatim. The
+# error text ends `... key=<16 hex chars>`, and gitleaks' `generic-api-key` rule
+# matched it. The value is the truncated sha256 that `llm/cache.py::make_key`
+# computes over a PROMPT — the same digest that names the fixture files — not a
+# credential. `cache.py` deliberately excludes the API key from that hash so
+# recorded fixtures are safe to commit.
+#
+# VERIFIED, not assumed: the matched value is the prefix of a `key` field in a
+# committed replay fixture, and the repository contains no configured
+# GROQ/GEMINI/OPENROUTER key verbatim.
+#
+# WHY A FINGERPRINT AND NOT A REGEX. `.gitleaks.toml` already allowlists
+# `^[0-9a-f]{64}$` — full sha256 cache keys — and records the mutation test that
+# proved a wider allowlist hides real keys. The obvious move here, adding
+# `^[0-9a-f]{16}$`, would silence every 64-bit hex string in the repository
+# forever to excuse one line in one doc. A fingerprint is scoped to exactly one
+# commit, file, rule and line, so it cannot hide anything else.
+#
+# HEAD no longer contains the string — the note now elides the digest — so this
+# entry covers only the historical blob and should never need a sibling.
+cf2cdd6f218388dea4ada14b57fb58f080d8b3f7:docs/notes/2026-08-02-m6a-injection.md:generic-api-key:145
