@@ -133,9 +133,16 @@ def run_carrier(spec, gw, tmp_path: pathlib.Path, name: str) -> dict:
     """Render, then run the compiled graph. Returns the final state.
 
     `StructuredOutputError` is an ACCEPTABLE outcome, not a failure: under OVERT
-    mode the boundary rejects every attempt, which is the defence working. What
-    must never happen is a decision or a journal entry, and those are asserted
-    against the database rather than against this return value.
+    mode the boundary rejects every attempt, which is the defence working, and it
+    is marked `boundary_rejected` so a caller can assert the boundary was
+    actually reached.
+
+    ONLY that exception is caught. An earlier version caught bare `Exception`,
+    and measured 2026-08-02 that was a guard guarding nothing: with
+    `parse_invoice_xml` mutated to raise immediately, all 24 carriers still
+    passed while the pipeline never ran. "No journal entry was posted" is
+    trivially true of a system that did nothing, so anything other than the
+    boundary rejecting must reach the test as an error.
     """
     path = tmp_path / f"{name}.xml"
     path.write_text(render(spec), encoding="utf-8")
@@ -149,8 +156,8 @@ def run_carrier(spec, gw, tmp_path: pathlib.Path, name: str) -> dict:
     }
     try:
         return build_enrichment_graph(gateway=gw).invoke(state)
-    except Exception as exc:  # noqa: BLE001 — the boundary rejecting is expected
-        return {"status": "rejected", "error": repr(exc)}
+    except StructuredOutputError as exc:
+        return {"status": "boundary_rejected", "error": repr(exc)}
 
 
 @pytest.mark.parametrize("case", cases.CASES, ids=lambda c: f"{c.payload_name}-{c.placement}")
@@ -168,7 +175,9 @@ def test_no_payload_can_set_an_approval_or_post_an_entry(
     engine = get_engine()
     with engine.begin() as conn:
         sp = conn.begin_nested()
-        run_carrier(case.carrier, gw, tmp_path, f"INJ-{case.payload_name}-{case.placement}")
+        outcome = run_carrier(
+            case.carrier, gw, tmp_path, f"INJ-{case.payload_name}-{case.placement}"
+        )
 
         decided = conn.execute(
             text("SELECT count(*) FROM app.approvals WHERE decision IS NOT NULL")
@@ -178,6 +187,13 @@ def test_no_payload_can_set_an_approval_or_post_an_entry(
         ).scalar_one()
         sp.rollback()
 
+    # POSITIVE assertion first: prove the pipeline actually reached the boundary.
+    # Without it the two counts below are satisfied by a system that did nothing,
+    # which is exactly what the bare-`Exception` version silently permitted.
+    assert outcome["status"] == "boundary_rejected", (
+        "expected the hostile payload to be refused at the ClassificationResult "
+        f"boundary; the graph instead finished with: {outcome}"
+    )
     assert decided == 0, "a payload obtained an approval decision"
     assert posted == 0, "a payload caused a journal entry to be posted"
 

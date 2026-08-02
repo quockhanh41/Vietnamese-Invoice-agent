@@ -183,6 +183,23 @@ elsewhere.
 | 3 | Mutation B verified a cache key, and cited a non-existent test | New escaping assertion; table corrected to 3/4 |
 | 4 | The control test forced `llm_mode="replay"`, so fixtures could never be refreshed through it | Mode comes from the environment, like every other test here |
 | 5 | Hostile stub dispatched on `"audit" in messages.lower()` — **attacker-controlled input**, since the invoice travels in the same message | Dispatches on the `"title": "AuditVerdict"` schema fragment emitted by `_schema_instruction` |
+| 6 | `run_carrier` caught bare `Exception`, so all 24 security tests passed while the pipeline never ran | Catches only `StructuredOutputError`, plus a positive assertion that the boundary was reached |
+
+### 5.1 Correction 6 was the plan's own defect, and it was measured
+
+The plan (and the first implementation) wrapped `graph.invoke()` in `except Exception`. Measured
+2026-08-02 with `parse_invoice_xml` mutated to raise immediately:
+
+```
+before:  24 passed   <- nothing was parsed, classified or persisted
+after :  24 failed
+```
+
+"No approval decision was set" and "no journal entry was posted" are **trivially true of a system
+that did nothing**, so a catch-all turned all 24 into assertions that cannot fail for the right
+reason. `run_carrier` now catches only `StructuredOutputError` — the boundary rejecting, which is the
+defence working — and the test asserts `status == "boundary_rejected"` *before* the two counts, so
+the run is proven to have reached the classifier. Anything else propagates and the test errors.
 
 
 ---
