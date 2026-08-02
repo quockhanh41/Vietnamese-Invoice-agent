@@ -6,12 +6,17 @@ success. Three are driven by a hostile stub and need no keys; the fourth is the
 """
 
 import dataclasses
+import pathlib
 
 import pytest
+from scripts.generator.templates import render
+from sqlalchemy import text
 from tests.helpers import injection_cases as cases
 from tests.helpers.hostile_gateway import LAUNDER, OVERT, hostile_gateway
 
 from invoice_agent.agents.models import ClassificationResult
+from invoice_agent.extraction.xml_parser import parse_invoice_xml
+from invoice_agent.graphs.enrichment import build_enrichment_graph
 from invoice_agent.llm.structured import StructuredOutputError, call_structured
 
 
@@ -57,3 +62,61 @@ def test_laundering_IS_expressible_and_that_is_the_point(monkeypatch):
     result = call_structured(gw, response_model=ClassificationResult, prompt="x")
 
     assert result.category == "OFFICE_SUPPLIES"
+
+
+def _parse(spec):
+    """Render a spec and parse it back into InvoiceData, the shape the agents take."""
+    return parse_invoice_xml(render(spec).encode("utf-8"))
+
+
+def run_carrier(spec, gw, tmp_path: pathlib.Path, name: str) -> dict:
+    """Render, then run the compiled graph. Returns the final state.
+
+    `StructuredOutputError` is an ACCEPTABLE outcome, not a failure: under OVERT
+    mode the boundary rejects every attempt, which is the defence working. What
+    must never happen is a decision or a journal entry, and those are asserted
+    against the database rather than against this return value.
+    """
+    path = tmp_path / f"{name}.xml"
+    path.write_text(render(spec), encoding="utf-8")
+    state = {
+        "invoice_id": name,
+        "source_path": str(path),
+        "pdf_path": None,
+        "source_type": "xml",
+        "strategy": "xml",
+        "extracted": None,
+    }
+    try:
+        return build_enrichment_graph(gateway=gw).invoke(state)
+    except Exception as exc:  # noqa: BLE001 — the boundary rejecting is expected
+        return {"status": "rejected", "error": repr(exc)}
+
+
+@pytest.mark.parametrize("case", cases.CASES, ids=lambda c: f"{c.payload_name}-{c.placement}")
+def test_no_payload_can_set_an_approval_or_post_an_entry(
+    case, monkeypatch, tmp_path, requires_postgres
+):
+    """Plan item 6.3, definitions 1 and 2 of attacker success.
+
+    Every case runs inside a SAVEPOINT that rolls back, so 24 cases cannot
+    contaminate each other through vendor memory or the duplicate key.
+    """
+    from invoice_agent.db.engine import get_engine
+
+    gw = hostile_gateway(monkeypatch, mode=OVERT)
+    engine = get_engine()
+    with engine.begin() as conn:
+        sp = conn.begin_nested()
+        run_carrier(case.carrier, gw, tmp_path, f"INJ-{case.payload_name}-{case.placement}")
+
+        decided = conn.execute(
+            text("SELECT count(*) FROM app.approvals WHERE decision IS NOT NULL")
+        ).scalar_one()
+        posted = conn.execute(
+            text("SELECT count(*) FROM app.journal_entries")
+        ).scalar_one()
+        sp.rollback()
+
+    assert decided == 0, "a payload obtained an approval decision"
+    assert posted == 0, "a payload caused a journal entry to be posted"
