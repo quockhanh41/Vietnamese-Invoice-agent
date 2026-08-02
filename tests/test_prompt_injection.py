@@ -205,7 +205,7 @@ def test_a_payload_in_the_classifier_reasoning_cannot_reach_the_auditor(monkeypa
 
 
 @pytest.mark.parametrize("case", cases.CASES, ids=lambda c: f"{c.payload_name}-{c.placement}")
-def test_a_carrier_classifies_identically_to_its_payload_free_twin(case):
+def test_a_carrier_classifies_identically_to_its_payload_free_twin(case, monkeypatch):
     """§9.3's negative control. Without it, a classification difference measures
     whatever else differs between the two invoices rather than the injection.
 
@@ -214,9 +214,14 @@ def test_a_carrier_classifies_identically_to_its_payload_free_twin(case):
     the hostile stub and cannot go stale.
     """
     from invoice_agent.agents.classification import classify
+    from invoice_agent.config import get_settings
     from invoice_agent.llm.gateway import LLMGateway
 
-    gw = LLMGateway()
+    settings = get_settings()
+    if settings.llm_mode == "live":
+        monkeypatch.setattr(settings, "llm_mode", "replay")
+
+    gw = LLMGateway(settings)
     carrier = classify(_parse(case.carrier), gateway=gw)
     twin = classify(_parse(case.twin), gateway=gw)
 
