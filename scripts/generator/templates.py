@@ -84,7 +84,7 @@ class InvoiceSpec:
     def transmitter_mst(self) -> str:
         """Deliberately NOT the seller's — that difference is the whole point
         of the TDiep envelope as a parser trap."""
-        return "REDACTED-MST"
+        return "0100000099"
 
     @property
     def invoice_kind_text(self) -> str:

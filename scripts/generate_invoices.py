@@ -195,7 +195,7 @@ def _make_base_spec(
         seller_tax_code=vendor.tax_code,
         seller_address=vendor.address,
         buyer_name="CÔNG TY CP TẬP ĐOÀN VIỆT NAM",
-        buyer_tax_code="REDACTED-MST",
+        buyer_tax_code="0100000099",
         buyer_address="Số 100 Phố Huế, Hà Nội",
         ext_order=vendor.ext_order,
         thousand="nghìn" if index % 5 != 0 else "ngàn",
