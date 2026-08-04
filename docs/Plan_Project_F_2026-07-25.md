@@ -194,8 +194,37 @@ kèm 2 PDF có số CCCD (vá ở `bb8718d`). Đính chính một cảnh báo c�
 `vietnamese-legal-bot/.claude/settings.json` "đang commit Langfuse key plaintext" — **sai**,
 `.claude/` đã bị gitignore và `git log --all` trả về rỗng; key chưa bao giờ vào history.
 
-**Next**: M5 — HITL production, the API, and the Streamlit insurance UI. **M4 closed 2026-08-01
-(4/4 specs)**; the gate table is in §3. What is owed, roughly in the order it will hurt:
+**Next**: **M6-C — the eval stage** (items 6.7/6.8: `scripts/eval.py` → `docs/eval-report.md`, and the
+hand-timed manual-entry baseline). **M6-B closed 2026-08-04**: observability, the cost cap, and model
+attribution. The Gate M6 table is in §3; the measurement record is
+`docs/notes/2026-08-04-m6b-observability.md`. What M6-B found, and what it hands to M6-C:
+
+- **Tracing had never been on, and `@observe` had no callers at all** — for six milestones. The flag
+  was decided by **import order**, not configuration (`litellm` calls `load_dotenv()` on import):
+  measured `api.app` False / `batch` False / `approval` False / `enrichment` True. All four are True
+  now. Two of the milestone's **own planning documents were wrong** and were corrected in-tree: the
+  spec overclaimed that tracing was off in *every* process, and the plan's HITL measurement command
+  was a **silent no-op** that measured the identity decorator while looking like a tracing run.
+- **The test suite had been sending real spans to the developer's live Langfuse project** on every
+  ordinary `make check` — the exact leak `tests/conftest.py` was written to prevent, reached through
+  a test that legitimately bypasses that guard. The 9 `I/O operation on closed file` blocks everyone
+  had been dismissing as noise were the symptom. Fixed without weakening the test.
+- **Two tests were found guarding nothing and both were rebuilt.** The cost-cap test's fixtures were
+  too cheap to reach the property (reported as **NOT verified** rather than counted — the M6-A
+  Mutation B failure mode, avoided), and the `trace_id` tests permanently polluted `app.llm_calls`
+  because `_persist_cost` commits on its own connection, bypassing the rollback fixture.
+- **⚠️ OWED TO M6-C — `app.llm_calls` is not durable on a dev machine.** `tests/conftest.py` runs a
+  session-scoped `TRUNCATE app.invoices CASCADE`, and `llm_calls` has an FK to `invoices`, so **every
+  pytest session wipes the table** — even suites that touch no database. M6-C intends to read that
+  table as eval evidence; it must capture rows immediately or persist them outside the table.
+- **⚠️ OWED — the single-rater re-measurement is still open, but is now checkable.** Even a
+  deterministic replay run served both agents from **two** models: Classifier 258/285 primary +
+  27/285 fallback; Auditor **199/285 (69.8%) fallback** + 86/285 (30.2%) gemini. M4-C's 95.4%
+  accuracy and 12.5% dispute precision were both measured without recording which model answered.
+- **Steady-state tracing overhead is UNMEASURED** and is recorded as unmeasured rather than
+  estimated. What exists is a per-subprocess client cold start of ≈1.40s, which is not the same thing.
+
+Still owed from M4, roughly in the order it will hurt:
 
 - **A throttled Auditor re-measurement.** M4-C's 12.5% dispute precision is the milestone's headline
   negative result, but Gemini free tier rate-limited **177 times** during the run, so those audits
@@ -693,8 +722,8 @@ duyệt được qua `curl`; `kill -9` giữa lúc còn pending → restart → 
 | 6.3 | ✅ **Done 2026-08-02 (M6-A)**. `test_prompt_injection.py` **CI-blocking**. 24 carriers through the graph: **0 decisions set, 0 journal entries posted**; 6 reasoning-channel cases likewise. `extra="forbid"` rejects unknown fields; `BUDGET_BREACH` fires while the model returns the laundered category. **3 of 4 mutations bite this suite** (A, B-after-fix, C); D is covered by `test_never_post_without_approval.py`. The first cut claimed 4/4 and cited a test that does not exist — note §4. | §9 |
 | 6.3b | ⚠️ **Two gaps found 2026-08-02 (M6-A), open — and one retracted claim.** **Retracted:** an earlier row here claimed the LLM selects which budget a flag is computed against. It does not — `serial_join` groups on the **task-declared** department and `InvoiceData` has no `department`, so the classifier's value never reaches the grouping. The supporting test set the department by hand and measured nothing about the model (note §6.1). **(a) ✅ CLOSED 2026-08-02 by M6-A3.** An invoice with no declared department got no budget check at all, silently — `unroutable` wrote no flag, and `route_outcomes` reads flags, so it still reached the auto path. Now raises `BUDGET_UNRECONCILED` (`warn`, blocking; no migration — `invoice_flags` does not constrain `code`). **Deliberately narrow**: the *other* unroutable cause, a department with no `budgets` row for that period, is NOT flagged — an unbudgeted month is a configuration gap and flagging every invoice in one is the noise §10.4 measures. The first cut flagged both and broke two existing serial-join tests, which were right. Both mutations verified red. **(b) resolved by (a), recorded not fixed:** `invoices.department` is still filled from the classifier when the task declares none (`batch.py:224`), but such an invoice now reaches a human who sees it as the suggestion it is. | §9.2 |
 | 6.4 | ✅ **Done 2026-08-01 (M4-C).** Pulled forward to M4-C Task 1 — **Schema audit test** (`tests/test_agent_schema_boundary.py`): asserts no agent response model carries approval/flag/status fields (`extra="forbid"` enforced). | §9.2 |
-| 6.5 | LangFuse `@observe` mọi node, tag `invoice_id`/`batch_id`/`node`/`agent`, cost + shadow cost làm metadata | §2.9 |
-| 6.6 | Cost cap: batch 10.000 file bị **từ chối trước khi gọi LLM lần nào**; per-invoice token budget vượt → manual queue | §9.2 |
+| 6.5 | ✅ **Done 2026-08-04 (M6-B).** Langfuse `@observe` on **all 24 nodes** (enrichment 8 · batch 9 · approval 7) via `observability.traced()`, carrying four tags — `node`/`agent` from the decorator, `invoice_id`/`batch_id` read from state — plus cost and shadow cost as span metadata, and `app.llm_calls.trace_id` gets its first writer. **The headline finding is that tracing was never on, and not for the reason anyone would guess.** `@observe` had **zero callers anywhere in `src/` or `scripts/`** for six milestones, and the flag guarding it was decided by **import order, not configuration**: `litellm` calls `load_dotenv()` on import, so whether `.env`'s keys had reached `os.environ` depended on which module loaded first. Measured on the old code — `api.app` **False**, `graphs.batch` **False**, `graphs.approval` **False**, `graphs.enrichment` **True**. Three of four off, one on; a nondeterministic failure, not a uniform one. `_tracing_enabled()` now reads `Settings` after the kill-switch, and all four plus a bare import measure **True**. The spec's own §1.1 claimed tracing was off in *every* process — an overclaim generalised from one measurement, the same shape M6-A had to retract — corrected in-tree in the fix commit. Note `docs/notes/2026-08-04-m6b-observability.md` §1. | §2.9 |
+| 6.6 | ✅ **Done 2026-08-04 (M6-B), both layers.** **(a) Batch cap**: one predicate `batch_is_oversized` now serves both `cost_gate_node` and the router — two copies of the rule was how "a rejected batch reported that it passed" arose. Boundary corrected to `>=`, so exactly 10,000 rejects (`> 10000` had let design §9.2's literal case through). The gate criterion is measured as an `app.llm_calls` **row count**, not a status string: green because only `['ingest', 'cost_gate']` execute, red under the topology mutation with `AssertionError: 5 LLM calls made by a rejected batch`. `max_batch_files = 10_000` is labelled in `config.py` as a design ceiling and **explicitly not a measurement** — the largest batch ever run here is 30 invoices (M5-B). **(b) Per-invoice token budget**: `max_invoice_prompt_tokens = 2000`, over budget → `manual_queue`. Corpus sweep n=285, min 424, median 431, mean 432.1, p95 440, **p99 450**, max 456 (nearest-rank), zero estimate failures, `over budget: 0`. **The measurement is heavily caveated on purpose**: ~89% of every prompt is fixed overhead (system prompt 161 + JSON schema 221 = 382 identical tokens) and all 285 corpus invoices have exactly **one** line item, so this measures "overhead + one short line", not invoice size. Real fixtures reach 522, and **5 of the 8 exceed the synthetic max of 456** — 4 of them single-line. The 3× headroom is stated as headroom, not as a measurement. Note §7. | §9.2 |
 | 6.7 | Toàn bộ eval stage + `scripts/eval.py` → `docs/eval-report.md` | §10.4 |
 | 6.8 | **Tự bấm giờ nhập tay 10 hóa đơn vào Excel** rồi ngoại suy — đừng trích báo cáo thị trường cho con số của chính mình | §10.4 |
 
@@ -703,12 +732,31 @@ duyệt được qua `curl`; `kill -9` giữa lúc còn pending → restart → 
 100% — ❌ NOT MET, measured 22/24** (compares `category` **and** `department`), the two failures being
 real `category_laundering` successes; **an undeclared department no longer yields a silent
 unreconciled invoice — `BUDGET_UNRECONCILED` blocks it to a human (item 6.3b, closed by M6-A3)**;
-schema audit xanh; 3 of 4 mutations bite the injection suite; cost cap 1/1;
+schema audit xanh; 3 of 4 mutations bite the injection suite; **cost cap 1/1 — ✅ MET (M6-B)**;
 `make eval` sinh report có **mọi** số ở bảng §10.4, trong đó classification **thắng baseline
 `keywords_vi` ≥15 điểm** (không thắng → ghi lại và cân nhắc bỏ LLM ở node đó, đúng nguyên tắc 3).
 **Artefact**: `docs/eval-report.md` + ADR `0005-structured-output-as-security-boundary.md`.
 **Báo cáo trung thực** — công bố cả thất bại. *"Auditor override precision 0.52 — chỉ vừa đủ có lợi,
 tôi giữ vì nó tập trung ở nhóm giá trị cao, đây là breakdown"* ấn tượng hơn hẳn 0.98 khắp nơi.
+
+#### Gate M6 — measured (M6-A 2026-08-02, M6-B 2026-08-04); eval rows open until M6-C
+
+| Criterion | | Evidence |
+|---|:---:|---|
+| No execution channel — 24 carriers + 6 reasoning cases | ✅ | **0 decisions set, 0 journal entries posted** (`test_prompt_injection.py`, M6-A) |
+| **Negative control 100%** | ❌ **NOT MET** | **22/24** identical; **2/24 are real `category_laundering` successes** (`first_line`, `note_line`), contained by the deterministic `BUDGET_BREACH`. Marked `xfail(strict=True)`, not allowlisted — if the defence improves the suite goes red and someone updates this row. **M6-B does not touch this and must not appear to.** Note `2026-08-02-m6a-injection.md` §3 |
+| Undeclared department no longer silently unreconciled | ✅ | `BUDGET_UNRECONCILED` (`warn`, blocking) — item 6.3b, closed by M6-A3; both mutations red |
+| Schema audit green | ✅ | `test_agent_schema_boundary.py` — no agent response model carries approval/flag/status fields (pulled forward to M4-C) |
+| Injection mutations | ⚠️ | **3 of 4** bite the injection suite (A, B-after-fix, C); D is covered by `test_never_post_without_approval.py`. The first cut claimed 4/4 and cited a test that does not exist |
+| **All 24 nodes traced, four tags carried** | ✅ **(M6-B)** | enrichment 8 · batch 9 · approval 7 = **24/24** marked, `test_node_tracing.py`. `node`/`agent` from the decorator, `invoice_id`/`batch_id` from state; tagging is `try/except`-wrapped and **cannot fail a node**. Mutations 1 and 2 red — mutation 2 removes the `functools.partial` unwrap plus **one** decorator and the test reports **all three** partial-wrapped nodes, so it is not tautological. Signature transparency verified before decorating: `inspect.signature` still reports `(state, *, gateway=None)` |
+| Tracing enables from configured keys; kill-switch still wins | ✅ **(M6-B)** | Before: `api.app` False / `batch` False / `approval` False / `enrichment` True. After: **True at all four plus a bare import**. Mutation 3 (settings block moved above the kill-switch) → `assert True is False` |
+| HITL durable with tracing genuinely ON | ✅ **(M6-B)** | `HITL_RUNS=10`, real decorator, real `GraphInterrupt` across the kill/resume boundary — **10/10**. The plan's own measurement command was a **silent no-op** (conftest sets the kill-switch before `observability` is imported) and was corrected in-tree. The 3× wall-clock is **fixed per-subprocess client cold start ≈1.40s**, isolated; steady-state overhead is recorded as **UNMEASURED** |
+| **`trace_id` written** | ✅ **(M6-B)** | `enrichment._persist_cost` passes `current_trace_id()`; 3/3 newest rows from a live `run_one.py` are **non-null** (reported as `trace_id IS NOT NULL`, never as a value — M6-A's note broke the secrets scan on a prompt digest). Cost `$0` **while** shadow `$0.00027` as span metadata, which is design §2.9's reason for two columns |
+| **Cost cap 1/1** | ✅ **(M6-B)** | Zero `app.llm_calls` rows from a rejected batch, measured as a row count; only `['ingest', 'cost_gate']` execute. Mutations 4, 5 red; **mutation 6 was reported NOT verified on the first pass** (it went red for `KeyError: 'invoice_id'` — a fixture schema mismatch, the M6-A Mutation B failure mode) and only counts after the test was rebuilt on a real corpus invoice: `AssertionError: 5 LLM calls made by a rejected batch` |
+| Token budget routes to `manual_queue` | ✅ **(M6-B)** | `over budget: 0` across all 285; routing tests green; mutation 7 (drop the schema hint) red on exact message-list equality against what reaches `litellm.completion` |
+| Model recorded per call | ✅ **(M6-B)** | `GROUP BY agent, model` returns rows. **Raw counts are ATTEMPTS, not invoices** — corrected per-invoice: Classifier 258/285 (90.5%) + fallback 27/285 (9.5%); Auditor fallback `groq/openai/gpt-oss-120b` 199/285 (69.8%) + `gemini/gemini-3.5-flash` 86/285 (30.2%). **The 69.8% was right by luck; its companion 33.0% was wrong (exact: 30.2%)** |
+| `make eval` report + `keywords_vi` +15 | 🔲 | Items 6.7/6.8 — **M6-C** |
+| `make check` green on the pushed commit, CI agreeing | ✅ **(M6-B)** | 760 passed / 2 xfailed, zero skips; green again with **every provider key unset** under `LLM_MODE=replay`. CI run recorded in note §10.1 |
 
 ---
 
