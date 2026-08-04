@@ -135,6 +135,14 @@ class Settings(BaseSettings):
     # Kiểm soát CHÍNH chống 429 khi fan-out; key rotation chỉ là lưới đỡ.
     max_concurrency: int = 4
 
+    # Design §9.2: "Upload 10.000 file -> reject BEFORE any LLM call". The
+    # number is the design's, not a measurement — it is a denial-of-wallet
+    # ceiling, not a tuned parameter, and no run in this project has approached
+    # it (largest measured batch: 30 invoices, M5-B 2026-08-01). Comparison is
+    # `>=`, so exactly 10,000 rejects: the original `> 10000` let the stated
+    # rejection case through.
+    max_batch_files: int = 10_000
+
     # --- Observability ------------------------------------------------------
     # observability.py đọc thẳng os.environ (copy nguyên vẹn từ Project A, cố
     # ý không sửa), nên các field này là để validate + tài liệu hoá, không

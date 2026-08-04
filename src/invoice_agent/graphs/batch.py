@@ -24,6 +24,7 @@ from typing import Annotated, Any, TypedDict
 
 from langgraph.types import Send
 
+from invoice_agent.config import get_settings
 from invoice_agent.extraction.models import InvoiceData
 from invoice_agent.observability import traced
 
@@ -441,21 +442,30 @@ def ingest_node(state: BatchState) -> dict[str, Any]:
     return {"batch_id": batch_id, "status": "ingested"}
 
 
+def batch_is_oversized(state: BatchState) -> bool:
+    """One predicate, called by both the node and the router.
+
+    Two copies of this rule is how the node came to report success while the
+    router rejected the batch.
+    """
+    return len(state.get("inputs") or []) >= get_settings().max_batch_files
+
+
 @traced(node="cost_gate")
 def cost_gate_node(state: BatchState) -> dict[str, Any]:
-    """Check budget/file-count gate.
+    """Refuse an oversized batch before any LLM call (design §9.2).
 
-    M6.6 owns the real token budget logic and cost cap. Ships as a threshold
-    check here to establish graph topology per design §4.
+    Reports the decision it actually made. The previous version returned
+    `cost_gate_passed` unconditionally while `cost_gate_condition` separately
+    routed to END, so a rejected batch finished reporting that it passed.
     """
+    if batch_is_oversized(state):
+        return {"status": "cost_gate_rejected"}
     return {"status": "cost_gate_passed"}
 
 
 def cost_gate_condition(state: BatchState) -> str:
-    inputs = state.get("inputs") or []
-    if len(inputs) > 10000:
-        return "rejected"
-    return "ok"
+    return "rejected" if batch_is_oversized(state) else "ok"
 
 
 @traced(node="fan_out")
