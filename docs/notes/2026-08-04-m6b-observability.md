@@ -610,4 +610,49 @@ $ env -u GROQ_API_KEY -u GROQ_API_KEYS -u GEMINI_API_KEY -u GEMINI_API_KEYS \
 760 passed, 2 xfailed, 1 warning in 37.45s
 ```
 
-CI run on the closing SHA is recorded in §10.1.
+### 10.1 CI on the pushed SHA
+
+The rule this project has broken four times: a milestone is not closed until `make check` is green on
+the **pushed** commit and CI agrees. One of those four was pushed red, CI failed, and nobody looked.
+
+```
+$ gh run view 30942059913 --json headSha,status,conclusion,jobs
+sha        : b4a6c5b25e0e35d007b540f182abb1171db8d6b5
+status     : completed
+conclusion : success
+jobs       : secrets  -> success
+             test     -> success
+```
+
+https://github.com/quockhanh41/Vietnamese-Invoice-agent/actions/runs/30942059913
+
+Both jobs green, including `secrets` — the gitleaks job that M6-A's note broke. It was also run
+locally against the full history before pushing, exactly as CI invokes it: `254 commits scanned`,
+`no leaks found`.
+
+**This milestone repeated the batching mistake the §1 scoreboard describes**, and it is worth saying
+so rather than letting the green tick imply otherwise. All 12 M6-B commits were pushed at once, so CI
+first saw the tip — per-task commits are a safety net only if per-task verification runs. Here it
+did: `make check` was run at every task boundary and again from a clean state at the gate.
+
+#### The CI count does not match the local count, and that is accounted for
+
+```
+local : 760 passed,               2 xfailed
+CI    : 765 passed, 2 skipped,    2 xfailed
+```
+
+A mismatch is not evidence of a pass. Reconciled rather than waved through:
+
+- **+7**: `HITL_RUNS` defaults to `3` in `tests/test_hitl_survives_restart.py` and the workflow sets
+  it to `10`. Seven more parametrized subprocess runs.
+- **−2**: `tests/test_vision_accuracy.py` skips `INV-0196` and `INV-0275` on CI with
+  *"vision fixture recorded on another platform — PDF rasterization is not byte-stable across
+  OS/arch, so the replay key differs."* Those two pass locally on macOS.
+
+760 + 7 − 2 = **765 passed, 2 skipped**. Exact.
+
+The two skips are the **already-owed** roadmap item "vision fixtures do not travel across platforms"
+(§1), untouched by M6-B and not counted here as passes. The vision accuracy number in the M4 gate
+table is therefore measured locally and *not* re-verified by CI — a pre-existing gap this milestone
+neither created nor closes.
