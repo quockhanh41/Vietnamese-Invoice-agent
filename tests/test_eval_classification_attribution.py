@@ -50,3 +50,39 @@ def test_empty_calls_reports_nothing_rather_than_guessing():
     from scripts.eval_classification import models_used
 
     assert models_used([]) == []
+
+
+def test_answering_model_returns_the_last_successful_attempt():
+    """`call_structured` (llm/structured.py) returns the instant a reply
+    validates and appends nothing afterwards, so the LAST successful attempt
+    is the one whose JSON became the answer — not just any model that
+    happened to respond along the way (review 2026-08-05)."""
+    from scripts.eval_classification import answering_model
+
+    calls = [
+        _record("gemini/gemini-3.5-flash"),
+        _record("groq/openai/gpt-oss-120b"),
+    ]
+    assert answering_model(calls) == "groq/openai/gpt-oss-120b"
+
+
+def test_answering_model_is_none_when_every_attempt_failed():
+    from scripts.eval_classification import answering_model
+
+    failed_1 = LLMCallRecord(
+        model="groq/llama-3.3-70b-versatile", provider="groq", prompt_tokens=10,
+        completion_tokens=0, latency_ms=1, attempt=1, succeeded=False,
+        error="RateLimitError: 429",
+    )
+    failed_2 = LLMCallRecord(
+        model="gemini/gemini-3.5-flash", provider="gemini", prompt_tokens=10,
+        completion_tokens=0, latency_ms=1, attempt=2, succeeded=False,
+        error="RateLimitError: 429",
+    )
+    assert answering_model([failed_1, failed_2]) is None
+
+
+def test_answering_model_of_empty_calls_is_none():
+    from scripts.eval_classification import answering_model
+
+    assert answering_model([]) is None

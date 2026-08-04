@@ -12,6 +12,7 @@ import argparse
 import json
 import pathlib
 import time
+from collections import Counter
 from typing import Any
 
 from scripts.generator import manifest
@@ -92,6 +93,25 @@ def models_used(calls: list[LLMCallRecord]) -> list[str]:
     return sorted({c.model for c in calls if c.succeeded})
 
 
+def answering_model(calls: list[LLMCallRecord]) -> str | None:
+    """Which model's output was actually used for the answer, per invoice.
+
+    `call_structured` (`llm/structured.py`) returns the instant a reply
+    validates against the response schema and appends nothing afterwards — so
+    the LAST successful attempt in the call list is the one whose JSON became
+    the answer, not merely one of the models that happened to respond. A model
+    can transport-succeed (`succeeded=True`, tokens burned) and still have its
+    JSON discarded by Pydantic before a later attempt actually wins;
+    `models_used()` credits both, which is correct for "was this run a
+    mixture at all" but overstates any one model's share when read as a
+    per-invoice count. `answering_model` is the exact per-invoice figure.
+    """
+    for c in reversed(calls):
+        if c.succeeded:
+            return c.model
+    return None
+
+
 def evaluate(
     corpus_dir: pathlib.Path,
     *,
@@ -112,6 +132,7 @@ def evaluate(
     agent_department_pairs: list[tuple[str, str | None]] = []
 
     total_calls: list[LLMCallRecord] = []
+    persisted_ids: list[int] = []
 
     for record in xml_records:
         xml_file = corpus_dir.parent / record["path"]
@@ -135,11 +156,15 @@ def evaluate(
         total_calls.extend(audit_calls)
 
         if persist_conn is not None:
-            telemetry.record(
-                persist_conn, classify_calls, node="classify", agent="ClassificationAgent"
+            persisted_ids.extend(
+                telemetry.record(
+                    persist_conn, classify_calls, node="classify", agent="ClassificationAgent"
+                )
             )
-            telemetry.record(
-                persist_conn, audit_calls, node="audit", agent="AuditorAgent"
+            persisted_ids.extend(
+                telemetry.record(
+                    persist_conn, audit_calls, node="audit", agent="AuditorAgent"
+                )
             )
 
         agent_category_pairs.append((truth_cat, class_res.category))
@@ -168,6 +193,8 @@ def evaluate(
                 "alternative_category": record.get("alternative_category"),
                 "classifier_model": models_used(classify_calls),
                 "auditor_model": models_used(audit_calls),
+                "classifier_answering_model": answering_model(classify_calls),
+                "auditor_answering_model": answering_model(audit_calls),
             }
         )
 
@@ -202,6 +229,19 @@ def evaluate(
     total_cost = sum(actual_cost_usd(c) for c in total_calls)
     total_shadow = sum(shadow_cost_usd(c) for c in total_calls)
 
+    # Per-invoice mixture, from `answering_model` — the count each of these
+    # sums to `total_invoices` (minus any invoice where the agent produced no
+    # valid answer at all). `models_used()` above counts every SUCCESSFUL
+    # ATTEMPT and over-credits a model that transport-succeeded but lost to
+    # Pydantic validation before a later attempt actually won (review
+    # 2026-08-05: 293 "successful" Auditor attempts against 285 invoices).
+    classifier_mixture = Counter(
+        r["classifier_answering_model"] for r in eval_rows if r["classifier_answering_model"]
+    )
+    auditor_mixture = Counter(
+        r["auditor_answering_model"] for r in eval_rows if r["auditor_answering_model"]
+    )
+
     results = {
         "total_invoices": total_xml,
         "baseline": {
@@ -224,11 +264,20 @@ def evaluate(
         "models": {
             "classifier": sorted({m for r in eval_rows for m in r["classifier_model"]}),
             "auditor": sorted({m for r in eval_rows for m in r["auditor_model"]}),
+            # Exact per-invoice mixture — the number M6-C should quote, unlike
+            # the ATTEMPT counts `classifier`/`auditor` above.
+            "classifier_mixture": dict(sorted(classifier_mixture.items())),
+            "auditor_mixture": dict(sorted(auditor_mixture.items())),
         },
         "cost": {
             "total_calls": len(total_calls),
             "total_cost_usd": total_cost,
             "total_shadow_cost_usd": total_shadow,
+        },
+        "persisted_row_range": {
+            "count": len(persisted_ids),
+            "min_id": min(persisted_ids) if persisted_ids else None,
+            "max_id": max(persisted_ids) if persisted_ids else None,
         },
         "rows": eval_rows,
     }
@@ -286,6 +335,12 @@ def main() -> None:
         print(f"Dispute Precision: {res['precisions']['dispute_precision']:.1%} (CI: {res['precisions']['dispute_ci']})")
         print(f"Override Precision: {res['precisions']['override_precision']:.1%} (CI: {res['precisions']['override_ci']})")
 
+    # Per-invoice mixture, not the raw attempt counts — see `answering_model`.
+    print(f"Classifier answering-model mixture (of {res['total_invoices']}): "
+          f"{res['models']['classifier_mixture']}")
+    print(f"Auditor answering-model mixture (of {res['total_invoices']}): "
+          f"{res['models']['auditor_mixture']}")
+
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         # `default=str` because cost is Decimal — money is never float in this
@@ -296,6 +351,19 @@ def main() -> None:
             json.dumps(res, indent=2, ensure_ascii=False, default=str), encoding="utf-8"
         )
         print(f"Raw results written to {args.out}")
+
+    # So a run's own app.llm_calls rows are identifiable without hand-diffing
+    # max(id) before and after — a concurrent `make check` run interleaving
+    # its own rows into the same table is exactly what this was missing
+    # (review 2026-08-05).
+    row_range = res["persisted_row_range"]
+    if row_range["count"]:
+        print(
+            f"Persisted {row_range['count']} app.llm_calls rows: "
+            f"id {row_range['min_id']}–{row_range['max_id']}"
+        )
+    else:
+        print("Persisted 0 app.llm_calls rows (--no-persist or nothing to write)")
 
 
 if __name__ == "__main__":
