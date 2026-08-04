@@ -134,7 +134,7 @@ def test_tagging_never_breaks_a_node(monkeypatch):
     assert a_node({"invoice_id": "INV-1"}) == {"ok": True}
 
 
-def test_the_real_observe_decorator_does_not_swallow_graph_interrupt():
+def test_the_real_observe_decorator_does_not_swallow_graph_interrupt(monkeypatch):
     """`interrupt()` raises GraphInterrupt, and HITL durability depends on it
     propagating out of the node untouched.
 
@@ -142,9 +142,29 @@ def test_the_real_observe_decorator_does_not_swallow_graph_interrupt():
     observability, because the suite runs with the kill-switch on — through
     observability this would decorate with the identity function and assert
     nothing at all.
+
+    LANGFUSE_PUBLIC_KEY/SECRET_KEY are deleted again right here rather than
+    trusted to stay absent from conftest.py's earlier pop: `litellm` calls
+    `load_dotenv()` on import (the same import-order effect `observability.py`
+    documents), and some other test module importing `litellm` before this one
+    runs refills both keys from `.env`. Measured 2026-08-04
+    (`.superpowers/sdd/2026-08-04-m6b-observability-cost-cap/task-3-report.md`):
+    without this delenv, the real `langfuse.observe` call below picks up the
+    developer's live keys, opens an authenticated client against
+    cloud.langfuse.com, and blocks ~3-4s at interpreter exit pausing/joining
+    its background threads — after pytest has closed its output streams,
+    producing `--- Logging error ---` spam. That is a genuine credential/data
+    leak, not just noise: exactly what conftest.py exists to prevent, via a
+    path that deliberately bypasses it. With the delenv, the client
+    initializes disabled and shuts down instantly, with no threads to clean
+    up. This does not weaken the test: the decorator under test is still the
+    real one, unaffected by whether the client behind it is authenticated.
     """
     from langfuse import observe as real_observe
     from langgraph.errors import GraphInterrupt
+
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
 
     @real_observe(name="approval_gate")
     def raises_interrupt():
