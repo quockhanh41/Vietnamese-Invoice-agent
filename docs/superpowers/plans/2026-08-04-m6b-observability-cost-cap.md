@@ -609,13 +609,17 @@ Expected: PASS. If it FAILS, tracing is incompatible with HITL as wired — stop
 
 The unit test above covers the decorator. This covers the whole restart path with tracing genuinely enabled.
 
-```bash
-LANGFUSE_TRACING_ENABLED=true \
-LANGFUSE_PUBLIC_KEY="$(grep '^LANGFUSE_PUBLIC_KEY=' .env | cut -d= -f2-)" \
-LANGFUSE_SECRET_KEY="$(grep '^LANGFUSE_SECRET_KEY=' .env | cut -d= -f2-)" \
-HITL_RUNS=10 .venv/bin/python -m pytest tests/test_hitl_survives_restart.py -v 2>&1 | tail -20
-```
-Expected: 10/10, same as the keyless baseline. Record the command and result verbatim. If it is slower, record how much — that number belongs in the risk row about tracing latency.
+> ⚠️ **Corrected 2026-08-04 during implementation. The obvious command does not work**, and it fails *silently* — it reports a number that looks like a tracing measurement and is not one. `tests/conftest.py:14-16` sets `LANGFUSE_TRACING_ENABLED=false` and pops both keys **unconditionally, at import time**, before `observability.py` is ever imported. Shell environment variables do not survive that. So this:
+>
+> ```bash
+> LANGFUSE_TRACING_ENABLED=true LANGFUSE_PUBLIC_KEY=... HITL_RUNS=10 .venv/bin/python -m pytest ...
+> ```
+>
+> measures the **identity decorator**, exactly as a keyless run does. Getting a real reading requires temporarily neutralising conftest's override — a git-tracked edit that must be reverted and diff-verified before committing, never committed.
+
+Record the result verbatim, and record the timing beside the tracing-off baseline.
+
+> ⚠️ **Do not report the timing delta as "tracing overhead" without decomposing it.** This test spawns a **fresh subprocess per run**, each of which cold-imports litellm/langfuse and authenticates a new Langfuse client. That is a fixed per-spawn cost which amortises away in a long-lived process, and it dominates the measured delta. The M5-B baseline (20.4s for a 30-invoice live batch) was measured in **one continuous process**, so the two are not comparable. What this step establishes is the gate criterion — **HITL durability holds with tracing genuinely on** — not a steady-state overhead figure.
 
 - [ ] **Step 4: `make check` and commit**
 
