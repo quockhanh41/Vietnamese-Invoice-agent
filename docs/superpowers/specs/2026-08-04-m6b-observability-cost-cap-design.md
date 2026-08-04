@@ -33,30 +33,57 @@ From `CLAUDE.md` and roadmap §0. Not restated per section.
 Item 6.5 says "LangFuse `@observe` every node". Item 6.6 says "cost cap". Both are one-line roadmap
 rows hiding four defects, all of which were found by reading the code rather than by running it.
 
-### 1.1 Tracing is off, and has been off since M0.4 — measured
+### 1.1 Tracing is decided by import order — measured, and worse than "off"
 
-`observability.py:21` decides tracing from `os.getenv("LANGFUSE_PUBLIC_KEY")`. The keys live in
-`.env`, and **the only thing in this repo that reads `.env` is pydantic-settings**, which populates
-`Settings` — not `os.environ`. Nothing calls `load_dotenv()` anywhere in `src/`, `scripts/` or
-`tests/`.
+> **Corrected during implementation, 2026-08-04.** The first version of this section claimed tracing
+> "has been off in every process this project has ever run". **That was an overclaim**, produced the
+> same way M6-A's retracted claim was: a single measurement generalised without checking what varied.
+> The measured truth is below. Recorded rather than quietly rewritten, because the correction is the
+> more interesting finding.
 
-Measured 2026-08-04 in this working copy, which has a real Langfuse public/secret pair and
-`LANGFUSE_TRACING_ENABLED=true` in `.env`:
+`observability.py:21` decides tracing from `os.getenv("LANGFUSE_PUBLIC_KEY")`, and the keys live in
+`.env`. Nothing in this repo calls `load_dotenv()` — but **`litellm` does, on import**. So whether
+`os.environ` carries the keys depends on whether anything has imported `litellm` yet, and
+`TRACING_ENABLED` is a module-level constant fixed at first import of `observability`.
+
+Measured 2026-08-04, working copy with a real pair and `LANGFUSE_TRACING_ENABLED=true` in `.env`:
 
 ```
-LANGFUSE_PUBLIC_KEY in os.environ: False
-TRACING_ENABLED:                   False
-settings.langfuse_public_key set:  True
+fresh process, nothing imported     LANGFUSE_PUBLIC_KEY in os.environ: False
+after `import litellm`              LANGFUSE_PUBLIC_KEY in os.environ: True
 ```
 
-So `observe` has been the identity decorator in every process this project has ever run, including
-every live batch. **Item 6.5 implemented naively would decorate 24 nodes and emit nothing**, and the
-obvious test — "every node is traced" — would pass in exactly that state.
+Which makes the old behaviour depend on who imports first:
+
+| Entry point | `TRACING_ENABLED` (old code) |
+|---|:---:|
+| `invoice_agent.api.app` | **False** |
+| `invoice_agent.graphs.batch` | **False** |
+| `invoice_agent.graphs.approval` | **False** |
+| `invoice_agent.graphs.enrichment` | **True** |
+
+Three of four off, one on, decided by an import graph nobody was maintaining for this property. That
+is worse than uniformly off: a setting that is silently on in one process and off in another cannot
+be reasoned about at all, and "we have tracing" would have been true or false depending on which
+module the process happened to reach first.
+
+**A third fact makes both readings academic**: `grep -rn "observability" src/ scripts/` returns
+**nothing**. `observe` has never had a single caller outside tests, so no node was traced under
+either state. That is item 6.5's job and is exactly what M6-B does — but it means the decorator's
+gating was never load-bearing until now, which is why the defect survived six milestones unnoticed.
+
+**Item 6.5 implemented naively would decorate 24 nodes and emit nothing on 3 of 4 entry points**, and
+the obvious test — "every node is traced" — would pass in exactly that state.
+
+After the fix, measured at the same four entry points **and** with `observability` imported first:
+`TRACING_ENABLED = True` in all five cases. The point is not merely that it is now on; it is that it
+no longer depends on import order.
 
 The confirming detail is in `tests/conftest.py`, whose docstring says the dev machine's real Langfuse
-keys would otherwise "leak into the test session and fire traces at the cloud". That guard defends
-against a leak that **cannot currently happen**, while production tracing is silently off. The
-mental model in that file is the correct one; the wiring never matched it.
+keys would otherwise "leak into the test session and fire traces at the cloud". Its mental model was
+right — and under the old code the leak was real but *intermittent*, firing only when an import of
+`litellm` preceded the first import of `observability`. The kill-switch it sets is what actually
+prevented it, and §3.1 keeps that check first.
 
 ### 1.2 `cost_gate_node` reports success unconditionally
 
