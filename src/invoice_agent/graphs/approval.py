@@ -29,6 +29,7 @@ from decimal import Decimal
 from typing import Any, TypedDict
 
 from invoice_agent.db.engine import get_engine
+from invoice_agent.observability import traced
 
 
 class ApprovalState(TypedDict):
@@ -78,6 +79,7 @@ def _with_conn(conn: Any, fn: Any, state: Any) -> dict[str, Any]:
         return fn(owned, state)
 
 
+@traced(node="load_snapshot")
 def load_snapshot_node(state: ApprovalState, *, conn: Any = None) -> dict[str, Any]:
     return _with_conn(conn, _load_snapshot, state)
 
@@ -99,6 +101,7 @@ def _load_snapshot(conn: Any, state: ApprovalState) -> dict[str, Any]:
     return {"snapshot": snapshot, "flags": open_flags, "status": "loaded"}
 
 
+@traced(node="suggest")
 def suggest_node(state: ApprovalState, *, conn: Any = None) -> dict[str, Any]:
     return _with_conn(conn, _suggest, state)
 
@@ -141,6 +144,7 @@ def _suggest(conn: Any, state: ApprovalState) -> dict[str, Any]:
     return {"suggestions": suggestions, "status": "suggested"}
 
 
+@traced(node="approval_gate")
 def approval_gate_node(state: ApprovalState) -> dict[str, Any]:
     """`interrupt()` and nothing else.
 
@@ -170,6 +174,7 @@ def approval_gate_node(state: ApprovalState) -> dict[str, Any]:
     }
 
 
+@traced(node="apply_decision")
 def apply_decision_node(state: ApprovalState) -> dict[str, Any]:
     """Record the decision and close the flags. OWNS ITS TRANSACTION.
 
@@ -210,6 +215,7 @@ def apply_decision_node(state: ApprovalState) -> dict[str, Any]:
     return {"status": "decided"}
 
 
+@traced(node="post_entry")
 def post_entry_node(state: ApprovalState) -> dict[str, Any]:
     """Post through the guard, with human authority.
 
@@ -310,6 +316,7 @@ def _rebuild_invoice_data(conn: Any, invoice_id: Any) -> Any:
 
 
 
+@traced(node="record_rejection")
 def record_rejection_node(state: ApprovalState) -> dict[str, Any]:
     import uuid as _uuid
 
@@ -328,6 +335,7 @@ def route_after_decision(state: ApprovalState) -> str:
     return "post_entry" if state["decision"] in ("approved", "edited") else "record_rejection"
 
 
+@traced(node="learn")
 def learn_node(state: ApprovalState) -> dict[str, Any]:
     """HITL feeds memory (design §5.4) — one mechanism, not two features.
 

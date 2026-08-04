@@ -39,6 +39,7 @@ from invoice_agent.llm.cost import LLMCallRecord
 from invoice_agent.llm.gateway import LLMGateway
 from invoice_agent.llm.structured import StructuredOutputError
 from invoice_agent.memory import vendor_profile
+from invoice_agent.observability import traced
 
 # Three vision attempts, from design doc §3.3. Termination is OURS, not the
 # framework's: LangGraph's recursion limit is never approached because this
@@ -78,11 +79,13 @@ def _describe(finding: Finding) -> str:
     return f"{finding.code}: {detail}" if detail else finding.code
 
 
+@traced(node="route_source")
 def route_source(state: EnrichmentState) -> dict[str, Any]:
     """Pick the first extractor. No LLM — this is one comparison."""
     return {"strategy": "xml" if state["source_type"] == "xml" else "vision"}
 
 
+@traced(node="parse_xml")
 def parse_xml_node(state: EnrichmentState) -> dict[str, Any]:
     """Deterministic extraction. Same bytes in, same InvoiceData out."""
     try:
@@ -96,6 +99,7 @@ def parse_xml_node(state: EnrichmentState) -> dict[str, Any]:
     return {"extracted": data, "current_errors": []}
 
 
+@traced(node="vision_extract")
 def vision_extract_node(
     state: EnrichmentState, *, gateway: LLMGateway
 ) -> dict[str, Any]:
@@ -150,6 +154,7 @@ def _persist_cost(
         )
 
 
+@traced(node="classify", agent="ClassificationAgent")
 def classify_node(state: EnrichmentState, *, gateway: LLMGateway) -> dict[str, Any]:
     """Cheap tier. Returns an opinion; writes nothing."""
     data = state.get("extracted")
@@ -161,6 +166,7 @@ def classify_node(state: EnrichmentState, *, gateway: LLMGateway) -> dict[str, A
     return {"classification": result, "llm_calls": calls}
 
 
+@traced(node="audit", agent="AuditorAgent")
 def audit_node(state: EnrichmentState, *, gateway: LLMGateway) -> dict[str, Any]:
     """Second opinion on a different family, then PYTHON compares them."""
     data = state.get("extracted")
@@ -178,6 +184,7 @@ def audit_node(state: EnrichmentState, *, gateway: LLMGateway) -> dict[str, Any]
     }
 
 
+@traced(node="validate")
 def validate_node(state: EnrichmentState) -> dict[str, Any]:
     """Deterministic checks (M2-B). Renders findings into the strings the retry
     prompt and the router both need."""
@@ -189,6 +196,7 @@ def validate_node(state: EnrichmentState) -> dict[str, Any]:
     return {"findings": found, "current_errors": messages, "error_history": messages}
 
 
+@traced(node="manual_queue")
 def manual_queue_node(state: EnrichmentState) -> dict[str, Any]:
     """A controlled give-up. State only — `invoices.status` belongs to M4's
     batch graph (design §4), and M3 agreed the graph's one DB surface is
@@ -196,6 +204,7 @@ def manual_queue_node(state: EnrichmentState) -> dict[str, Any]:
     return {"status": "manual_queue"}
 
 
+@traced(node="signals")
 def signals_node(state: EnrichmentState, *, conn: Any = None) -> dict[str, Any]:
     """Entity memory -> findings. No LLM, and no writes.
 

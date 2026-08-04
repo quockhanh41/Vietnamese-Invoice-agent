@@ -25,6 +25,7 @@ from typing import Annotated, Any, TypedDict
 from langgraph.types import Send
 
 from invoice_agent.extraction.models import InvoiceData
+from invoice_agent.observability import traced
 
 
 class EnrichedInvoice(TypedDict):
@@ -132,6 +133,7 @@ def enrich_one(task: dict[str, Any], *, graph: Any) -> dict[str, Any]:
     }
 
 
+@traced(node="serial_join")
 def serial_join(state: BatchState, *, conn: Any = None) -> dict[str, Any]:
     """Persist, profile, de-duplicate and reconcile — ONE transaction.
 
@@ -433,11 +435,13 @@ def _join(conn: Any, state: BatchState) -> dict[str, Any]:
     }
 
 
+@traced(node="ingest")
 def ingest_node(state: BatchState) -> dict[str, Any]:
     batch_id = state.get("batch_id") or str(uuid.uuid4())
     return {"batch_id": batch_id, "status": "ingested"}
 
 
+@traced(node="cost_gate")
 def cost_gate_node(state: BatchState) -> dict[str, Any]:
     """Check budget/file-count gate.
 
@@ -454,6 +458,7 @@ def cost_gate_condition(state: BatchState) -> str:
     return "ok"
 
 
+@traced(node="fan_out")
 def fan_out_node(state: BatchState) -> dict[str, Any]:
     return {"status": "fan_out"}
 
@@ -467,6 +472,7 @@ def fan_out_router(state: BatchState) -> list[Send]:
     ]
 
 
+@traced(node="enrich_one")
 def enrich_one_task_node(task: Any) -> dict[str, Any]:
     from invoice_agent.graphs.enrichment import build_enrichment_graph
 
@@ -474,6 +480,7 @@ def enrich_one_task_node(task: Any) -> dict[str, Any]:
     return enrich_one(task, graph=enrichment_graph)
 
 
+@traced(node="route_outcomes")
 def route_outcomes_node(state: BatchState, *, conn: Any = None) -> dict[str, Any]:
     """Split into auto and needs_approval, reading `invoice_flags`.
 
@@ -542,6 +549,7 @@ def _route(conn: Any, state: BatchState) -> dict[str, Any]:
     return {"auto": auto, "needs_approval": needs_approval, "status": "routed"}
 
 
+@traced(node="finalize")
 def finalize_node(state: BatchState) -> dict[str, Any]:
     batch_id_str = state.get("batch_id")
     if batch_id_str:
@@ -558,6 +566,7 @@ def finalize_node(state: BatchState) -> dict[str, Any]:
     return {"status": "completed"}
 
 
+@traced(node="auto_post")
 def auto_post_node(state: BatchState) -> dict[str, Any]:
     """Post every clean invoice through the guard — design §4's auto_post arm.
 
@@ -638,6 +647,7 @@ def auto_post_node(state: BatchState) -> dict[str, Any]:
     return {"posted": posted, "auto": still_auto, "needs_approval": to_human}
 
 
+@traced(node="open_approval")
 def open_approval_node(state: BatchState) -> dict[str, Any]:
     """Design §5.2's arm: one approval thread per flagged invoice, then return.
 

@@ -18,6 +18,7 @@ Related env vars (documented, not read here): LANGFUSE_HOST,
 LANGFUSE_TRACING_ENVIRONMENT (tagging only — never a kill-switch).
 """
 
+import functools
 import os
 
 from invoice_agent.config import get_settings
@@ -71,3 +72,62 @@ else:
             return fn
 
         return _identity
+
+
+TRACED_ATTR = "__invoice_agent_traced__"
+
+
+def _langfuse_client():
+    from langfuse import get_client
+
+    return get_client()
+
+
+def tag_current_span(**fields) -> None:
+    """Attach per-call identifiers to the active span.
+
+    No-ops when tracing is off, and never raises: this runs on the hot path of
+    every node, and observability must not be able to fail an invoice run.
+    """
+    if not TRACING_ENABLED:
+        return
+    known = {k: v for k, v in fields.items() if v is not None}
+    if not known:
+        return
+    try:
+        _langfuse_client().update_current_trace(metadata=known)
+    except Exception:
+        return
+
+
+def traced(*, node: str, agent: str | None = None):
+    """Mark a graph node as traced, and trace it.
+
+    The marker is set whether or not tracing is enabled. CI has no Langfuse
+    keys, so `observe` is the identity decorator there, and a structural test
+    that could only see the real decorator would pass on an unwired codebase.
+    """
+
+    def decorate(fn):
+        @functools.wraps(fn)
+        def tag_then_run(*args, **kwargs):
+            state = args[0] if args else None
+            if isinstance(state, dict):
+                tag_current_span(
+                    node=node,
+                    agent=agent,
+                    invoice_id=state.get("invoice_id"),
+                    batch_id=state.get("batch_id"),
+                )
+            return fn(*args, **kwargs)
+
+        wrapped = observe(name=node)(tag_then_run)
+        setattr(wrapped, TRACED_ATTR, {"node": node, "agent": agent})
+        return wrapped
+
+    return decorate
+
+
+def tracing_marker(fn) -> dict | None:
+    """The marker `traced` left, or None. Used by tests/test_node_tracing.py."""
+    return getattr(fn, TRACED_ATTR, None)
