@@ -106,3 +106,53 @@ class TestExtractionSucceeded:
             )
             == "manual_queue"
         )
+
+
+def test_an_invoice_too_large_to_classify_goes_to_manual_queue(sample_invoice, monkeypatch):
+    """Roadmap 6.6: over the per-invoice token budget -> manual queue.
+
+    The threshold is monkeypatched to a tiny value rather than building a
+    genuinely enormous invoice: the rule under test is the comparison and the
+    route, and a 300-line fixture would test litellm's tokenizer instead.
+    """
+    from invoice_agent.config import get_settings
+    from invoice_agent.graphs import enrichment
+
+    settings = get_settings()
+    monkeypatch.setattr(
+        enrichment,
+        "get_settings",
+        lambda: settings.model_copy(update={"max_invoice_prompt_tokens": 1}),
+    )
+
+    state = {
+        "invoice_id": "INV-BIG",
+        "strategy": "xml",
+        "extracted": sample_invoice,
+        "findings": [],
+    }
+    assert enrichment.route_after_validate(state) == "manual_queue"
+
+
+def test_an_ordinary_invoice_still_reaches_classify(sample_invoice, monkeypatch):
+    """The negative control. Without it, a threshold of 0 would pass the test
+    above while sending every invoice on the corpus to the manual queue."""
+    from langgraph.graph import END
+
+    from invoice_agent.config import get_settings
+    from invoice_agent.graphs import enrichment
+
+    settings = get_settings()
+    monkeypatch.setattr(
+        enrichment,
+        "get_settings",
+        lambda: settings.model_copy(update={"max_invoice_prompt_tokens": 100_000}),
+    )
+
+    state = {
+        "invoice_id": "INV-OK",
+        "strategy": "xml",
+        "extracted": sample_invoice,
+        "findings": [],
+    }
+    assert enrichment.route_after_validate(state) == END

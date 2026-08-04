@@ -27,6 +27,7 @@ from invoice_agent.agents.audit import audit as run_audit
 from invoice_agent.agents.classification import classify as run_classify
 from invoice_agent.agents.classification import dispute
 from invoice_agent.agents.models import AuditVerdict, ClassificationResult
+from invoice_agent.config import get_settings
 from invoice_agent.db.engine import get_engine
 from invoice_agent.domain import anomaly, validation
 from invoice_agent.domain.findings import Finding
@@ -35,6 +36,7 @@ from invoice_agent.extraction.models import InvoiceData
 from invoice_agent.extraction.xml_parser import parse_invoice_xml
 from invoice_agent.extraction.xml_schema import XmlExtractionError
 from invoice_agent.llm import telemetry
+from invoice_agent.llm.budget import estimate_prompt_tokens
 from invoice_agent.llm.cost import LLMCallRecord, actual_cost_usd, shadow_cost_usd
 from invoice_agent.llm.gateway import LLMGateway
 from invoice_agent.llm.structured import StructuredOutputError
@@ -276,6 +278,17 @@ def route_after_validate(state: EnrichmentState) -> str:
         ):
             return "vision_extract"
         return "manual_queue"
+
+    # Roadmap 6.6: refuse to spend an unbounded prompt on one invoice. Checked
+    # HERE rather than in classify_node because `classify -> audit` is an
+    # unconditional edge, so a node that gave up could not reach manual_queue
+    # without changing the graph shape M3-C measured.
+    data = state.get("extracted")
+    if data is not None:
+        settings = get_settings()
+        estimated = estimate_prompt_tokens(data, model=settings.llm_model_chain[0])
+        if estimated > settings.max_invoice_prompt_tokens:
+            return "manual_queue"
 
     if not state.get("findings"):
         return END

@@ -143,6 +143,27 @@ class Settings(BaseSettings):
     # rejection case through.
     max_batch_files: int = 10_000
 
+    # Per-invoice classify-prompt ceiling (roadmap 6.6). Measured 2026-08-04
+    # over all 285 corpus XML invoices: median 431, p95 440, p99 450, max 456
+    # tokens (n=285, zero parse/estimate failures, model
+    # groq/llama-3.3-70b-versatile). That distribution is ~89% FIXED overhead
+    # — SYSTEM_PROMPT + the JSON schema instruction is 382 identical tokens on
+    # every call — and the corpus has NO size variance: all 285 invoices have
+    # exactly one line item (verified against scripts/generator). So this
+    # measures "fixed overhead + one short line", NOT how large a real
+    # invoice gets; a real GOODS/LOGISTICS invoice routinely carries 3+ lines.
+    # Cross-checked 2026-08-04 against all 8 real, anonymised fixtures in
+    # tests/fixtures/real_samples/ (including the 7-line
+    # lienket_gtgt_7dong_2.1.0.xml): max 522 tokens, still far under this
+    # ceiling. Set to 3x the CORPUS measured max, rounded up to the next
+    # thousand — the 3x is HEADROOM, NOT a measurement: the gate exists to
+    # catch a pathological invoice (a parser fault, or a description used as
+    # a payload carrier), so it must sit well clear of everything real while
+    # still being a bound. At ~13 measured tokens per additional line item,
+    # 2000 accommodates roughly 120 line items before it fires. Full sweep in
+    # docs/notes/2026-08-04-m6b-observability.md.
+    max_invoice_prompt_tokens: int = 2000
+
     # --- Observability ------------------------------------------------------
     # observability.py đọc thẳng os.environ (copy nguyên vẹn từ Project A, cố
     # ý không sửa), nên các field này là để validate + tài liệu hoá, không
