@@ -31,8 +31,8 @@ def record(
 
     Every attempt, not only the successful one: design doc §2.9 is explicit
     that a 429 still burned input tokens, and omitting it makes the cost number
-    wrong. `trace_id` is accepted now and written by nothing until M6.5 wires
-    Langfuse.
+    wrong. `trace_id` is wired: M6-B made `observability.current_trace_id()`
+    the writer (`app.llm_calls.trace_id`).
     """
     return [
         llm_calls.record_call(

@@ -11,8 +11,11 @@ decorator and langfuse is never imported.
 
 ⚠️ This file is NO LONGER the verbatim Project A copy M0.4 recorded, and the
 reason is in `_tracing_enabled` below: verbatim is precisely what kept it
-reading `os.environ` only, which meant tracing was off in every process this
-project ever ran.
+reading `os.environ` only, which meant whether tracing was on was decided by
+import order, not configuration — measured 2026-08-04 with a valid key pair
+in `.env`: `api.app`, `graphs.batch`, and `graphs.approval` all measured
+False, `graphs.enrichment` measured True. Reading `Settings` makes it
+order-independent.
 
 Related env vars (documented, not read here): LANGFUSE_HOST,
 LANGFUSE_TRACING_ENVIRONMENT (tagging only — never a kill-switch).
@@ -109,7 +112,7 @@ def tag_current_span(**fields) -> None:
     if not known:
         return
     try:
-        _langfuse_client().update_current_trace(metadata=known)
+        _langfuse_client().update_current_span(metadata=known)
     except Exception:
         return
 

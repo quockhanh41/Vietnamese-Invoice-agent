@@ -631,7 +631,7 @@ locally against the full history before pushing, exactly as CI invokes it: `254 
 `no leaks found`.
 
 **This milestone repeated the batching mistake the §1 scoreboard describes**, and it is worth saying
-so rather than letting the green tick imply otherwise. All 12 M6-B commits were pushed at once, so CI
+so rather than letting the green tick imply otherwise. All 15 M6-B commits were pushed at once, so CI
 first saw the tip — per-task commits are a safety net only if per-task verification runs. Here it
 did: `make check` was run at every task boundary and again from a clean state at the gate.
 

@@ -116,6 +116,46 @@ def test_a_traced_node_reports_the_ids_in_its_state(monkeypatch):
     ]
 
 
+def test_tag_current_span_updates_the_span_not_the_trace(monkeypatch):
+    """Observes the REAL call `tag_current_span` makes to the Langfuse client,
+    rather than the arguments `traced()` passes into `tag_current_span` (that
+    is `test_a_traced_node_reports_the_ids_in_its_state`, above — it
+    monkeypatches `tag_current_span` itself and so cannot see this).
+
+    `update_current_trace` is trace-scoped: with all 24 nodes sharing one
+    trace, tagging the trace makes `node`/`agent`/`invoice_id`/`batch_id`
+    last-writer-wins across the whole run instead of per-node.
+    `update_current_span` is scoped to the node's own span, which is what
+    "four tags carried per node" (roadmap 6.5, note §2) actually requires.
+    This fails if the implementation regresses to trace-scoped tagging, or
+    stops calling the client altogether.
+    """
+    from invoice_agent import observability
+
+    monkeypatch.setattr(observability, "TRACING_ENABLED", True)
+
+    span_calls = []
+    trace_calls = []
+
+    class FakeClient:
+        def update_current_span(self, **kwargs):
+            span_calls.append(kwargs)
+
+        def update_current_trace(self, **kwargs):
+            trace_calls.append(kwargs)
+
+    monkeypatch.setattr(observability, "_langfuse_client", lambda: FakeClient())
+
+    observability.tag_current_span(
+        node="probe", agent="ProbeAgent", invoice_id="INV-1", batch_id=None
+    )
+
+    assert span_calls == [
+        {"metadata": {"node": "probe", "agent": "ProbeAgent", "invoice_id": "INV-1"}}
+    ]
+    assert trace_calls == []
+
+
 def test_tagging_never_breaks_a_node(monkeypatch):
     """Observability must not be able to fail an invoice run."""
     from invoice_agent import observability

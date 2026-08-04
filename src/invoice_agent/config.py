@@ -165,9 +165,11 @@ class Settings(BaseSettings):
     max_invoice_prompt_tokens: int = 2000
 
     # --- Observability ------------------------------------------------------
-    # observability.py đọc thẳng os.environ (copy nguyên vẹn từ Project A, cố
-    # ý không sửa), nên các field này là để validate + tài liệu hoá, không
-    # phải nguồn đọc duy nhất.
+    # observability.py reads these fields via get_settings() (M6-B task 1) —
+    # this Settings class IS the single read source, not just validation and
+    # documentation. That used to be false: before M6-B it read os.environ
+    # directly as a verbatim Project A copy, which is the defect
+    # docs/notes/2026-08-04-m6b-observability.md §1 records.
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_host: str = "https://cloud.langfuse.com"
