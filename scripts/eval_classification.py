@@ -20,8 +20,10 @@ from scripts.seed_reference import CATEGORIES
 from invoice_agent.agents import audit as audit_mod
 from invoice_agent.agents import classification
 from invoice_agent.config import get_settings
+from invoice_agent.db.engine import get_engine
 from invoice_agent.eval import baseline
 from invoice_agent.extraction.xml_parser import parse_invoice_xml
+from invoice_agent.llm import telemetry
 from invoice_agent.llm.cost import LLMCallRecord, actual_cost_usd, shadow_cost_usd
 from invoice_agent.llm.gateway import LLMGateway
 
@@ -80,11 +82,22 @@ def precisions(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def models_used(calls: list[LLMCallRecord]) -> list[str]:
+    """Which model(s) actually produced an answer, from one agent's call list.
+
+    SUCCESSFUL attempts only: a 429 leaves an LLMCallRecord too (design §2.9),
+    and crediting it as the rater is precisely how a two-model mixture comes to
+    be reported as a single rater.
+    """
+    return sorted({c.model for c in calls if c.succeeded})
+
+
 def evaluate(
     corpus_dir: pathlib.Path,
     *,
     gateway: LLMGateway,
     delay_seconds: float = 0.5,
+    persist_conn: Any = None,
 ) -> dict[str, Any]:
     manifest_path = corpus_dir / "manifest.jsonl"
     if not manifest_path.exists():
@@ -112,12 +125,22 @@ def evaluate(
         baseline_pairs.append((truth_cat, base_pred))
 
         # Agent predictions
-        calls: list[LLMCallRecord] = []
-        class_res = classification.classify(invoice, gateway=gateway, calls=calls)
-        audit_res = audit_mod.audit(invoice, class_res, gateway=gateway, calls=calls)
+        classify_calls: list[LLMCallRecord] = []
+        audit_calls: list[LLMCallRecord] = []
+        class_res = classification.classify(invoice, gateway=gateway, calls=classify_calls)
+        audit_res = audit_mod.audit(invoice, class_res, gateway=gateway, calls=audit_calls)
         dispute_finding = classification.dispute(class_res, audit_res)
 
-        total_calls.extend(calls)
+        total_calls.extend(classify_calls)
+        total_calls.extend(audit_calls)
+
+        if persist_conn is not None:
+            telemetry.record(
+                persist_conn, classify_calls, node="classify", agent="ClassificationAgent"
+            )
+            telemetry.record(
+                persist_conn, audit_calls, node="audit", agent="AuditorAgent"
+            )
 
         agent_category_pairs.append((truth_cat, class_res.category))
         agent_department_pairs.append((truth_dept, class_res.department))
@@ -143,6 +166,8 @@ def evaluate(
                 # empty — a wrong number, not a crash. Found 2026-08-01.
                 "ambiguous": "ambiguous_category" in (record.get("defects") or []),
                 "alternative_category": record.get("alternative_category"),
+                "classifier_model": models_used(classify_calls),
+                "auditor_model": models_used(audit_calls),
             }
         )
 
@@ -196,6 +221,10 @@ def evaluate(
             "count": len(ambiguous_rows),
             "matched_alternative": ambiguous_matched_alt,
         },
+        "models": {
+            "classifier": sorted({m for r in eval_rows for m in r["classifier_model"]}),
+            "auditor": sorted({m for r in eval_rows for m in r["auditor_model"]}),
+        },
         "cost": {
             "total_calls": len(total_calls),
             "total_cost_usd": total_cost,
@@ -221,6 +250,11 @@ def main() -> None:
         default=None,
         help="Optional path to output raw JSON results",
     )
+    parser.add_argument(
+        "--no-persist",
+        action="store_true",
+        help="skip writing app.llm_calls rows",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -233,7 +267,11 @@ def main() -> None:
     gateway = LLMGateway(settings)
 
     print(f"Evaluating {corpus_dir} (mode={settings.llm_mode})...")
-    res = evaluate(corpus_dir, gateway=gateway)
+    if args.no_persist:
+        res = evaluate(corpus_dir, gateway=gateway)
+    else:
+        with get_engine().begin() as conn:
+            res = evaluate(corpus_dir, gateway=gateway, persist_conn=conn)
 
     print("\n--- M4-C Evaluation Summary ---")
     print(f"Baseline Accuracy: {res['baseline']['accuracy']:.1%} | Macro-F1: {res['baseline']['macro_f1']:.3f}")
