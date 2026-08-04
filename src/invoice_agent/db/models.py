@@ -435,8 +435,9 @@ llm_calls = Table(
     Column("node", sa.Text, nullable=False),
     # Design doc §2.9 context. All nullable: a call from scripts/run_one.py has
     # no invoice yet, and an eval-harness call has neither invoice nor batch.
-    # `trace_id` is written by nothing until M6.5 wires Langfuse — the column
-    # ships now because one migration is cheaper than two.
+    # `trace_id` is written by `enrichment._persist_cost` (M6-B), via
+    # `observability.current_trace_id()`. NULL whenever tracing is disabled —
+    # which is CI always, since tests/conftest.py forces the kill-switch off.
     Column("invoice_id", sa.Uuid(as_uuid=True), sa.ForeignKey("invoices.id")),
     Column("batch_id", sa.Uuid(as_uuid=True), sa.ForeignKey("batches.id")),
     Column("thread_id", sa.Text),

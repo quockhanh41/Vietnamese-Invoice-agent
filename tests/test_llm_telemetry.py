@@ -250,3 +250,91 @@ def test_vision_self_correction_records_every_attempt(runtime_conn, monkeypatch)
     assert all(r["node"] == "vision_extract" for r in rows)
     assert all(r["prompt_tokens"] == 900 for r in rows), "every attempt sent the image"
     assert all(r["shadow_cost_usd"] > Decimal(0) for r in rows)
+
+
+def test_current_trace_id_is_none_when_tracing_is_off(monkeypatch):
+    from invoice_agent import observability
+
+    monkeypatch.setattr(observability, "TRACING_ENABLED", False)
+    assert observability.current_trace_id() is None
+
+
+def test_current_trace_id_never_raises(monkeypatch):
+    """Telemetry that can kill an invoice run is worse than telemetry that
+    under-reports — the rule gateway._count_tokens already follows."""
+    from invoice_agent import observability
+
+    monkeypatch.setattr(observability, "TRACING_ENABLED", True)
+    monkeypatch.setattr(
+        observability, "_langfuse_client", lambda: (_ for _ in ()).throw(RuntimeError("no client"))
+    )
+    assert observability.current_trace_id() is None
+
+
+def test_persist_cost_writes_the_active_trace_id(runtime_conn, monkeypatch):
+    """The `trace_id` column gets its first writer. Monkeypatching the source
+    keeps this runnable on a keyless CI while still proving the value is
+    threaded from observability through telemetry into the row."""
+    import uuid
+
+    from sqlalchemy import text
+
+    from invoice_agent.graphs import enrichment
+    from invoice_agent.llm.cost import LLMCallRecord
+
+    invoice_id = str(uuid.uuid4())
+    monkeypatch.setattr(enrichment, "current_trace_id", lambda: "trace-abc-123")
+
+    enrichment._persist_cost(
+        [
+            LLMCallRecord(
+                model="groq/llama-3.3-70b-versatile",
+                provider="groq",
+                prompt_tokens=10,
+                completion_tokens=5,
+                latency_ms=1,
+                attempt=1,
+                succeeded=True,
+                error=None,
+            )
+        ],
+        invoice_id=invoice_id,
+        node="classify",
+    )
+
+    row = runtime_conn.execute(
+        text("SELECT trace_id FROM app.llm_calls WHERE thread_id = :t"),
+        {"t": f"enrich:{invoice_id}"},
+    ).scalar_one()
+    assert row == "trace-abc-123"
+
+
+def test_persist_cost_reports_both_money_figures_to_the_trace(runtime_conn, monkeypatch):
+    """$0 actual on free tier reads as "you did not measure" without the shadow
+    figure beside it — design §2.9's whole reason for two columns."""
+    import uuid
+
+    from invoice_agent.graphs import enrichment
+    from invoice_agent.llm.cost import LLMCallRecord
+
+    seen = []
+    monkeypatch.setattr(enrichment, "tag_current_span", lambda **kw: seen.append(kw))
+    monkeypatch.setattr(enrichment, "current_trace_id", lambda: None)
+
+    enrichment._persist_cost(
+        [
+            LLMCallRecord(
+                model="groq/llama-3.3-70b-versatile", provider="groq",
+                prompt_tokens=1000, completion_tokens=200, latency_ms=1,
+                attempt=1, succeeded=True, error=None,
+            )
+        ],
+        invoice_id=str(uuid.uuid4()),
+        node="classify",
+    )
+
+    assert len(seen) == 1
+    # actual_cost_usd's Decimal quantisation for the free tier prints as "0",
+    # not "0.000000" — measured 2026-08-04 running this test directly.
+    assert seen[0]["cost_usd"] == "0"               # free tier
+    assert Decimal(seen[0]["shadow_cost_usd"]) > 0  # priced at gpt-4o-mini

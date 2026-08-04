@@ -83,6 +83,20 @@ def _langfuse_client():
     return get_client()
 
 
+def current_trace_id() -> str | None:
+    """The active Langfuse trace, for `app.llm_calls.trace_id`.
+
+    Returns None rather than raising: a cost row is written on the hot path of
+    every LLM call, and telemetry must never be able to kill an invoice run.
+    """
+    if not TRACING_ENABLED:
+        return None
+    try:
+        return _langfuse_client().get_current_trace_id()
+    except Exception:
+        return None
+
+
 def tag_current_span(**fields) -> None:
     """Attach per-call identifiers to the active span.
 

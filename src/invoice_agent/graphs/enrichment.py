@@ -35,11 +35,11 @@ from invoice_agent.extraction.models import InvoiceData
 from invoice_agent.extraction.xml_parser import parse_invoice_xml
 from invoice_agent.extraction.xml_schema import XmlExtractionError
 from invoice_agent.llm import telemetry
-from invoice_agent.llm.cost import LLMCallRecord
+from invoice_agent.llm.cost import LLMCallRecord, actual_cost_usd, shadow_cost_usd
 from invoice_agent.llm.gateway import LLMGateway
 from invoice_agent.llm.structured import StructuredOutputError
 from invoice_agent.memory import vendor_profile
-from invoice_agent.observability import traced
+from invoice_agent.observability import current_trace_id, tag_current_span, traced
 
 # Three vision attempts, from design doc §3.3. Termination is OURS, not the
 # framework's: LangGraph's recursion limit is never approached because this
@@ -150,8 +150,13 @@ def _persist_cost(
         return
     with get_engine().begin() as conn:
         telemetry.record(
-            conn, calls, node=node, thread_id=f"enrich:{invoice_id}"
+            conn, calls, node=node, thread_id=f"enrich:{invoice_id}",
+            trace_id=current_trace_id(),
         )
+    tag_current_span(
+        cost_usd=str(sum(actual_cost_usd(c) for c in calls)),
+        shadow_cost_usd=str(sum(shadow_cost_usd(c) for c in calls)),
+    )
 
 
 @traced(node="classify", agent="ClassificationAgent")
