@@ -274,67 +274,114 @@ def test_current_trace_id_never_raises(monkeypatch):
 def test_persist_cost_writes_the_active_trace_id(runtime_conn, monkeypatch):
     """The `trace_id` column gets its first writer. Monkeypatching the source
     keeps this runnable on a keyless CI while still proving the value is
-    threaded from observability through telemetry into the row."""
+    threaded from observability through telemetry into the row.
+
+    `_persist_cost` opens its OWN `get_engine().begin()` and commits (spec
+    §5.3's "write the moment the tokens are spent" — see its docstring), which
+    bypasses `runtime_conn`'s rollback-on-teardown. The `finally` below deletes
+    by this test's own `thread_id` so the row does not permanently pollute
+    `app.llm_calls` — a later M6-B task counts rows in this table to prove
+    model attribution, and an orphan row here would silently contaminate that
+    count. Found by review 2026-08-04.
+
+    Cleanup runs on `get_owner_engine()`, not `get_engine()`: migration
+    `b25d8a939562_m2a_09_consumption_episodic_llm.py` grants the runtime role
+    (`invoice_app`, what `_persist_cost` itself writes through) only SELECT,
+    INSERT, UPDATE on `llm_calls` — no DELETE. That is a deliberate
+    immutability property of the runtime role, the same one `owner_conn`
+    exists to bypass for admin-only operations like `_reset_db_state`'s
+    TRUNCATE. Confirmed empirically 2026-08-04: `get_engine()` here raises
+    `psycopg.errors.InsufficientPrivilege`.
+    """
     import uuid
 
     from sqlalchemy import text
 
+    from invoice_agent.db.engine import get_owner_engine
     from invoice_agent.graphs import enrichment
     from invoice_agent.llm.cost import LLMCallRecord
 
     invoice_id = str(uuid.uuid4())
+    thread_id = f"enrich:{invoice_id}"
     monkeypatch.setattr(enrichment, "current_trace_id", lambda: "trace-abc-123")
 
-    enrichment._persist_cost(
-        [
-            LLMCallRecord(
-                model="groq/llama-3.3-70b-versatile",
-                provider="groq",
-                prompt_tokens=10,
-                completion_tokens=5,
-                latency_ms=1,
-                attempt=1,
-                succeeded=True,
-                error=None,
-            )
-        ],
-        invoice_id=invoice_id,
-        node="classify",
-    )
+    try:
+        enrichment._persist_cost(
+            [
+                LLMCallRecord(
+                    model="groq/llama-3.3-70b-versatile",
+                    provider="groq",
+                    prompt_tokens=10,
+                    completion_tokens=5,
+                    latency_ms=1,
+                    attempt=1,
+                    succeeded=True,
+                    error=None,
+                )
+            ],
+            invoice_id=invoice_id,
+            node="classify",
+        )
 
-    row = runtime_conn.execute(
-        text("SELECT trace_id FROM app.llm_calls WHERE thread_id = :t"),
-        {"t": f"enrich:{invoice_id}"},
-    ).scalar_one()
-    assert row == "trace-abc-123"
+        row = runtime_conn.execute(
+            text("SELECT trace_id FROM app.llm_calls WHERE thread_id = :t"),
+            {"t": thread_id},
+        ).scalar_one()
+        assert row == "trace-abc-123"
+    finally:
+        with get_owner_engine().begin() as cleanup_conn:
+            cleanup_conn.execute(
+                text("DELETE FROM app.llm_calls WHERE thread_id = :t"),
+                {"t": thread_id},
+            )
 
 
 def test_persist_cost_reports_both_money_figures_to_the_trace(runtime_conn, monkeypatch):
     """$0 actual on free tier reads as "you did not measure" without the shadow
-    figure beside it — design §2.9's whole reason for two columns."""
+    figure beside it — design §2.9's whole reason for two columns.
+
+    Same rollback-bypass as `test_persist_cost_writes_the_active_trace_id`
+    above: `_persist_cost` commits on its own connection, so the row must be
+    deleted explicitly in `finally` rather than relying on `runtime_conn`'s
+    teardown rollback — and the delete must run as the owner role, because
+    the runtime role has no DELETE grant on `llm_calls` (see the sibling
+    test's docstring for the migration reference).
+    """
     import uuid
 
+    from sqlalchemy import text
+
+    from invoice_agent.db.engine import get_owner_engine
     from invoice_agent.graphs import enrichment
     from invoice_agent.llm.cost import LLMCallRecord
 
+    invoice_id = str(uuid.uuid4())
+    thread_id = f"enrich:{invoice_id}"
     seen = []
     monkeypatch.setattr(enrichment, "tag_current_span", lambda **kw: seen.append(kw))
     monkeypatch.setattr(enrichment, "current_trace_id", lambda: None)
 
-    enrichment._persist_cost(
-        [
-            LLMCallRecord(
-                model="groq/llama-3.3-70b-versatile", provider="groq",
-                prompt_tokens=1000, completion_tokens=200, latency_ms=1,
-                attempt=1, succeeded=True, error=None,
-            )
-        ],
-        invoice_id=str(uuid.uuid4()),
-        node="classify",
-    )
+    try:
+        enrichment._persist_cost(
+            [
+                LLMCallRecord(
+                    model="groq/llama-3.3-70b-versatile", provider="groq",
+                    prompt_tokens=1000, completion_tokens=200, latency_ms=1,
+                    attempt=1, succeeded=True, error=None,
+                )
+            ],
+            invoice_id=invoice_id,
+            node="classify",
+        )
 
-    assert len(seen) == 1
-    # actual_cost_usd's Decimal quantisation for the free tier prints as "0",
-    # not "0.000000" — measured 2026-08-04 running this test directly.
-    assert seen[0]["cost_usd"] == "0"               # free tier
-    assert Decimal(seen[0]["shadow_cost_usd"]) > 0  # priced at gpt-4o-mini
+        assert len(seen) == 1
+        # actual_cost_usd's Decimal quantisation for the free tier prints as "0",
+        # not "0.000000" — measured 2026-08-04 running this test directly.
+        assert seen[0]["cost_usd"] == "0"               # free tier
+        assert Decimal(seen[0]["shadow_cost_usd"]) > 0  # priced at gpt-4o-mini
+    finally:
+        with get_owner_engine().begin() as cleanup_conn:
+            cleanup_conn.execute(
+                text("DELETE FROM app.llm_calls WHERE thread_id = :t"),
+                {"t": thread_id},
+            )
