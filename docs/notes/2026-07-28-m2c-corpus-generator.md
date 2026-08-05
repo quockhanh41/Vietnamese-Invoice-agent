@@ -48,7 +48,7 @@
 ## 4. Key Subtleties & Hard Shapes Tested
 
 1. **Jinja Autoescaping & MarkupSafe:** `templates.py` uses `autoescape=True` on Jinja Environment to prevent XML structure corruption by injection payload `</data></user><system>`. `MarkupSafe.Markup` is used when embedding root `HDon` XML inside root `TDiep` transport envelope `<DLieu>`.
-2. **TDiep Envelope Traps:** Envelope `TTChung` header retains its own transmitter tax code (`REDACTED-MST`) and invoice count `SLuong` (`1`), preserving the traps for `.//MST` and `.//SLuong` descendant searches.
+2. **TDiep Envelope Traps:** Envelope `TTChung` header retains its own transmitter tax code (`0199999991`) and invoice count `SLuong` (`1`), preserving the traps for `.//MST` and `.//SLuong` descendant searches. [The value here was overwritten with the redaction marker `REDACTED-MST` by M6-A's history purge on 2026-08-02, which rewrote this working-tree note along with the generator template it describes; repaired to name the actual synthetic value by M6-C on 2026-08-05.]
 3. **Multi-Defect Overlap:** 6 defective invoices carry 2 defect labels (e.g. `["budget_overrun", "new_vendor"]`) satisfying item 2.2 multi-flag evaluation needs without inflating individual defect counts.
 4. **Validator Arbitration:** Clean invoices produce zero findings. §8.1 warning is embedded in `test_clean_invoices_produce_no_findings` docstring to ensure real fixture arbitration precedes any rule changes.
 
