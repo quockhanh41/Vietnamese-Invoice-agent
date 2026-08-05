@@ -893,7 +893,7 @@ xanh; Next.js làm được vòng approve/reject đầy đủ **hoặc** đã qu
 | No load-bearing pin moved | ✅ | 9-package before/after table, byte-identical (note §1) |
 | Next.js: full loop **or** a recorded decision to stop | ✅ | ADR `0006-no-nextjs-streamlit-is-the-ui.md` — stopped before the time-box (item 7.5) |
 | Claude Desktop recording | ⚠️ **user's to capture** | server, config and a client-driven transcript delivered here (note §8); the Desktop session itself needs the user's own machine |
-| `make check` green on the pushed commit, CI agreeing | ✅ | see task-7 completion report for the pushed SHA and CI run URL, measured at closing |
+| `make check` green on the pushed commit, CI agreeing | ✅ | Local **825 passed / 2 xfailed, zero skips**, identical count with **every provider key unset** under `LLM_MODE=replay`. CI run `31030926213` on SHA `a2b4d94`: **832 passed / 2 xfailed, ZERO skipped** (832 = 825 + 7, `HITL_RUNS=10` on CI vs 3 locally — same accounting M6-B/M6-C established). Note `2026-08-05-m7-mcp-surface.md` §11. |
 
 **Two criteria are only partly met, and both are recorded as deliberate, ruled outcomes rather than
 gaps quietly closed at the table**: the audit-actor form (accepted by the user's 2026-08-05 ruling,

@@ -383,19 +383,43 @@ unset**, the condition CI and the live demo run under:
 ```
 $ env -u GROQ_API_KEY -u GROQ_API_KEYS -u GEMINI_API_KEY -u GEMINI_API_KEYS -u OPENROUTER_API_KEY \
   LLM_MODE=replay .venv/bin/python -m pytest tests/ -q
-825 passed, 2 xfailed in ...s
 ```
 
-(See the task-7 completion report for the exact keyless-run output captured at closing time.)
+`pyproject.toml` already sets `addopts = "-q"`, so an explicit `-q` on the command line becomes
+`-qq` and pytest **drops the summary line entirely** — the exact "ran it and it was green with no
+visible count" trap M6-C's own note warns about. Recorded honestly rather than silently re-run with
+a different flag and passed off as the literal command: the same run **without** the extra `-q`
+gives the count —
+
+```
+$ env -u GROQ_API_KEY -u GROQ_API_KEYS -u GEMINI_API_KEY -u GEMINI_API_KEYS -u OPENROUTER_API_KEY \
+  LLM_MODE=replay .venv/bin/python -m pytest tests/
+825 passed, 2 xfailed, 1 warning in 47.67s
+```
+
+Same count as `make check`, zero skipped, every provider key unset.
 
 ### 11.1 CI on the pushed SHA
 
 The rule this project has broken five times before: a milestone is not closed until `make check` is
 green on the **pushed** commit and CI agrees.
 
-See the task-7 completion report (`.superpowers/sdd/2026-08-05-m7-mcp-surface/task-7-report.md`) for
-the pushed SHA and the CI run URL with its measured conclusion, captured at the moment of closing
-this milestone.
+| | |
+|---|---|
+| SHA | `a2b4d94dda3c2277fe6108b30f4c0dc4e1bd9819` |
+| Run | https://github.com/quockhanh41/Vietnamese-Invoice-agent/actions/runs/31030926213 |
+| Conclusion | **success** — both jobs (`secrets`, `test`) |
+
+```
+secrets   gitleaks (toàn bộ history)   success
+test      Lint (ruff)                 All checks passed!
+test      Typecheck (mypy)            success
+test      Test (pytest)               832 passed, 2 xfailed, 1 warning in 67.42s
+```
+
+**832 on CI vs 825 locally is not a discrepancy**: `ci.yml` sets `HITL_RUNS=10` where the local
+default is 3, and 825 + 7 = 832 — the exact accounting M6-B/M6-C's own notes already established for
+this same gap. Zero skipped on CI.
 
 ---
 
