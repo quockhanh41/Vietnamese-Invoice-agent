@@ -143,23 +143,29 @@ reconciled against a budget yet, so the gate question has no answer until real i
 through the real ingestion pipeline. `tests/conftest.py` also `TRUNCATE`s `app.invoices CASCADE`
 at the start of every test session, so `make check` alone never leaves this data in place.
 
-The transcript below was produced by running the real `build_batch_graph()`
-(`src/invoice_agent/graphs/batch.py` -- the same graph `POST /batches` drives) over 8 real,
-already-committed invoices from `corpus/` (seeded corpus, `make generate --count 300 --seed 42`),
-under `LLM_MODE=replay` so classification/audit read `tests/fixtures/llm_cache` instead of calling
-a live model -- **no LLM tokens were spent producing it**. Each task declared `department="MKT"`
-(the same `department` field `POST /batches`'s form parameter exposes, for exactly this purpose:
-budget reconciliation groups by the department **declared at upload time**, never by the LLM's own
-classification -- see `api/routes/batches.py`'s own docstring). Full commands, DB row counts
-before/after, and why this path was chosen over the alternatives are in
-`.superpowers/sdd/2026-08-05-m7-mcp-surface/task-6-report.md`.
+`scripts/load_gate_overspend.py` (committed, not a throwaway) is that load. It runs the real
+`build_batch_graph()` (`src/invoice_agent/graphs/batch.py` -- the same graph `POST /batches`
+drives) over 8 real, already-committed invoices from `corpus/` (seeded corpus, `make generate
+--count 300 --seed 42`), under `LLM_MODE=replay` so classification/audit read
+`tests/fixtures/llm_cache` instead of calling a live model -- **no LLM tokens are spent running
+it**. Each task declares `department="MKT"` (the same `department` field `POST /batches`'s form
+parameter exposes, for exactly this purpose: budget reconciliation groups by the department
+**declared at upload time**, never by the LLM's own classification -- see
+`api/routes/batches.py`'s own docstring). The script's own module docstring explains exactly
+which 8 invoice ids and why, its idempotency guarantees, and why it must not run while the test
+suite is running (`app.llm_calls` writes racing `tests/conftest.py`'s session-scoped `TRUNCATE`).
+
+```
+LLM_MODE=replay .venv/bin/python -m scripts.load_gate_overspend
+```
 
 Cumulative MKT spend for July 2026 crosses the seeded 50,000,000 limit at the 8th invoice
 (`INV-0157`) -- a real `BUDGET_BREACH` from real, deterministically-generated corpus data.
 
 ### The transcript
 
-Captured 2026-08-05 with:
+Captured 2026-08-06 by running `scripts/load_gate_overspend.py` against a freshly-truncated
+database, then:
 
 ```
 .venv/bin/python -m scripts.mcp_smoke 2>&1 | tee /tmp/m7-mcp-smoke.txt
@@ -174,53 +180,52 @@ get_budget_status(period='2026-07'):
   SALES  limit=    40000000 consumed=           0 remaining=     40000000
 
 spend_summary(period='2026-07', group_by='department') -- for context only, NOT the answer (see module docstring: unreconciled invoices count here):
-  ADMIN  invoices=2    total=5795000
-  IT     invoices=8    total=74935000
-  MKT    invoices=12   total=171525000
-  OPS    invoices=13   total=136495000
+  MKT    invoices=8    total=56525000
 
 ANSWER: MKT went over budget in 2026-07.
   MKT consumed 56525000 against a 50000000 limit -- over by 6525000.
 ```
 
-`spend_summary`'s MKT total (171,525,000) is **larger** than `get_budget_status`'s consumed
-(56,525,000) and that is expected, not a bug: `spend_summary` sums every persisted invoice's
-`total_amount` for the period regardless of whether it was ever reconciled against a budget. This
-database has 4 MKT invoices with no `budget_consumption` row (verified with a `LEFT JOIN` against
-`app.budget_consumption` in the Task 6 report) -- 3 from an earlier, separate load that had no
-department declared at upload time, and 1 (`INV-0080`) whose true department is `SALES`
-(`corpus/manifest.jsonl`) but which the `ClassificationAgent` misclassified as `MKT` (a real
-instance of the ~4.6% error rate M4-C measured, not something staged for this doc). All 4 count
-toward `spend_summary`'s raw total but not toward `get_budget_status`'s reconciled `consumed`
-figure. `get_budget_status`'s `remaining` field is the authoritative answer to "went over
-budget"; `spend_summary` is shown alongside it for context, per this task's brief, not as a
-second vote.
+On this fresh load, `spend_summary`'s MKT total (56,525,000) equals `get_budget_status`'s consumed
+figure exactly, because the only invoices in the database are the 8
+`scripts/load_gate_overspend.py` just persisted, and all 8 were declared `department="MKT"` and
+reconciled. That equality is not guaranteed in general -- `spend_summary` sums every persisted
+invoice's `total_amount` for the period regardless of whether it was ever reconciled against a
+budget, while `get_budget_status`'s `consumed` only counts invoices a batch actually reconciled.
+Load additional, undeclared-department invoices (or a misclassified one) alongside these 8 and the
+two numbers will diverge again; `get_budget_status`'s `remaining` field is the authoritative
+answer to "went over budget" either way, and `spend_summary` is shown alongside it for context,
+per this task's brief, not as a second vote.
 
 ### This is a point-in-time snapshot, not a permanent fact
 
-The transcript above reflects one manual data load on 2026-08-05. `tests/conftest.py`'s
-session-scoped `TRUNCATE app.invoices CASCADE` means the **next** `make check` empties
-`app.invoices` again -- and Postgres's `TRUNCATE ... CASCADE` truncates every table with a foreign
-key referencing it regardless of that key's own `ON DELETE` rule (verified against
-`pg_constraint`: `invoice_flags`/`invoice_line_items` are `ON DELETE CASCADE`,
+**Every number above is point-in-time, not a permanent fact about this database.**
+`tests/conftest.py`'s session-scoped `TRUNCATE app.invoices CASCADE` runs at the start of every
+test session, and Postgres's `TRUNCATE ... CASCADE` empties every table with a foreign key
+referencing `invoices` regardless of that key's own `ON DELETE` rule (verified against
+`pg_constraint`: `invoice_flags`/`invoice_line_items` are `ON DELETE CASCADE`;
 `approvals`/`journal_entries`/`budget_consumption`/`episodic_decisions`/`llm_calls` are
-`ON DELETE NO ACTION` -- `TRUNCATE CASCADE` empties all seven regardless of which). Re-running
-`scripts/mcp_smoke.py` against a freshly-migrated, unseeded database will show every department at
-zero consumed and no answer to the gate question -- that is correct behaviour, not a regression.
-Reproduce the load in `.superpowers/sdd/2026-08-05-m7-mcp-surface/task-6-report.md` before
-expecting the same transcript again.
+`ON DELETE NO ACTION` -- `TRUNCATE CASCADE` empties all seven regardless of which). **Running
+`make check` after this load empties `app.invoices` and `app.budget_consumption` again.**
+Re-running `scripts/mcp_smoke.py` against a freshly-migrated, unseeded database will show every
+department at zero consumed and no answer to the gate question -- that is correct behaviour, not
+a regression. Run `scripts/load_gate_overspend.py` again (see below) to get the same transcript
+back.
 
 ## Reproducing the transcript yourself
 
 1. `make dev` (starts Postgres, migrates, seeds departments/categories/budgets).
 2. `make generate` (writes `corpus/`, if not already present).
-3. Load a real over-budget batch: see the exact commands in
-   `.superpowers/sdd/2026-08-05-m7-mcp-surface/task-6-report.md` -- in short, run
-   `build_batch_graph()` (`invoice_agent.graphs.batch`) over a set of July-2026 MKT invoices from
-   `corpus/manifest.jsonl` whose combined total exceeds MKT's seeded 50,000,000 limit, with
-   `LLM_MODE=replay` set and `department="MKT"` declared on every task.
+3. `LLM_MODE=replay .venv/bin/python -m scripts.load_gate_overspend` -- loads the 8-invoice MKT
+   overspend described above. Safe to run on a freshly-truncated database, and safe to run twice
+   in a row (see the script's own docstring for exactly what "safe" covers).
 4. `.venv/bin/python -m scripts.mcp_smoke`
 
-This is independent of Claude Desktop entirely -- it is the same `fastmcp.Client` machinery the
-test suite drives the server through, proving the server answers correctly before anyone points a
-Desktop install at it.
+Nothing in this reproduction path depends on `.superpowers/sdd/2026-08-05-m7-mcp-surface/task-6-report.md`
+existing -- that directory is `.superpowers/sdd/.gitignore`-excluded and does not survive past this
+milestone's execution, so the loader is committed to `scripts/` precisely so this section stays
+reproducible after that report is gone.
+
+This is also independent of Claude Desktop entirely -- steps 3-4 use the same `fastmcp.Client`
+machinery the test suite drives the server through, proving the server answers correctly before
+anyone points a Desktop install at it.
