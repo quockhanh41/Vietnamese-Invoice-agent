@@ -194,7 +194,55 @@ kèm 2 PDF có số CCCD (vá ở `bb8718d`). Đính chính một cảnh báo c�
 `vietnamese-legal-bot/.claude/settings.json` "đang commit Langfuse key plaintext" — **sai**,
 `.claude/` đã bị gitignore và `git log --all` trả về rỗng; key chưa bao giờ vào history.
 
-**Next**: **M7 — MCP + Next.js**. **M6 closed 2026-08-05 with M6-C**, the eval stage. The Gate M6
+**Next**: **M8 — Portfolio final**. **M7 closed 2026-08-06**, the MCP analyst surface. The Gate M7
+table is in §3; the measurement record is `docs/notes/2026-08-05-m7-mcp-surface.md`; the Next.js
+decision is `docs/adr/0006-no-nextjs-streamlit-is-the-ui.md`. What M7 built and found:
+
+- **Seven read tools, five resources, one gated write — generated from `tools/registry.py`, and an
+  overclaim the spec refused to repeat.** `fastmcp==3.4.5` installed with **no load-bearing pin
+  moved** (9-package before/after table, byte-identical) — the M0 `fastapi>=0.140` floor did its
+  job; 38 new transitive packages accepted as a stated supply-chain trade. Design §8.1 claims "both
+  the LangGraph executor and the MCP server are generated from `tools/registry.py`" — **that is not
+  true and M7 does not make it true**: the graphs call their functions directly, there is no tool
+  executor, and the registry's only real consumers are the MCP server and the architecture test.
+  Writing the stronger claim would have been the same species of overclaim M6-A and M6-B each had
+  to retract.
+- **Five mutations turn a named test red, plus a sixth that pins the server cannot desync from a
+  hand-written list** because there isn't one — `build_server()` reads `registry.exposed_tools()`
+  live, the same registry the architecture test enumerates.
+- **The write tool is gated and off by default**, and answers the gate question through a real
+  client-driven transcript against real loaded data: **MKT over budget by 6,525,000 in July 2026**.
+- **The audit-actor form partly diverges from the gate's literal wording, and the divergence is
+  accepted by ruling, not hidden.** `approvals.decided_by` reads the bare `mcp:<client>` form the
+  gate asks for; `audit_log.actor`/`journal_entries.posted_by` read `human:mcp:<client>` instead,
+  because pre-existing `post_entry_node` prefixes `human:` on every human-authorised decision
+  regardless of transport. The distinguishability the gate wants still holds
+  (`human:mcp:claude-desktop` != `human:ketoan`), and fixing the prefix would touch the HITL path
+  pinned to `langgraph==1.2.9` — out of scope for a milestone adding a transport, not a path.
+- **A real FastMCP library bug, found and fixed.** `ResourceTemplate.convert_result` does not
+  forward `mime_type` for a bare-`str` return (unlike `Resource.convert_result`), so
+  `invoice-xml://` served `text/plain` while advertising `application/xml`. All five of this
+  project's resources are templates, so this was the path that mattered. Fixed, and proven catchable
+  by a regression test that goes red on revert.
+- **Next.js (7.5) was stopped before its 4-day time-box, not at the end of it** — ADR
+  `0006-no-nextjs-streamlit-is-the-ui.md`: Next.js is the roadmap's own named biggest schedule risk
+  and proves none of the 7 GĐ5 skills; M5-D's Streamlit UI already meets the demo requirement.
+  **Met by the gate's own stopping-rule branch**, stated plainly rather than presented as an
+  accident.
+- **pgvector (7.6) was not done**, deferred a second time (first at M4, item 4.4) for lack of a
+  before/after measurement budget — recorded as not done, not folded into "future work" silently.
+- **`report://{period}`'s payload was never specified by the design doc**, and stays a period-scoped
+  budget view (structurally `budget://` with department wildcarded) — nothing in this codebase
+  consumes it yet. Recorded as a limitation, not expanded speculatively.
+- **A real `ClassificationAgent` misclassification surfaced by an early, uncommitted data-load
+  attempt** (`INV-0080`, ground truth `SALES`, classified `MKT`) — an observation about the
+  classifier, consistent with M4-C's ~4.6% error rate. **Not visible in the shipped transcript**:
+  the committed loader selects a clean 8-invoice set with no misclassification in it.
+- **The Claude Desktop recording itself is the user's to capture on their own machine** — the
+  server, the config, and a reproducible client-driven transcript are what M7 delivers without a
+  Desktop install, the same division of labour M6-C used for the hand-timed manual baseline.
+
+**M6 closed 2026-08-05 with M6-C**, the eval stage. The Gate M6
 table is in §3; the measurement record is `docs/notes/2026-08-05-m6c-eval-report.md`. **M6 does not
 close clean, and the table says so**: negative control **22/24 NOT MET** (M6-A), Auditor override
 precision **0.000 NOT MET** (M6-C), injection mutations 3 of 4, and the Business/STP row **PENDING**
@@ -815,12 +863,12 @@ closing milestone could do.
 
 | # | Việc | Tham chiếu |
 |---|---|---|
-| 7.1 | FastMCP server **sinh từ `tools/registry.py`**: 7 read tool + 5 resource (`invoice://`, `invoice-xml://`, `budget://`, `vendor://`, `report://`) | §8.2 |
-| 7.2 | `submit_approval_decision` — write **do người ủy quyền**, gate bằng `MCP_ALLOW_APPROVALS` + actor token, audit log ghi `actor='mcp:<client>'` | §8.2 |
-| 7.3 | **`test_no_write_tools_in_mcp.py`** — mọi `ToolSpec` có `side_effect=="write"` và `mcp_exposed` phải nằm trong allowlist tường minh | §8.2 |
-| 7.4 | Config Claude Desktop + quay session hỏi thật: *"phòng nào vượt ngân sách tháng 7?"* | §8.2 |
-| 7.5 | Next.js: upload, batch progress (SSE), approval queue, detail split-view PDF/field, reports. **Time-box 4 ngày** | Quyết định §0 |
-| 7.6 | pgvector cho episodic `reason_embedding` — **chỉ nếu còn giờ** | §7.1 |
+| 7.1 | ✅ **Done 2026-08-05.** FastMCP server **generated from `tools/registry.py`**: 7 read tools + 5 resources (`invoice://`, `invoice-xml://`, `budget://`, `vendor://`, `report://`). **Not** generated: the LangGraph executor — design §8.1's claim that "both the LangGraph executor and the MCP server are generated from `tools/registry.py`" does not hold; the graphs call their functions directly and there is no tool executor to generate. `fastmcp==3.4.5` (pulls `mcp==1.29.0`) installed with **no load-bearing pin moved** — 9-package before/after table byte-identical; 38 new transitive packages (`cryptography`, `authlib`, `keyring`, `pyjwt`, `rich`…) accepted as a stated supply-chain trade, not omitted. Note `docs/notes/2026-08-05-m7-mcp-surface.md` §1–§2. | §8.2 |
+| 7.2 | ✅ **Done 2026-08-05.** `submit_approval_decision` — write **do người ủy quyền**, gated by `MCP_ALLOW_APPROVALS` (default off) + a constant-time actor-token check (`hmac.compare_digest`), calling the exact same `graphs.approval.submit_decision` seam the HTTP route uses — no new path to `create_journal_entry`. `approvals.decided_by` records the bare `mcp:<client>` form the gate asks for; **`audit_log.actor`/`journal_entries.posted_by` read `human:mcp:<client>` instead**, because pre-existing `post_entry_node` prefixes `human:` on every human-authorised decision regardless of transport — **accepted by ruling, not an oversight** (the distinguishability the gate wants still holds: `human:mcp:claude-desktop` ≠ `human:ketoan`; fixing it would touch the HITL path pinned to `langgraph==1.2.9`). Note §5. | §8.2 |
+| 7.3 | ✅ **Done 2026-08-05.** `tests/test_no_write_tools_in_mcp.py` — every `ToolSpec` with `side_effect=="write"` and `mcp_exposed=True` must be in an explicit allowlist, pinned to exactly `{submit_approval_decision}`. 5 mutations (2 registry/architecture, 3 gating) each turn a named test red with measured output; a 6th, on the server's generation loop rather than a hand-written list, verified separately. Note §4. | §8.2 |
+| 7.4 | ⚠️ **Split by design, 2026-08-05/06.** Claude Desktop config (`docs/mcp-claude-desktop.md`, both DSNs, enabling the write tool) and a reproducible **client-driven** transcript answering *"which department went over budget in July?"* (`scripts/load_gate_overspend.py` + `scripts/mcp_smoke.py`) are delivered here. **The Desktop recording itself is the user's to capture** — it needs their own machine and Desktop install, the same division of labour M6-C gave the hand-timed manual baseline. Note §8. | §8.2 |
+| 7.5 | ✅ **Met by the stopping-rule branch, decided 2026-08-05.** Stopped **before** the 4-day time-box, not at the end of it — no Next.js implementation started. ADR `0006-no-nextjs-streamlit-is-the-ui.md`: the roadmap's own risk table (§5) names Next.js the biggest remaining schedule risk and states it proves none of the 7 GĐ5 skills; M5-D's Streamlit UI already meets the demo requirement. Gate M7 accepts either branch verbatim ("Next.js làm được vòng approve/reject đầy đủ **hoặc** đã quyết định dừng và giữ Streamlit") — this is the second branch, stated plainly, not presented as an accident. | Quyết định §0 |
+| 7.6 | ❌ **Not done — recorded as not done, not folded into "future work" silently.** pgvector for episodic `reason_embedding` needs a before/after measurement against a baseline to justify merging (Principle 2, "measure first, optimize second"), which this milestone had no budget for. Deferred a second time — first at M4 (item 4.4), same reason. | §7.1 |
 
 **Gate M7**: Claude Desktop query được database hóa đơn qua MCP; `test_no_write_tools_in_mcp.py`
 xanh; Next.js làm được vòng approve/reject đầy đủ **hoặc** đã quyết định dừng và giữ Streamlit.
@@ -829,6 +877,28 @@ xanh; Next.js làm được vòng approve/reject đầy đủ **hoặc** đã qu
 > **Quy tắc dừng**: hết ngày thứ 4 mà Next.js chưa làm xong vòng approve/reject → **dừng, giữ
 > Streamlit**, chuyển sang M8. Next.js là rủi ro lịch trình lớn nhất mà **không chứng minh kỹ năng
 > nào trong 7 kỹ năng GĐ5**. Một UI xấu trên agent đúng thắng một UI đẹp trên agent làm dở.
+
+#### Gate M7 — measured 2026-08-05/06. **M7 closes here.**
+
+| Criterion | | Evidence |
+|---|:---:|---|
+| `test_no_write_tools_in_mcp.py` green, mutations 1–2 red | ✅ | 5/5 tests green; both mutations turn a named test red — `test_no_unlisted_write_tool_is_exposed_over_mcp`, `test_the_ledger_write_is_not_in_the_registry_at_all` (note §4) |
+| Allowlist is exactly `{submit_approval_decision}` | ✅ | pinned by `test_the_allowlist_is_exactly_the_one_tool_design_8_2_permits` |
+| `create_journal_entry` absent from the registry entirely | ✅ | mutation 2 (note §4) |
+| Server generated from the registry, not a second list | ✅ | mutation on `mcp_exposed` + `build_server()`'s loop; 3 tests correctly went red naming the leaked tool (note §4) |
+| MCP answers the gate question | ✅ | client-driven smoke transcript against real seeded/loaded data — MKT over budget by 6,525,000 in 2026-07 (note §8) |
+| Write tool gated, off by default, via `submit_decision` | ✅ | mutations 3, 4, 5 red (note §4); no path to the DB or the ledger bypassing the seam |
+| Audit shows `actor='mcp:<client>'` | ⚠️ **partly — accepted by ruling** | `approvals.decided_by` is the bare form; `audit_log.actor`/`journal_entries.posted_by` read `human:mcp:<client>` because a pre-existing, untouched node prefixes `human:` regardless of transport — distinguishability still holds (note §5) |
+| `explain_flags` Vietnamese and LLM-free | ✅ | `test_no_gateway_call_happens` — gateway patched to raise, `render()` still succeeds |
+| No load-bearing pin moved | ✅ | 9-package before/after table, byte-identical (note §1) |
+| Next.js: full loop **or** a recorded decision to stop | ✅ | ADR `0006-no-nextjs-streamlit-is-the-ui.md` — stopped before the time-box (item 7.5) |
+| Claude Desktop recording | ⚠️ **user's to capture** | server, config and a client-driven transcript delivered here (note §8); the Desktop session itself needs the user's own machine |
+| `make check` green on the pushed commit, CI agreeing | ✅ | see task-7 completion report for the pushed SHA and CI run URL, measured at closing |
+
+**Two criteria are only partly met, and both are recorded as deliberate, ruled outcomes rather than
+gaps quietly closed at the table**: the audit-actor form (accepted by the user's 2026-08-05 ruling,
+note §5) and the Claude Desktop recording (a division of labour with the same shape M6-C used for
+the manual baseline, not an unfinished task).
 
 ---
 
@@ -902,7 +972,7 @@ ngay; **mọi con số trong README trace được về `docs/eval-report.md` tr
 | M4 — Multi-agent + memory + serialization | ✅ | 2026-08-01 | **Closed 2026-08-01, after an exit review that found the closing commit RED.** Four specs: **M4-A** corpus & reference alignment · **M4-B** vendor memory + `signals` · **M4-C** agents · **M4-D** batch graph + serial reconciliation. Gate measured and replayed with every API key unset — see the gate table in §3. Headline numbers: classification **95.4% vs 57.9% baseline** (+37.5, gate needed +15); department **77.2%** against an **84.0% ceiling**; Auditor dispute precision **12.5%** (CI 0.043–0.310, n=24), **below §6.4's 50% net-harm line and reported as such** — the multi-agent experiment produced a negative result and it is the milestone's most honest artefact. `PRICE_OUTLIER` went **0/6 → 6/6 at 0.7% FP**. Vision debt paid: **2/2 twins 4/4 fields**. Batch gate: 28 enriched / 2 failed / 27 persisted, **23 auto / 7 needs-approval**, MKT chain `35M → 15M → −5M` with `INV-0001` breaching. **Every one of the four specs was closed on a claim the review disproved**: M4-A's departments did not join the seed and its `category` was unlearnable (baseline 1.8%, below chance); M4-B's parameter sweep was run honestly and then not acted on, leaving the pre-existing constants; M4-C's harness had three bugs and had never been executed, and `structured.py` had two defects that made **every live structured call impossible** since M3-B; M4-D was declared closed on a **red pushed commit** with a fabricated `Decimal("50000000")` budget limit, a gate that was **making live calls while claiming to replay**, and tests that **did not run in CI at all** because no step generated the corpus. All fixed and re-measured. **Owed**: a throttled Auditor re-measurement (the 177 Gemini rate-limits mixed two models into one rater); vision fixtures re-recorded on the CI platform; the PII git-history purge. |
 | M5 — HITL production + API + UI | ✅ | 2026-08-01 | Four specs: **M5-A** write guard + auto path · **M5-B** approval graph + HITL loop · **M5-C** FastAPI · **M5-D** Streamlit UI. **Closed 2026-08-01.** **M5-A done 2026-08-01**, then corrected by review: the reported gate split (18/12) could not be reproduced — it was measured against rows leaked by a test that committed on the `owner_conn` fixture, the same leak `4f870bc` had already fixed once; `route_outcomes` was structurally blind to budget findings and sent **8 invoices to the auto path that the guard refused, every one a `BUDGET_BREACH`**; and the note had TT133 `6421`/`6422` swapped in the paragraph stating its own headline risk. Reproducible answer: **15 posted / 15 needs-approval**. **M5-B done 2026-08-01**, also corrected by review — and this time the review found **nothing pushed and CI never run** across 12 commits while the milestone was declared COMPLETE, no mutation table, no live measurement, and a `approval_graph.mmd` listed as delivered that was never regenerated and had gone stale. All five mutations verified red afterwards, incl. the one that matters: give `apply_decision` a `conn` and the **behavioural test stays GREEN** while the guard verifies its own caller's uncommitted write. Portfolio test 1 **retargeted onto the real approval graph, 10/10**; portfolio test 4 green at **15 posted / 12 parked**. **`max_concurrency` debt PAID** — and the live run found a bare `assert` in `serial_join` that killed the whole batch on an invoice with no seller MST, a defect replay structurally cannot reach. Note `docs/notes/2026-08-01-m5b-approval-graph.md`. **M5-C done 2026-08-01**: `api/app.py` FastAPI app, 5 route modules, `db/queries.py` read-only layer, `progress.py` SSE channels, `DecisionRequest` extra='forbid' security boundary, 4 structural mutation tests verified red, live curl gate transcript in `docs/notes/2026-08-01-m5c-fastapi.md`. **M5-D done 2026-08-01**: `ui/client.py` + `ui/app.py`, four Vietnamese pages, HTTP-only — the UI imports nothing from `invoice_agent` except `config`, enforced by a source guard, because a Streamlit app that imported `submit_decision` directly would leave M5-C's only consumer bypassing the API. 3/3 mutations red, incl. the asymmetry that matters: with the DB import added the **client tests stay GREEN** and only the import check sees it. `make demo` serves both processes; streamlit 1.60.0 took `requirements.lock` to 409 lines, measured rather than hidden. **M5-D does NOT consume M5-C's SSE endpoint** — a blocking stream freezes Streamlit's rerun loop; its consumer is M7. **M5 gate, all six conditions met**: `test_never_post_without_approval.py` (M5-A) · `test_batch_not_blocked_by_pending.py` (M5-B) · approval over real `curl` (M5-C) · `kill -9` + `recover_pending.py` (M5-B) · reviewer feedback in `vendors.reviewer_notes` (M5-B) · a working Streamlit demo (M5-D). **The review record above is kept deliberately.** The first cut of this row replaced all of it with “All gate criteria met”, which would have made M5 the only milestone with no account of what its reviews found — and it had the most. §10.5 is *Báo cáo trung thực*. Note `docs/notes/2026-08-01-m5d-streamlit.md`. |
 | M6 — Security + observability + eval | ✅ | 2026-08-05 | **Closed 2026-08-05 with three gate criteria NOT met and one PENDING, all recorded.** Four specs: **M6-A** injection corpus + negative control (+ **M6-A2/A3** the deterministic department and `BUDGET_UNRECONCILED`) · **M6-B** observability, cost cap, model attribution · **M6-C** the eval stage. **NOT MET**: negative control **22/24** — 2 real `category_laundering` successes, marked `xfail(strict=True)` rather than allowlisted, and **deliberately left unimproved at closing**; Auditor override precision **0.000 (95% CI 0.000–0.243, n=12, UNDERPOWERED)** — *worse* than M4-C's 12.5%, so the single-rater re-measurement deepened the negative result instead of rescuing it; injection mutations **3 of 4**. **PENDING**: Business/STP, protocol written and `T_median` unmeasured. **MET**: 0 decisions / 0 journal entries across 24 carriers + 6 reasoning cases; all 24 nodes traced with the kill-switch still winning; HITL 10/10 with tracing genuinely on; cost cap 1/1; **single rater verified 285/285 per agent, unmeasured 0 of 285**; classification **95.4% vs 57.9% baseline, +37.5 against a +15 gate**; corpus reproducible; vision fixtures travel to CI (2 skips → 2 passes). **Each spec was closed on a claim its review disproved, and M6 kept the record**: M6-A's first negative control claimed 18/24 with an allowlist that named four non-events while missing both real successes, and its mutation table claimed 4/4 citing a test that does not exist; M6-A2 retracted an overclaim that the LLM chooses which budget is checked (it does not — `serial_join` groups on the task-declared department); M6-B found tracing had **never been on** and that the flag was decided by *import order*, that the suite had been sending real spans to a live Langfuse project on every `make check`, and that two tests guarded nothing; M6-C found that **M6-A's history purge had left `REDACTED-MST` in the corpus generator**, so **0 of 285 XML matched a fresh generate** and two vision tests were passing on stale fixtures — and then found the eval report **it had just written** publishing a bare `0.000` for a metric its own artefact carried an interval and an `underpowered` flag for. **Owed to M7**: `make check`'s mypy covers only `invoice_agent`, so all of `scripts/` is untyped in CI; the vision digest and `ALLOWED_MISSES` are macOS/ARM measurements; the PII git-history purge review. Notes `2026-08-02-m6a-injection.md`, `2026-08-04-m6b-observability.md`, `2026-08-05-m6c-eval-report.md`. |
-| M7 — MCP + Next.js | 🔲 | | Quy tắc dừng: 4 ngày cho Next.js |
+| M7 — MCP + Next.js | ✅ | 2026-08-06 | **Closed 2026-08-06 with two criteria only partly met, both by ruling, not by gap.** Seven read tools + five resources generated from `tools/registry.py`, plus one gated write (`submit_approval_decision`) — `fastmcp==3.4.5` installed with **no load-bearing pin moved** (9-package before/after table byte-identical), 38 new transitive packages accepted as a stated trade. **Design §8.1's claim that both the LangGraph executor and the MCP server are generated from the registry does not hold** — spec §3.1 refused to repeat it; there is no tool executor, only the graphs calling their functions directly. 5 mutations (2 registry/architecture + 3 gating) each turn a named test red; a 6th on the server's generation loop verified the server cannot desync from a hand-written list because there isn't one. The gate question is answered through a real client-driven transcript against real seeded/loaded data: **MKT over budget by 6,525,000 in 2026-07**. **The audit-actor form partly diverges from the gate's literal wording, accepted by ruling**: `approvals.decided_by` is the bare `mcp:<client>` form, but `audit_log.actor`/`journal_entries.posted_by` read `human:mcp:<client>` because a pre-existing, untouched node prefixes `human:` on every human-authorised decision regardless of transport — the distinguishability the gate wants still holds, and fixing it would touch the HITL path pinned to `langgraph==1.2.9`. A real FastMCP library bug was found and fixed: `ResourceTemplate.convert_result` did not forward `mime_type` for a bare-`str` return, so `invoice-xml://` served `text/plain` while advertising `application/xml` — fixed, and proven catchable by a regression test that goes red on revert. **Next.js (7.5) was stopped before its 4-day time-box**, not at the end of it — ADR `0006-no-nextjs-streamlit-is-the-ui.md` records the reasoning (Next.js is the roadmap's own named biggest schedule risk and proves none of the 7 GĐ5 skills; M5-D's Streamlit already meets the demo requirement); the gate's stopping-rule branch is what's met. **pgvector (7.6) was not done**, deferred a second time for lack of a measurement budget, recorded as such. **The Claude Desktop recording is the user's to capture** on their own machine — server, config and a client-driven transcript are delivered here. Note `docs/notes/2026-08-05-m7-mcp-surface.md`. |
 | M8 — Portfolio final | 🔲 | | |
 
 ### M1 exit review — 2026-07-28

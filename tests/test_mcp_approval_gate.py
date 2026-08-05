@@ -193,8 +193,12 @@ def test_already_decided_invoice_is_refused(requires_postgres, committed_rows, m
 # An invoice with no approval ever opened is refused (HTTP's 404, via the
 # same `approvals_repo.get_by_invoice` precondition read). Without this guard,
 # `Command(resume=...)` reaches a thread LangGraph never started and a raw
-# `EmptyInputError` (a LangGraph internal) leaks through the MCP transport --
-# review finding, Task 5 fix report.
+# `KeyError: 'invoice_id'` (a LangGraph internal, from
+# `graphs/approval.py::_load_snapshot`) leaks through the MCP transport --
+# review finding, Task 5 fix report. (An earlier version of this comment
+# predicted `EmptyInputError`; that was disproven by measurement -- see the
+# `NotFound` docstring in `mcp/approvals.py`, which matches what was actually
+# raised.)
 # ---------------------------------------------------------------------------
 
 
