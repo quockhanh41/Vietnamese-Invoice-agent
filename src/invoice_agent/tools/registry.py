@@ -20,7 +20,6 @@ from pydantic import BaseModel
 
 from invoice_agent.db import queries
 from invoice_agent.db.repositories import approvals as approvals_repo
-from invoice_agent.db.repositories import invoices as invoices_repo
 from invoice_agent.memory import vendor_profile
 from invoice_agent.tools import explain, models
 
@@ -47,8 +46,8 @@ REGISTRY: tuple[ToolSpec, ...] = (
     ToolSpec(
         name="search_invoices",
         description=(
-            "List invoices, optionally filtered by status and/or department, "
-            "most recent first."
+            "List invoices, optionally filtered by status, department, vendor "
+            "(seller tax code) and/or a minimum amount, most recent first."
         ),
         args_model=models.SearchInvoicesArgs,
         return_model=models.SearchInvoicesResult,
@@ -58,18 +57,18 @@ REGISTRY: tuple[ToolSpec, ...] = (
     ),
     ToolSpec(
         name="get_invoice_detail",
-        description="Fetch one invoice's stored fields by id.",
+        description="Fetch one invoice's fields, line items and open flags by id.",
         args_model=models.GetInvoiceDetailArgs,
         return_model=models.InvoiceDetail,
         side_effect="read",
         mcp_exposed=True,
-        handler=invoices_repo.get_by_id,
+        handler=queries.invoice_detail,
     ),
     ToolSpec(
         name="get_budget_status",
         description=(
-            "Budget lines (limit, consumed, remaining) for every department, "
-            "optionally filtered to one period."
+            "Budget lines (limit, consumed, remaining), optionally filtered to "
+            "one department and/or one period."
         ),
         args_model=models.GetBudgetStatusArgs,
         return_model=models.GetBudgetStatusResult,
@@ -111,8 +110,19 @@ REGISTRY: tuple[ToolSpec, ...] = (
         mcp_exposed=True,
         handler=explain.explain_flags,
     ),
-    # `spend_summary` (Task 3) and `submit_approval_decision` (Task 5) arrive in
-    # later M7 tasks.
+    ToolSpec(
+        name="spend_summary",
+        description=(
+            "Invoice count and total spend, grouped by department or category, "
+            "optionally narrowed to one period (YYYY-MM)."
+        ),
+        args_model=models.SpendSummaryArgs,
+        return_model=models.SpendSummaryResult,
+        side_effect="read",
+        mcp_exposed=True,
+        handler=queries.spend_summary,
+    ),
+    # `submit_approval_decision` (Task 5) arrives in a later M7 task.
 )
 
 

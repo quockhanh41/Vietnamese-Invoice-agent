@@ -19,6 +19,8 @@ from typing import Any
 from sqlalchemy import Connection, func, select
 
 from invoice_agent.db import models
+from invoice_agent.db.repositories import flags as flags_repo
+from invoice_agent.db.repositories import invoices as invoices_repo
 
 
 def list_invoices(
@@ -26,6 +28,8 @@ def list_invoices(
     *,
     status: str | None = None,
     department: str | None = None,
+    vendor: str | None = None,
+    min_amount: Decimal | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     inv = models.invoices
@@ -38,8 +42,30 @@ def list_invoices(
         stmt = stmt.where(inv.c.status == status)
     if department is not None:
         stmt = stmt.where(inv.c.department == department)
+    if vendor is not None:
+        stmt = stmt.where(inv.c.seller_tax_code == vendor)
+    if min_amount is not None:
+        # Inclusive: an analyst asking for invoices "at least" min_amount
+        # expects the boundary value itself included.
+        stmt = stmt.where(inv.c.total_amount >= min_amount)
     stmt = stmt.order_by(inv.c.created_at.desc()).limit(limit)
     return [dict(r) for r in conn.execute(stmt).mappings()]
+
+
+def invoice_detail(conn: Connection, invoice_id: uuid.UUID) -> dict[str, Any] | None:
+    """One invoice's fields, line items and open flags — composition of the
+    three existing calls `api/routes/invoices.py::get_invoice` already makes,
+    reused here rather than reimplemented so MCP's `get_invoice_detail` cannot
+    drift from the HTTP route's own answer.
+    """
+    invoice = invoices_repo.get_by_id(conn, invoice_id)
+    if invoice is None:
+        return None
+    return {
+        "invoice": invoice,
+        "lines": invoices_repo.get_lines(conn, invoice_id),
+        "flags": flags_repo.open_flags_for(conn, invoice_id),
+    }
 
 
 def batch_summary(conn: Connection, batch_id: uuid.UUID) -> dict[str, Any] | None:
@@ -81,7 +107,9 @@ def batch_summary(conn: Connection, batch_id: uuid.UUID) -> dict[str, Any] | Non
     }
 
 
-def budget_report(conn: Connection, *, period: str | None = None) -> list[dict[str, Any]]:
+def budget_report(
+    conn: Connection, *, period: str | None = None, department: str | None = None
+) -> list[dict[str, Any]]:
     b, bc = models.budgets, models.budget_consumption
     consumed = (
         select(bc.c.budget_id, func.coalesce(func.sum(bc.c.amount), 0).label("consumed"))
@@ -99,6 +127,8 @@ def budget_report(conn: Connection, *, period: str | None = None) -> list[dict[s
     )
     if period is not None:
         stmt = stmt.where(b.c.period == period)
+    if department is not None:
+        stmt = stmt.where(b.c.department_code == department)
     rows = [dict(r) for r in conn.execute(stmt).mappings()]
     for r in rows:
         # Stringified because Decimal is not JSON-serialisable and this goes
@@ -114,6 +144,57 @@ def budget_report(conn: Connection, *, period: str | None = None) -> list[dict[s
         r["warn_threshold_pct"] = str(warn_pct)
         r["consumed"] = str(consumed_amt)
         r["remaining"] = str(amount_limit - consumed_amt)
+    return rows
+
+
+# The only two dimensions design §3.2's `spend_summary(period, group_by)` names.
+# A closed set, not a measurement: `group_by` selects a column via
+# `inv.c[group_by]`, so an unvalidated caller-supplied string would let a
+# client group by (or leak) any column on `invoices` — an injection surface
+# even though SQLAlchemy Core never concatenates raw SQL.
+SPEND_SUMMARY_GROUP_COLUMNS: frozenset[str] = frozenset({"department", "category"})
+
+
+def spend_summary(
+    conn: Connection, *, period: str | None = None, group_by: str
+) -> list[dict[str, Any]]:
+    """Invoice count and total spend, grouped by department or category.
+
+    Grouped straight off `invoices` — no join to `departments` or
+    `expense_categories` — so a period with zero matching invoices yields zero
+    GROUP BY rows, not one zero-amount row per reference row. The latter would
+    read as real data to an analyst asking whether anyone spent anything that
+    month.
+    """
+    if group_by not in SPEND_SUMMARY_GROUP_COLUMNS:
+        raise ValueError(
+            f"group_by must be one of {sorted(SPEND_SUMMARY_GROUP_COLUMNS)}, got {group_by!r}"
+        )
+
+    inv = models.invoices
+    group_col = inv.c[group_by]  # safe: group_by just passed the allow-list check above
+    stmt = (
+        select(
+            group_col.label("group_key"),
+            func.count().label("invoice_count"),
+            func.sum(inv.c.total_amount).label("total_amount"),
+        )
+        .group_by(group_col)
+        .order_by(group_col)
+    )
+    if period is not None:
+        # issue_date is a full date; period is "YYYY-MM" (same format the batch
+        # graph derives via `issue_date.strftime("%Y-%m")`, graphs/batch.py).
+        stmt = stmt.where(func.to_char(inv.c.issue_date, "YYYY-MM") == period)
+
+    rows = [dict(r) for r in conn.execute(stmt).mappings()]
+    for r in rows:
+        # Same money rule as `budget_report` just above: stringify Decimal at
+        # this module's own report-aggregate boundary, because JSON numbers
+        # are IEEE 754 doubles and would lose the last đồng (M1, see
+        # `budget_report`'s comment for the measured fixture value).
+        r["total_amount"] = str(Decimal(str(r["total_amount"])))
+        r["invoice_count"] = int(r["invoice_count"])
     return rows
 
 

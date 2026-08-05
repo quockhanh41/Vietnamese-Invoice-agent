@@ -28,6 +28,8 @@ class SearchInvoicesArgs(BaseModel):
 
     status: str | None = None
     department: str | None = None
+    vendor: str | None = None
+    min_amount: Decimal | None = None
     limit: int = 50
 
 
@@ -48,7 +50,7 @@ class SearchInvoicesResult(BaseModel):
     invoices: list[InvoiceSummary]
 
 
-# ---- get_invoice_detail : db.repositories.invoices.get_by_id ---------------
+# ---- get_invoice_detail : db.queries.invoice_detail -------------------------
 
 
 class GetInvoiceDetailArgs(BaseModel):
@@ -57,18 +59,10 @@ class GetInvoiceDetailArgs(BaseModel):
     invoice_id: uuid.UUID
 
 
-class InvoiceDetail(BaseModel):
-    """`get_by_id` returns the whole `invoices` row; this keeps the subset that
-    is useful to read over chat, the same trim `api/routes/invoices.py` makes
-    when it drops `raw_xml` at its own JSON boundary.
-
-    Not lines, not flags — `get_by_id` has neither. Design §8.2's
-    `get_invoice_detail` wants "fields + line items + flags"; there is no
-    single existing function that assembles all three (the route calls
-    `get_by_id`, `get_lines` and `flags.open_flags_for` separately), and this
-    milestone forbids writing a new query to close that gap. See the Task 1
-    report for the concern this leaves open.
-    """
+class InvoiceDetailFields(BaseModel):
+    """The same subset of the `invoices` row `InvoiceSummary` above keeps, plus
+    `buyer_tax_code` — one field a detail view can afford that a search-result
+    list should not."""
 
     id: uuid.UUID
     batch_id: uuid.UUID | None
@@ -83,12 +77,48 @@ class InvoiceDetail(BaseModel):
     status: str
 
 
+class InvoiceDetailLine(BaseModel):
+    line_no: int
+    description: str | None
+    quantity: Decimal | None
+    unit_price: Decimal | None
+    amount: Decimal | None
+    vat_rate: Decimal | None
+    vat_amount: Decimal | None
+
+
+class InvoiceDetailFlag(BaseModel):
+    """Only the open ones — `open_flags_for` never returns a resolved row, so
+    a `resolved_at` field here would always read `None`."""
+
+    code: str
+    severity: str
+    raised_by: str
+
+
+class InvoiceDetail(BaseModel):
+    """`db.queries.invoice_detail` composes `get_by_id`, `get_lines` and
+    `flags.open_flags_for` — the same three calls
+    `api/routes/invoices.py::get_invoice` makes — so this carries all three:
+    fields, line items and open flags. Each nested model keeps its own shallow
+    subset of its table's columns, not the full column list (see this file's
+    module docstring); it is not the trim `api/routes/invoices.py` makes,
+    which keeps every column except `raw_xml` (~23 columns) — this model
+    keeps far fewer, on all three of its parts.
+    """
+
+    invoice: InvoiceDetailFields
+    lines: list[InvoiceDetailLine]
+    flags: list[InvoiceDetailFlag]
+
+
 # ---- get_budget_status : db.queries.budget_report ---------------------------
 
 
 class GetBudgetStatusArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    department: str | None = None
     period: str | None = None
 
 
@@ -172,3 +202,26 @@ class ExplainedFlag(BaseModel):
 class ExplainedFlags(BaseModel):
     flags: list[ExplainedFlag]
     summary_vi: str
+
+
+# ---- spend_summary : db.queries.spend_summary --------------------------------
+
+
+class SpendSummaryArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group_by: str
+    period: str | None = None
+
+
+class SpendSummaryLine(BaseModel):
+    # Already stringified Decimal by `spend_summary` itself, the same money
+    # rule `BudgetLine` above follows: JSON numbers are IEEE 754 doubles and
+    # would lose the last đồng.
+    group_key: str | None
+    invoice_count: int
+    total_amount: str
+
+
+class SpendSummaryResult(BaseModel):
+    lines: list[SpendSummaryLine]
