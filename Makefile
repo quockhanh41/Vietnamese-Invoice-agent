@@ -1,4 +1,4 @@
-.PHONY: help install dev migrate seed rebuild-profiles generate db-stop db-reset test lint typecheck check api demo lock clean
+.PHONY: help install dev migrate seed rebuild-profiles generate db-stop db-reset test lint typecheck check eval api demo lock clean
 
 UV  := uv
 PY  := .venv/bin/python
@@ -18,6 +18,7 @@ help:
 	@echo "  make lint             - ruff"
 	@echo "  make typecheck        - mypy"
 	@echo "  make check            - lint + typecheck + test (chạy trước khi commit)"
+	@echo "  make eval             - sinh docs/eval-report.md (§10.4, mỗi dòng kèm N/method/verdict)"
 	@echo "  make api              - chạy uvicorn dev server ở port 8000"
 	@echo "  make demo             - chạy API + Streamlit UI cùng lúc"
 	@echo "  make lock             - Sinh lại requirements.lock từ pyproject.toml"
@@ -69,6 +70,9 @@ typecheck:
 	.venv/bin/mypy
 
 check: lint typecheck test
+
+eval:
+	$(PY) -m scripts.eval --eval-json docs/notes/2026-08-05-m6c-eval-raw.json --out docs/eval-report.md
 
 api:
 	.venv/bin/uvicorn invoice_agent.api.app:app --reload --port 8000
