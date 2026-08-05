@@ -17,6 +17,15 @@ dependencies = [
     # (nguyên tắc 6, docs/Plan_Project_F_2026-07-25.md §0), không phải `pip -U`.
     "langgraph==1.2.9",
     "langgraph-checkpoint-postgres==3.1.0",
+    # M7's MCP server (design §8.2). Pinned exactly, in the same category as
+    # langgraph above: a 3.x churn could silently change tool/resource
+    # registration behaviour underneath the architecture test. Measured
+    # 2026-08-05 (docs/superpowers/sdd/2026-08-05-m7-mcp-surface/task-4-report.md):
+    # installing fastmcp==3.4.5 (which pulls in mcp==1.29.0) left fastapi,
+    # starlette, langgraph and langgraph-checkpoint-postgres all unchanged --
+    # the `fastapi>=0.140` floor two lines down is exactly what lets it
+    # coexist without a version conflict.
+    "fastmcp==3.4.5",
 
     # ── Nhóm còn lại: để floor ─────────────────────────────────────────────
     # fastapi ≥0.140 là BẮT BUỘC, không phải sở thích: fastapi <0.137 cap
