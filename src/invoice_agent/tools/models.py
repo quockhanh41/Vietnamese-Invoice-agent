@@ -208,10 +208,16 @@ class ExplainedFlags(BaseModel):
 
 
 class SpendSummaryArgs(BaseModel):
+    """`period` has no default, unlike the optional filters on
+    `SearchInvoicesArgs`/`GetBudgetStatusArgs`: design §3.2 and the Task 3 brief
+    both give `spend_summary(period, group_by)` with no `| None`, so an omitted
+    `period` is a validation error here rather than reaching `queries.spend_summary`
+    as a silent all-time scan."""
+
     model_config = ConfigDict(extra="forbid")
 
     group_by: str
-    period: str | None = None
+    period: str
 
 
 class SpendSummaryLine(BaseModel):

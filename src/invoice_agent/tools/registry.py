@@ -113,8 +113,8 @@ REGISTRY: tuple[ToolSpec, ...] = (
     ToolSpec(
         name="spend_summary",
         description=(
-            "Invoice count and total spend, grouped by department or category, "
-            "optionally narrowed to one period (YYYY-MM)."
+            "Invoice count and total spend for one period (YYYY-MM), grouped "
+            "by department or category."
         ),
         args_model=models.SpendSummaryArgs,
         return_model=models.SpendSummaryResult,

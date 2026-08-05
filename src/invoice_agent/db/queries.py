@@ -155,10 +155,15 @@ def budget_report(
 SPEND_SUMMARY_GROUP_COLUMNS: frozenset[str] = frozenset({"department", "category"})
 
 
-def spend_summary(
-    conn: Connection, *, period: str | None = None, group_by: str
-) -> list[dict[str, Any]]:
-    """Invoice count and total spend, grouped by department or category.
+def spend_summary(conn: Connection, *, period: str, group_by: str) -> list[dict[str, Any]]:
+    """Invoice count and total spend for one period, grouped by department or
+    category.
+
+    `period` is required, not optional — design §3.2 and the Task 3 brief both
+    give this tool's signature with no `| None`, unlike the sibling filters on
+    `list_invoices`/`budget_report`. An all-time scan was never asked for and
+    would have shipped with no test covering it; removing the untested path is
+    simpler than adding a test for a capability nobody requested.
 
     Grouped straight off `invoices` — no join to `departments` or
     `expense_categories` — so a period with zero matching invoices yields zero
@@ -179,13 +184,12 @@ def spend_summary(
             func.count().label("invoice_count"),
             func.sum(inv.c.total_amount).label("total_amount"),
         )
+        # issue_date is a full date; period is "YYYY-MM" (same format the batch
+        # graph derives via `issue_date.strftime("%Y-%m")`, graphs/batch.py).
+        .where(func.to_char(inv.c.issue_date, "YYYY-MM") == period)
         .group_by(group_col)
         .order_by(group_col)
     )
-    if period is not None:
-        # issue_date is a full date; period is "YYYY-MM" (same format the batch
-        # graph derives via `issue_date.strftime("%Y-%m")`, graphs/batch.py).
-        stmt = stmt.where(func.to_char(inv.c.issue_date, "YYYY-MM") == period)
 
     rows = [dict(r) for r in conn.execute(stmt).mappings()]
     for r in rows:
