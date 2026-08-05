@@ -187,6 +187,7 @@ class LLMGateway:
         api_key: str,
         model_kwargs: dict[str, Any],
         images: list[bytes] | None = None,
+        image_key: str | None = None,
     ) -> tuple[str, int, int]:
         """The one point where a request becomes a network call — or does not.
 
@@ -198,7 +199,18 @@ class LLMGateway:
         §2.1), so anything placed above chain resolution would be testing a
         code path CI can never reach.
         """
-        digests = [hashlib.sha256(blob).hexdigest() for blob in images] if images else []
+        # `image_key` lets the CALLER name what the images depict, instead of
+        # hashing the bytes it happened to render. Vision passes the source
+        # PDF's digest: pypdfium2 renders differently across platforms, so a
+        # key built from PNG bytes made every macOS recording miss on Linux CI
+        # — silently, as a SKIP rather than a failure. Measured 2026-08-05,
+        # docs/notes/2026-08-05-m6c-eval-report.md.
+        if image_key is not None:
+            digests = [image_key]
+        elif images:
+            digests = [hashlib.sha256(blob).hexdigest() for blob in images]
+        else:
+            digests = []
         key = cache.make_key(
             model=model,
             messages=messages,
@@ -296,6 +308,7 @@ class LLMGateway:
         reasoning_effort: str | None = None,
         calls: list[LLMCallRecord] | None = None,
         images: list[bytes] | None = None,
+        image_key: str | None = None,
     ) -> str:
         """Generate a response.
 
@@ -321,6 +334,10 @@ class LLMGateway:
                 Kept OUT of `messages` deliberately: fixtures store messages in
                 the clear, and embedding base64 pages would put megabytes of
                 unreadable data in git — `image_digests` exists for exactly this.
+            image_key: If set, replaces the per-image digests in the cache key
+                with this single value — the caller naming what the images
+                DEPICT rather than how this machine happened to render them.
+                Vision passes sha256(pdf_bytes) here (spec §2.2).
 
         Returns:
             Generated text
@@ -335,6 +352,7 @@ class LLMGateway:
             reasoning_effort,
             calls,
             images,
+            image_key,
         )
         return text
 
@@ -349,6 +367,7 @@ class LLMGateway:
         reasoning_effort: str | None = None,
         calls: list[LLMCallRecord] | None = None,
         images: list[bytes] | None = None,
+        image_key: str | None = None,
     ) -> tuple[str, str]:
         """Same as `generate()`, but also returns which model in the chain
         actually produced the answer — so a caller can tell which model to
@@ -374,6 +393,7 @@ class LLMGateway:
             reasoning_effort,
             calls,
             images,
+            image_key,
         )
 
     def _generate_impl(
@@ -387,6 +407,7 @@ class LLMGateway:
         reasoning_effort: str | None,
         calls: list[LLMCallRecord] | None = None,
         images: list[bytes] | None = None,
+        image_key: str | None = None,
     ) -> tuple[str, str]:
         messages = []
         if system_prompt:
@@ -438,6 +459,7 @@ class LLMGateway:
                         api_key=api_key,
                         model_kwargs=model_kwargs,
                         images=images,
+                        image_key=image_key,
                     )
                 except cache.LLMReplayMiss as miss:
                     # No fixture is not a failed call: nothing was sent, no

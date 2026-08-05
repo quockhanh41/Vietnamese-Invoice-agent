@@ -11,6 +11,7 @@ approval, flag or status field, so a payload in the invoice image has no
 channel to act through even if the model decides to follow it.
 """
 
+import hashlib
 import io
 
 import pypdfium2
@@ -80,6 +81,9 @@ def extract(
     "the total does not match the line sum" can actually do better.
     """
     pages = rasterize(pdf_bytes)
+    # Key the replay fixture on the DOCUMENT, not on this machine's rendering
+    # of it (spec §2.2).
+    image_key = hashlib.sha256(pdf_bytes).hexdigest()
 
     prompt = "Trích xuất dữ liệu từ ảnh hóa đơn này thành JSON."
     if current_errors:
@@ -93,5 +97,6 @@ def extract(
         system_prompt=_SYSTEM_PROMPT,
         model=list(get_settings().vision_model_chain),
         images=pages,
+        image_key=image_key,
         calls=calls,
     )

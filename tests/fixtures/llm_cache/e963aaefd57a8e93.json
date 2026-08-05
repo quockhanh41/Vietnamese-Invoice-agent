@@ -1,6 +1,6 @@
 {
   "error": null,
-  "key": "b386197c5537371c25d19d7cac202217a455df83ab40eba9c79ac304fc23de7b",
+  "key": "e963aaefd57a8e937cf67b378b8afbc2882bc5c67873ff3cd1653a57695ce575",
   "messages": [
     {
       "content": "Bạn là hệ thống trích xuất dữ liệu hóa đơn điện tử Việt Nam. Đọc ảnh hóa đơn và trả về JSON đúng schema được yêu cầu. TẤT CẢ số tiền phải là CHUỖI (string), không phải số — ví dụ \"21618409.09\" chứ không phải 21618409.09. Không suy đoán: trường nào không đọc được thì bỏ trống.",
@@ -12,10 +12,10 @@
     }
   ],
   "model": "gemini/gemini-3.5-flash",
-  "recorded_at": "2026-08-01T02:01:47.121374+00:00",
-  "response": "{\n  \"template_no\": \"1\",\n  \"invoice_series\": \"C26TBB\",\n  \"invoice_number\": \"00000196\",\n  \"issue_date\": \"2026-07-21\",\n  \"currency\": \"VND\",\n  \"exchange_rate\": null,\n  \"seller_name\": \"CÔNG TY CP CÔNG NGHỆ TIẾN PHÁT\",\n  \"seller_tax_code\": \"0002267048\",\n  \"seller_address\": \"Số 109 Hai Bà Trưng, Hải Phòng\",\n  \"buyer_name\": \"CÔNG TY CP TẬP ĐOÀN VIỆT NAM\",\n  \"buyer_tax_code\": \"0100000099\",\n  \"buyer_address\": \"Số 100 Phố Huế, Hà Nội\",\n  \"subtotal\": \"3200000\",\n  \"vat_amount\": \"320000\",\n  \"total_amount\": \"3520000\",\n  \"total_in_words\": null,\n  \"lines\": [\n    {\n      \"line_no\": 1,\n      \"item_kind\": null,\n      \"description\": \"Chi phí giao hàng cho khách lẻ khu vực miền\",\n      \"unit\": \"Gói\",\n      \"quantity\": \"8\",\n      \"unit_price\": \"400000\",",
+  "recorded_at": "2026-08-05T01:05:39.809118+00:00",
+  "response": "{\n  \"schema_version\": null,\n  \"template_no\": \"1\",\n  \"invoice_series\": \"C26TAA\",\n  \"invoice_number\": \"00000275\",\n  \"issue_date\": \"2026-07-25\",\n  \"currency\": \"VND\",\n  \"exchange_rate\": null,\n  \"seller_name\": \"HỘ KINH DOANH CÔNG NGHỆ ĐẠI VIỆT\",\n  \"seller_tax_code\": \"0001395953\",\n  \"seller_address\": \"Số 4 Lê Lợi, Hải Phòng\",\n  \"buyer_name\": \"CÔNG TY CP TẬP ĐOÀN VIỆT NAM\",\n  \"buyer_tax_code\": \"0100000099\",\n  \"buyer_address\": \"Số 100 Phố Huế, Hà Nội\",\n  \"subtotal\": \"11000000\",\n  \"vat_amount\": \"1100000\",\n  \"total_amount\": \"12100000\",\n  \"total_in_words\": null,\n  \"lines\": [\n    {\n      \"line_no\": 1,\n      \"item_kind\": null,\n      \"description\": \"Tiền điện tháng 07/2026 văn phòng trụ sở\",\n      \"unit\": \"Gói\",\n      \"quantity\": \"10\",\n      \"unit_price\": \"1100000\",\n      \"amount\": \"11000000\",\n      \"vat_rate\": \"10\",\n      \"vat_amount\": \"1100000\"\n    }\n  ]\n}",
   "usage": {
-    "completion_tokens": 2033,
+    "completion_tokens": 1886,
     "prompt_tokens": 2531
   }
 }

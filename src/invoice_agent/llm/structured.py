@@ -107,6 +107,7 @@ def call_structured[ModelT: BaseModel](
     system_prompt: str | None = None,
     model: str | list[str] | None = None,
     images: list[bytes] | None = None,
+    image_key: str | None = None,
     max_attempts: int = 3,
     calls: list[LLMCallRecord] | None = None,
 ) -> ModelT:
@@ -129,6 +130,7 @@ def call_structured[ModelT: BaseModel](
             model=model,
             json_mode=True,
             images=images,
+            image_key=image_key,
             calls=calls,
         )
         try:

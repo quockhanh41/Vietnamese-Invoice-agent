@@ -28,6 +28,15 @@ CORPUS = pathlib.Path("corpus")
 # docs/notes/2026-07-31-m4c-agents.md rather than scored as a vision failure.
 TWINS = ("INV-0196", "INV-0275")
 
+# Invoice IDs where a replay miss is a KNOWN, recorded gap — e.g. the
+# INV-0029 provider-503 precedent above — rather than a stale cache key.
+# Empty since M6-C: now that the replay key is sha256(pdf_bytes) instead of
+# sha256(rasterized PNG) (spec §2.2), a miss on a TWINS entry can no longer be
+# explained away as "recorded on another platform" — it means the fixture is
+# genuinely missing or the document content changed, which is a real defect
+# and must FAIL, not SKIP. See tests/test_vision_replay_key.py.
+ALLOWED_MISSES: dict[str, str] = {}
+
 # The fields a reviewer would check first, and the ones that decide whether an
 # invoice can be posted at all: its identity and its amount.
 FIELDS = ("invoice_number", "invoice_series", "seller_tax_code", "total_amount")
@@ -40,49 +49,52 @@ def _manifest() -> dict[str, dict]:
     return {r["invoice_id"]: r for r in map(json.loads, path.open(encoding="utf-8"))}
 
 
+def _measure(invoice_id: str, gateway):
+    """Read one twin's XML truth and its vision extraction — or raise
+    `LLMReplayMiss` if no fixture matches. Shared by the scoring test and the
+    vacuous-case guard below, so both agree on what "measured" means."""
+    from invoice_agent.extraction import vision
+    from invoice_agent.extraction.xml_parser import parse_invoice_xml
+
+    record = _manifest()[invoice_id]
+    truth = parse_invoice_xml(pathlib.Path(record["path"]).read_bytes())
+    extracted = vision.extract(
+        pathlib.Path(record["pdf_path"]).read_bytes(),
+        gateway=gateway,
+        current_errors=None,
+        calls=[],
+    )
+    return truth, extracted
+
+
 @pytest.mark.parametrize("invoice_id", TWINS)
 def test_vision_extraction_matches_its_xml_twin(invoice_id, monkeypatch, capsys):
     monkeypatch.setenv("LLM_MODE", "replay")
 
     from invoice_agent.config import Settings
-    from invoice_agent.extraction import vision
-    from invoice_agent.extraction.xml_parser import parse_invoice_xml
     from invoice_agent.llm.cache import LLMReplayMiss
     from invoice_agent.llm.gateway import LLMGateway
 
-    record = _manifest()[invoice_id]
-    truth = parse_invoice_xml(pathlib.Path(record["path"]).read_bytes())
     try:
-        extracted = vision.extract(
-            pathlib.Path(record["pdf_path"]).read_bytes(),
-            gateway=LLMGateway(Settings()),
-            current_errors=None,
-            calls=[],
-        )
-    except LLMReplayMiss:
-        # ⚠️ THE VISION FIXTURES ARE MACHINE-SPECIFIC, and this is the honest
-        # limit rather than a bug to paper over.
-        #
-        # The replay key is sha256(model, messages, params), and a vision
-        # message carries the RASTERIZED PNG. Two steps upstream of it are
-        # environment-dependent: `scripts/generator/pdf.py` renders the corpus
-        # PDF, and `vision.rasterize` turns it into PNG at 150 DPI via pdfium.
-        # Neither is guaranteed byte-identical across platforms — measured
-        # 2026-08-01, fixtures recorded on macOS/ARM miss on CI's Ubuntu/x86
-        # with a different key for the same invoice.
-        #
-        # `test_same_seed_produces_identical_bytes` hashes the whole corpus
-        # directory, so it proves determinism for ONE machine re-running itself;
-        # it says nothing across platforms.
-        #
-        # Skipping here rather than deleting the test: it is real evidence
-        # wherever the fixtures were recorded, and M6 either re-records on the
-        # CI platform or scores vision from committed PNGs instead of
-        # re-rasterizing. Recorded in docs/notes/2026-07-31-m4c-agents.md.
-        pytest.skip(
-            f"vision fixture recorded on another platform — PDF rasterization "
-            f"is not byte-stable across OS/arch, so the replay key differs "
-            f"({invoice_id})"
+        truth, extracted = _measure(invoice_id, LLMGateway(Settings()))
+    except LLMReplayMiss as miss:
+        if invoice_id in ALLOWED_MISSES:
+            pytest.skip(f"{invoice_id}: recorded gap — {ALLOWED_MISSES[invoice_id]}")
+        # FOUND by review (M6-C task 2): the old code converted ANY
+        # LLMReplayMiss into a SKIP under one generic "cross-platform
+        # rasterization" message. That made a real, content-driven key change
+        # (exactly what M6-C Task 1's corpus fix caused) indistinguishable
+        # from a benign platform difference — a silent-green pattern. Since
+        # the key is now sha256(pdf_bytes), not sha256(rendered PNG), a miss
+        # on a TWINS entry is no longer explainable by rendering differences
+        # at all: it means the fixture was never (re-)recorded. Fail loudly
+        # unless the invoice is explicitly allow-listed above.
+        pytest.fail(
+            f"{invoice_id}: no replay fixture for this vision call. The key is "
+            f"sha256(pdf_bytes) (spec §2.2), so this is not a cross-platform "
+            f"rasterization difference — the fixture is genuinely missing. "
+            f"Re-record with LLM_MODE=record, or add {invoice_id} to "
+            f"ALLOWED_MISSES with a recorded reason. ({miss})"
         )
 
     disagreed = [
@@ -95,9 +107,31 @@ def test_vision_extraction_matches_its_xml_twin(invoice_id, monkeypatch, capsys)
     assert not disagreed, disagreed
 
 
-def test_at_least_one_twin_is_measured():
-    """Guards the vacuous case. If TWINS is emptied — because fixtures were
-    cleared, say — the parametrized test above silently measures nothing and
-    the suite still passes, which is how this debt stayed invisible for three
-    milestones."""
-    assert TWINS, "no vision twin is being measured; the debt is unpaid again"
+def test_at_least_one_twin_is_measured(monkeypatch):
+    """Guards the vacuous case for real, not just in appearance.
+
+    The old version only asserted `TWINS` was non-empty — it could not catch
+    the case where every twin SKIPPED, which is exactly what happened for
+    three milestones: a non-empty tuple proved nothing about whether any
+    fixture actually replayed. This attempts every twin itself and fails if
+    none of them produce a result, independent of whatever the parametrized
+    test above did.
+    """
+    monkeypatch.setenv("LLM_MODE", "replay")
+
+    from invoice_agent.config import Settings
+    from invoice_agent.llm.cache import LLMReplayMiss
+    from invoice_agent.llm.gateway import LLMGateway
+
+    gateway = LLMGateway(Settings())
+    measured = []
+    for invoice_id in TWINS:
+        try:
+            _measure(invoice_id, gateway)
+            measured.append(invoice_id)
+        except LLMReplayMiss:
+            pass
+    assert measured, (
+        "every vision twin replay-missed — the debt is unpaid again. "
+        f"TWINS={TWINS!r}"
+    )

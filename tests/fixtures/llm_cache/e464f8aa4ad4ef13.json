@@ -1,6 +1,6 @@
 {
   "error": null,
-  "key": "0c4db0e5ce3d040f061402a10468519b00939c3e1c1a4bb8e4d0168e5f76fa91",
+  "key": "e464f8aa4ad4ef133d61280644100a38bb6e93dd45cb1d475fda82917de2720a",
   "messages": [
     {
       "content": "Bạn là hệ thống trích xuất dữ liệu hóa đơn điện tử Việt Nam. Đọc ảnh hóa đơn và trả về JSON đúng schema được yêu cầu. TẤT CẢ số tiền phải là CHUỖI (string), không phải số — ví dụ \"21618409.09\" chứ không phải 21618409.09. Không suy đoán: trường nào không đọc được thì bỏ trống.",
@@ -12,10 +12,10 @@
     }
   ],
   "model": "gemini/gemini-3.5-flash",
-  "recorded_at": "2026-08-01T08:20:41.930835+00:00",
-  "response": "{\n  \"template_no\": \"\",\n  \"invoice_series\": \"C26TAA\",\n  \"invoice_number\": \"\",\n  \"issue_date\": \"\",\n  \"total_amount\": \"\",\n  \"lines\": []\n}",
+  "recorded_at": "2026-08-05T01:04:52.039166+00:00",
+  "response": "{\n  \"template_no\": \"1\",\n  \"invoice_series\": \"C26TBB\",\n  \"invoice_number\": \"00000196\",\n  \"issue_date\": \"2026-07-21\",\n  \"currency\": \"VND\",\n  \"seller_name\": \"CÔNG TY CP CÔNG NGHỆ TIẾN PHÁT\",\n  \"seller_tax_code\": \"0002267048\",\n  \"seller_address\": \"Số 109 Hai Bà Trưng, Hải Phòng\",\n  \"buyer_name\": \"CÔNG TY CP TẬP ĐOÀN VIỆT NAM\",\n  \"buyer_tax_code\": \"0100000099\",\n  \"buyer_address\": \"Số 100 Phố Huế, Hà Nội\",\n  \"subtotal\": \"3200000\",\n  \"vat_amount\": \"320000\",\n  \"total_amount\": \"3520000\",\n  \"lines\": [\n    {\n      \"",
   "usage": {
-    "completion_tokens": 958,
+    "completion_tokens": 2033,
     "prompt_tokens": 2531
   }
 }
