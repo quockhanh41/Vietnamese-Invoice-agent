@@ -35,6 +35,39 @@ def test_an_unmeasured_row_is_never_rendered_as_a_pass():
     assert "MET" not in out.split("Vision")[1].split("\n")[0]
 
 
+def _cells(out: str, stage: str) -> dict[str, str]:
+    """The Measured and Verdict cells of one rendered row, by column position."""
+    line = next(ln for ln in out.splitlines() if ln.startswith(f"| {stage} |"))
+    parts = [c.strip() for c in line.split("|")]
+    return {"measured": parts[3], "verdict": parts[6]}
+
+
+def test_an_underpowered_row_is_never_rendered_as_a_bare_point_estimate():
+    """The regression this pins: the first generated report published the
+    Auditor as `0.000 | 12 | live | MISSED` while the run behind it had printed
+    "Dispute metrics: UNDERPOWERED (n < 20)" and the artifact already carried
+    `override_ci = [0.000, 0.243]`.
+
+    At n=12 an upper bound of 0.243 says "we cannot tell at this sample size";
+    a bare 0.000 says "the Auditor is useless". Design §10.5 forbids publishing
+    the stronger of the two, so the cell must not be the point estimate alone.
+    """
+    row = Row(stage="Auditor", target="override precision >= 0.60",
+              value=0.0, n=12, method="live", met=False,
+              ci=(0.0, 0.2425007574992425), underpowered=True)
+    out = render_report([row])
+
+    cells = _cells(out, "Auditor")
+    assert cells["measured"] != "0.000", (
+        "an underpowered row was rendered as a bare point estimate"
+    )
+    assert "0.243" in cells["measured"]     # the upper bound, which IS the finding
+    assert "UNDERPOWERED" in cells["measured"]
+    assert "n=12" in cells["measured"]
+    # The verdict column is the only cell a skimming reader looks at.
+    assert "underpowered" in cells["verdict"].lower()
+
+
 def test_verdict_is_computed_not_supplied():
     """A generator that trusted a hand-written `met` flag could publish a
     missed target as met. The comparison happens in code."""
@@ -70,7 +103,11 @@ def test_agent_rows_computes_the_verdict_from_a_fixture_not_from_a_flag():
             "gate_target": 0.75,
             "measured_n": 10,
         },
-        "precisions": {"n": 4, "override_precision": 0.75, "dispute_precision": 0.25},
+        "precisions": {
+            "n": 4, "override_precision": 0.75, "dispute_precision": 0.25,
+            "override_ci": [0.30, 0.95], "dispute_ci": [0.05, 0.70],
+            "underpowered": True,
+        },
         "cost": {"total_shadow_cost_usd": "0.05"},
     }
     rows = agent_rows(fixture)
@@ -91,6 +128,38 @@ def test_agent_rows_computes_the_verdict_from_a_fixture_not_from_a_flag():
     cost = by_stage["Cost"]
     assert cost.value == pytest.approx(0.005)  # 0.05 / 10 invoices
     assert cost.met is True  # 0.005 <= 0.01
+
+
+def test_the_auditor_row_carries_the_interval_the_artifact_already_computed():
+    """`eval_classification.precisions` has always emitted `override_ci` and
+    `underpowered`; until 2026-08-05 `agent_rows` dropped both on the floor.
+    This is the wiring, not the renderer: the values below are the ones the
+    real pinned-rater artifact carries (n=12, 0 of 12 overrides correct)."""
+    artifact = {
+        "total_invoices": 285,
+        "baseline": {"accuracy": 0.5789473684210527},
+        "classifier": {"accuracy": 0.9543859649122807, "gate_target": 0.7289473684210527,
+                       "measured_n": 285},
+        "precisions": {
+            "n": 12,
+            "dispute_precision": 0.08333333333333333,
+            "dispute_ci": [0.014864709450773478, 0.35388592179859524],
+            "override_precision": 0.0,
+            "override_ci": [0.0, 0.2425007574992425],
+            "underpowered": True,
+        },
+        "cost": {"total_shadow_cost_usd": "0.13391010"},
+    }
+    auditor = {r.stage: r for r in agent_rows(artifact)}["Auditor"]
+    assert auditor.value == 0.0
+    assert auditor.n == 12
+    assert auditor.met is False          # 0.000 < 0.60, still published as a miss
+    assert auditor.underpowered is True
+    assert auditor.ci == (0.0, pytest.approx(0.2425007574992425))
+
+    cells = _cells(render_report([auditor]), "Auditor")
+    assert cells["measured"] != "0.000"
+    assert "0.243" in cells["measured"]
 
 
 @pytest.fixture(scope="module")
@@ -128,6 +197,16 @@ def test_deterministic_rows_against_the_real_corpus(real_corpus):
     assert validation_row.n == 285
     assert validation_row.value == 1.0
     assert validation_row.met is True
+
+    # N=2. The point estimate is 1.000 and the target is >= 0.90, but the 95%
+    # interval on 2 of 2 documents runs from 0.342, so "MET" here is not a
+    # claim the sample can support and must not read as one.
+    vision_row = by_stage["Vision fallback"]
+    assert vision_row.n == 2
+    assert vision_row.value == 1.0
+    assert vision_row.underpowered is True
+    assert vision_row.ci is not None and vision_row.ci[0] == pytest.approx(0.342, abs=1e-3)
+    assert _cells(render_report([vision_row]), "Vision fallback")["measured"] != "1.000"
 
     # Design §10.4's negative control (M6-A, 22/24) is a MEASURED miss and
     # M6-C does not re-litigate it (spec §3) — the row must publish it as one.

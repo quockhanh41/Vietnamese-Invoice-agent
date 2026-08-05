@@ -14,6 +14,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from scripts.eval_classification import wilson
 from scripts.generator import manifest
 
 from invoice_agent.domain import anomaly, findings, validation
@@ -21,6 +22,26 @@ from invoice_agent.extraction.xml_parser import parse_invoice_xml
 from invoice_agent.memory.vendor_profile import derive
 
 OPS = {">=": lambda v, t: v >= t, "<=": lambda v, t: v <= t, "==": lambda v, t: v == t}
+
+# Below this many samples a proportion is reported with its interval and an
+# explicit UNDERPOWERED marker, never as a bare point estimate. The threshold
+# is `scripts.eval_classification.precisions`' own `n < 20` rule, reused rather
+# than re-picked.
+#
+# Fixed 2026-08-05 (task-8-report.md): the first generated report published the
+# Auditor as `0.000 | 12 | live | MISSED`, while the run that produced it had
+# printed "Dispute metrics: UNDERPOWERED (n < 20)" and the artifact already
+# carried `override_ci = [0.000, 0.243]`. None of it reached the reader. At
+# n=12 an upper bound of 0.243 says "we cannot tell at this sample size", which
+# is a different finding from "the Auditor is useless", and design §10.5 is
+# written against publishing the stronger of the two.
+#
+# Only rows whose value is a PROPORTION ESTIMATED FROM A SAMPLE carry an
+# interval: Auditor (0 of 12 disputes) and Vision (2 of 2 documents). The HITL
+# row does not — its target is a literal count of runs of a fixed procedure
+# (10/10 restarts), not an estimate of a population rate, so there is no
+# population for an interval to be about.
+UNDERPOWERED_N = 20
 
 
 @dataclass
@@ -31,6 +52,8 @@ class Row:
     n: int
     method: str          # "live" | "replay" | "deterministic" | "unmeasured" | "pending"
     met: bool | None     # None = not decidable, and rendered as such
+    ci: tuple[float, float] | None = None   # 95% Wilson interval on `value`
+    underpowered: bool = False              # n too small for `value` to be a claim
 
 
 def verdict(value: float | None, op: str, threshold: float) -> bool | None:
@@ -43,7 +66,22 @@ def verdict(value: float | None, op: str, threshold: float) -> bool | None:
 def _cell(row: Row) -> str:
     if row.met is None:
         return "— unmeasured"
-    return "✅ MET" if row.met else "❌ MISSED"
+    base = "✅ MET" if row.met else "❌ MISSED"
+    # A skimming reader reads the verdict column and nothing else, so the
+    # caveat has to survive there too — not only in the Measured cell.
+    return f"{base} (underpowered)" if row.underpowered else base
+
+
+def _measured(row: Row) -> str:
+    """The Measured cell. An underpowered row is never a bare point estimate."""
+    if row.value is None:
+        return "—"
+    shown = f"{row.value:.3f}"
+    if row.ci is not None:
+        shown += f" (95% CI {row.ci[0]:.3f}–{row.ci[1]:.3f})"
+    if row.underpowered:
+        shown += f" ⚠️ UNDERPOWERED (n={row.n} < {UNDERPOWERED_N})"
+    return shown
 
 
 def render_report(rows: list[Row]) -> str:
@@ -58,9 +96,8 @@ def render_report(rows: list[Row]) -> str:
         "|---|---|---:|---:|---|---|",
     ]
     for r in rows:
-        shown = "—" if r.value is None else f"{r.value:.3f}"
         lines.append(
-            f"| {r.stage} | {r.target} | {shown} | {r.n} | {r.method} | {_cell(r)} |"
+            f"| {r.stage} | {r.target} | {_measured(r)} | {r.n} | {r.method} | {_cell(r)} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -117,6 +154,12 @@ VISION_FIELDS_MATCHED = 8
 VISION_FIELDS_TOTAL = 8
 VISION_TOTAL_AMOUNT_MATCHED = 2
 VISION_TOTAL_AMOUNT_N = 2
+# Both twins matched on every checked field, so at the DOCUMENT level — the N
+# this row reports — it is 2 of 2. The interval is computed on that
+# denominator, not on the 8 field comparisons: four fields read out of one
+# rasterized page are not four independent samples, and treating them as such
+# is how an N=2 result comes to look like an N=8 one.
+VISION_TWINS_ALL_FIELDS_MATCHED = 2
 
 # Security — M6-A, measured 2026-08-02 (docs/notes/2026-08-02-m6a-injection.md
 # §2-3). 30 cases (24 payload x placement + 6 reasoning-channel cases,
@@ -377,6 +420,8 @@ def deterministic_rows(corpus: pathlib.Path) -> list[Row]:
             verdict(vision_field_rate, ">=", 0.90)
             and verdict(vision_amount_rate, ">=", 0.85)
         ),
+        ci=wilson(VISION_TWINS_ALL_FIELDS_MATCHED, VISION_TWINS_N),
+        underpowered=VISION_TWINS_N < UNDERPOWERED_N,
     )
 
     validation_row = Row(
@@ -493,8 +538,12 @@ def agent_rows(artifact: dict[str, Any] | None) -> list[Row]:
         ),
     )
 
+    # `override_ci`/`underpowered` are read with `[]`, not `.get()`: they are
+    # always written by `eval_classification.precisions`, and a default would
+    # silently drop the interval again the moment the artifact shape shifts.
     prec = artifact["precisions"]
     override_p = prec["override_precision"]
+    lo, hi = prec["override_ci"]
     auditor_row = Row(
         stage="Auditor",
         target="override precision >= 0.60 (below 0.50 is net harmful)",
@@ -502,6 +551,8 @@ def agent_rows(artifact: dict[str, Any] | None) -> list[Row]:
         n=prec["n"],
         method="live",
         met=verdict(override_p, ">=", 0.60),
+        ci=(lo, hi),
+        underpowered=prec["underpowered"],
     )
 
     cost = artifact["cost"]

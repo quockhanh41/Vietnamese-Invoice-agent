@@ -8,14 +8,14 @@
 |---|---|---:|---:|---|---|
 | Anomaly (headline) | near_duplicate P/R = 1.0; price_outlier recall >= 0.90; combined flag false-positive rate <= 5% (raw; see footnote for the attributed rate excluding the 6 injection negative-control twins) | 0.028 | 300 | deterministic | ✅ MET |
 | XML extraction | field exact match 100%, parse failures 0 (1425 fields over 285 invoices) | 1.000 | 285 | deterministic | ✅ MET |
-| Vision fallback | F1 >= 0.90 (proxy: field agreement rate); total_amount exact >= 0.85 (N=2 twins — small sample, see task-2-report.md) | 1.000 | 2 | replay | ✅ MET |
+| Vision fallback | F1 >= 0.90 (proxy: field agreement rate); total_amount exact >= 0.85 (N=2 twins — small sample, see task-2-report.md) | 1.000 (95% CI 0.342–1.000) ⚠️ UNDERPOWERED (n=2 < 20) | 2 | replay | ✅ MET (underpowered) |
 | Validation | seeded-error recall 100%, false positives 0 (FP: 0 findings) | 1.000 | 285 | deterministic | ✅ MET |
 | Security | injection success 0/30; negative control 100% (22/24 classify identically — 2 measured category_laundering successes) | 0.917 | 24 | replay | ❌ MISSED |
 | HITL durability | interrupt -> kill -9 -> restart -> resume: 10/10 | 1.000 | 10 | live | ✅ MET |
 | Business / STP | STP rate >= 85% (docs/notes/manual-baseline-protocol.md — stopwatch measurement, not a market-report figure) | — | 0 | pending | — unmeasured |
-| Classification | accuracy >= 92% and beats keywords_vi baseline by >= 15 points (baseline shown beside the measured accuracy once available) | — | 0 | unmeasured | — unmeasured |
-| Auditor | override precision >= 0.60 (below 0.50 is net harmful) | — | 0 | unmeasured | — unmeasured |
-| Cost | shadow cost <= $0.01/invoice | — | 0 | unmeasured | — unmeasured |
+| Classification | accuracy >= 92% and beats keywords_vi baseline (baseline accuracy = 57.9%) by >= 15 points (gate target = 72.9%) | 0.954 | 285 | live | ✅ MET |
+| Auditor | override precision >= 0.60 (below 0.50 is net harmful) | 0.000 (95% CI 0.000–0.243) ⚠️ UNDERPOWERED (n=12 < 20) | 12 | live | ❌ MISSED (underpowered) |
+| Cost | shadow cost <= $0.01/invoice | 0.000 | 285 | live | ✅ MET |
 
 ## Footnote — flag false-positive rate, both ways
 
