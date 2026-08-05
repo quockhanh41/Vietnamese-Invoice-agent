@@ -23,6 +23,7 @@ from collections.abc import Callable
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.resources import ResourceContent, ResourceResult
 from pydantic import BaseModel
 
 from invoice_agent.db import queries
@@ -172,12 +173,27 @@ def _register_resources(server: FastMCP) -> None:
             "this resource serves whatever was uploaded, unconditionally."
         ),
     )
-    def read_invoice_xml(invoice_id: str) -> str:
+    def read_invoice_xml(invoice_id: str) -> ResourceResult:
+        # A bare `str` return would NOT carry the `mime_type="application/xml"`
+        # declared above: verified against fastmcp==3.4.5
+        # (`resources/template.py::ResourceTemplate.convert_result`) that for a
+        # template resource, a plain str/bytes return goes through
+        # `ResourceResult(raw_value)`, which ALWAYS normalizes to "text/plain"
+        # (`ResourceResult._normalize_contents`) -- the decorator's `mime_type`
+        # only affects the ADVERTISED template metadata (what
+        # `list_resource_templates()` shows), not the actually-delivered
+        # content, unless the function itself returns an explicit
+        # `ResourceResult`/`ResourceContent` carrying the mime type. Confirmed by
+        # reading back a real committed invoice's raw XML through a real client
+        # before this fix (mimeType came back "text/plain") and after (came
+        # back "application/xml").
         with get_engine().begin() as conn:
             row = invoices_repo.get_by_id(conn, uuid.UUID(invoice_id))
         if row is None:
             raise ValueError(f"invoice {invoice_id} not found")
-        return row["raw_xml"] or ""
+        return ResourceResult(
+            contents=[ResourceContent(row["raw_xml"] or "", mime_type="application/xml")]
+        )
 
     @server.resource(
         "budget://{department}/{period}",
