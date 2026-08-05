@@ -539,9 +539,37 @@ classifier saw the instruction and refused it:
 The Auditor then disputed that correct call. `INV-0014` is one of the 12 disputes behind the
 0.000.
 
-**CI**: run and conclusion recorded in §12 below, on the exact pushed SHA. The milestone is not
-closed until that line is green.
-
 ## 12. CI on the closing commit
 
-<!-- filled in after the push; see git history for the closing SHA -->
+Four milestones in this project were declared closed on red or unverified commits, so the gate is
+CI green **on the exact pushed SHA**, not on a local run.
+
+| | |
+|---|---|
+| SHA | `3dfbde5f208b4b223a8b3440acd711a15e69a287` |
+| Run | https://github.com/quockhanh41/Vietnamese-Invoice-agent/actions/runs/30983265266 |
+| Conclusion | **success** — both jobs (`test`, `secrets`) |
+
+```
+Lint (ruff)       All checks passed!
+Test (pytest)       INV-0196: 4/4 fields agree
+Test (pytest)       INV-0275: 4/4 fields agree
+Test (pytest)     794 passed, 2 xfailed, 1 warning in 72.69s
+gitleaks (toàn bộ history)   ✓
+```
+
+**ZERO skipped on Linux.** Three things this run settles that a local run could not:
+
+1. **The vision fixtures travel.** `INV-0196` and `INV-0275` agree 4/4 on **Ubuntu/x86**, replaying
+   fixtures recorded on macOS/ARM. Before M6-C these two skipped on every CI run, and the workflow
+   carried a written allowance for them. The allowance is now deleted from `ci.yml`; any skip there
+   is news.
+2. **`test_the_corpus_pdf_digest_is_pinned` passed on Linux.** Task 2 pinned that digest on
+   macOS/ARM and recorded Linux as UNVERIFIED **by design**, with instructions to report rather
+   than patch if it fired. It did not fire: PDF *generation* is byte-stable across platforms even
+   though PDF *rasterization* is not. That is the distinction the whole re-keying rests on, and it
+   is now measured rather than assumed.
+3. **794 on CI vs 787 locally** is not a discrepancy: `ci.yml` sets `HITL_RUNS=10` where the local
+   default is 3, and 787 + 7 = 794. Stating the arithmetic because an unexplained count difference
+   between local and CI is exactly the shape of the six-silently-skipped-tests bug this workflow
+   was rebuilt around.
