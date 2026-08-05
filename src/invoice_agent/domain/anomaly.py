@@ -16,8 +16,26 @@ from decimal import Decimal
 
 from invoice_agent.domain import findings
 
-# NEAR_DUP_WINDOW_DAYS is still PROVISIONAL AND UNMEASURED: its only consumer is
-# M4-D's serial join, so measuring it here would be measuring nothing.
+# Measured 2026-08-05 against the 300-invoice corpus, scoring each invoice
+# against priors in serial_join's canonical order (batch.py:267) — the same
+# ordering M6-C's eval sees. Full sweep and generator analysis in
+# docs/notes/2026-08-05-m6c-eval-report.md.
+#
+# HONEST LIMIT: the corpus cannot discriminate this value. The generator's
+# near_duplicate_of() (scripts/generator/defects.py) shifts each seeded pair's
+# issue date by rng.randint(1, 5) days, so no seeded pair is ever more than 5
+# days apart. Windows 5 through 30 score IDENTICALLY (9/9 recall, 6 false
+# positives) — 7 did not win a comparison against 10, 14, 21, or 30; nothing
+# in this corpus can tell them apart. Below 5 the window genuinely costs
+# recall (window=1: 0/9, window=3: 3/9), so the plateau starts exactly at the
+# generator's own maximum shift.
+#
+# 7 stays 7 for the same reason MIN_N=7 stays 7 below (margin, not a win): it
+# is 2 days above the generator's max shift of 5, mirroring that constant's
+# own margin-of-2 reasoning. The 6-false-positive floor at every window is
+# NOT about window size either — it is the six §9.1 injection/negative-control
+# twin pairs (same seller, same total, same day, different number by
+# construction), caught regardless of window.
 NEAR_DUP_WINDOW_DAYS = 7
 
 # Measured 2026-07-31 across the 300-invoice corpus, scoring each invoice against
