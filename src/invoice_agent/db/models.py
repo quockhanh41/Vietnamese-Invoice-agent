@@ -379,7 +379,19 @@ audit_log = Table(
     metadata,
     Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
     Column("occurred_at", sa.DateTime(timezone=True), nullable=False, server_default=func.now()),
-    # 'system' | 'human:<name>' | 'mcp:<client>' (M7.2 writes the third form).
+    # 'system' | 'human:<name>' | 'human:mcp:<client>'. The middle and third
+    # forms are the SAME prefix: `graphs/approval.py::post_entry_node` applies
+    # `human:` to every human-authorised decision regardless of transport
+    # (measured 2026-08-05, M7.2 task 5 review) -- an MCP-driven decision's
+    # `decided_by` already carries its own `mcp:<client>` tag by the time it
+    # reaches that node, so the transport marker nests INSIDE the `human:`
+    # prefix rather than replacing it. Ruled M7.2: `human:mcp:<client>` already
+    # satisfies "distinguishable from a UI decision, forever"
+    # (`human:mcp:claude-desktop` != `human:ketoan`), and editing
+    # `post_entry_node` to special-case a bare `mcp:<client>` form would mean
+    # editing the HITL path pinned to langgraph==1.2.9 and covered by
+    # `test_hitl_survives_restart.py` -- out of scope for a milestone that adds
+    # a transport, not a path.
     Column("actor", sa.Text, nullable=False),
     Column("action", sa.Text, nullable=False),
     Column("target_table", sa.Text),

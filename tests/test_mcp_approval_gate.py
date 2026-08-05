@@ -11,6 +11,8 @@ with a written row is the exact failure these tests exist to catch (Task 5
 brief, step 1).
 """
 
+import uuid
+
 import pytest
 from tests.helpers.approval_fixtures import _initial_state, _persisted_invoice
 
@@ -185,6 +187,29 @@ def test_already_decided_invoice_is_refused(requires_postgres, committed_rows, m
 
     with pytest.raises(mcp_approvals.AlreadyDecided), get_engine().begin() as conn:
         _call(conn, db_id, decision="rejected", actor_token="secret")
+
+
+# ---------------------------------------------------------------------------
+# An invoice with no approval ever opened is refused (HTTP's 404, via the
+# same `approvals_repo.get_by_invoice` precondition read). Without this guard,
+# `Command(resume=...)` reaches a thread LangGraph never started and a raw
+# `EmptyInputError` (a LangGraph internal) leaks through the MCP transport --
+# review finding, Task 5 fix report.
+# ---------------------------------------------------------------------------
+
+
+def test_unknown_invoice_is_refused(requires_postgres, monkeypatch):
+    monkeypatch.setattr(
+        mcp_approvals,
+        "get_settings",
+        lambda: _settings_with(
+            mcp_allow_approvals=True, mcp_actor_token="secret", mcp_client_name="claude-desktop"
+        ),
+    )
+    unknown_id = uuid.uuid4()
+
+    with pytest.raises(mcp_approvals.NotFound), get_engine().begin() as conn:
+        _call(conn, unknown_id, decision="approved", actor_token="secret")
 
 
 # ---------------------------------------------------------------------------
