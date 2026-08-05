@@ -170,8 +170,17 @@ make generate
 .venv/bin/python - <<'PY'
 import json, pathlib
 corpus = pathlib.Path("corpus")
-declared = {pathlib.Path(json.loads(l)["path"]).name
-            for l in (corpus/"manifest.jsonl").read_text(encoding="utf-8").splitlines()}
+declared = set()
+for line in (corpus/"manifest.jsonl").read_text(encoding="utf-8").splitlines():
+    record = json.loads(line)
+    # BOTH fields. Corrected 2026-08-05: filtering on `path` alone missed
+    # `pdf_path` and deleted the three XML<->PDF twin PDFs that
+    # tests/test_vision_accuracy.py depends on. `make check` caught it with a
+    # FileNotFoundError, but a deletion script that reads only half the
+    # manifest is one regeneration away from being uncatchable.
+    for field in ("path", "pdf_path"):
+        if record.get(field):
+            declared.add(pathlib.Path(record[field]).name)
 extras = [p for p in corpus.iterdir()
           if p.name not in declared and p.name not in {"manifest.jsonl", "gate_batch.json"}]
 for p in extras:
