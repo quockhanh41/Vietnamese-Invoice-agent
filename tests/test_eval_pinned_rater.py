@@ -41,6 +41,24 @@ def test_the_two_pinned_raters_must_not_be_the_same_model():
         )
 
 
+def test_the_two_pinned_raters_must_not_share_a_family_even_with_different_names():
+    """Design §6.3's invariant is a different FAILURE MODE, not a different
+    model NAME. `groq/llama-3.3-70b-versatile` and `groq/llama-3.1-8b-instant`
+    are different strings but both `meta-llama` (agents/families.py) — the
+    exact case a name-only equality check misses (review 2026-08-05: this
+    pair was silently ACCEPTED before the guard compared families instead of
+    raw strings)."""
+    from scripts.eval_classification import pinned_gateways
+
+    base = Settings(_env_file=None, groq_api_keys=["k"])
+    with pytest.raises(ValueError, match="family"):
+        pinned_gateways(
+            base,
+            classifier_model="groq/llama-3.3-70b-versatile",
+            auditor_model="groq/llama-3.1-8b-instant",
+        )
+
+
 def test_persistent_failure_is_recorded_unmeasured_not_dropped():
     """The INV-0029 precedent: six Gemini 503s produced no extraction, and it
     was reported unmeasured rather than scored as a failure. Dropping it would
@@ -75,21 +93,16 @@ def test_a_transient_failure_still_returns_a_result():
     assert (result, unmeasured) == ("ok", None)
 
 
-def test_pinning_the_auditor_actually_changes_what_audit_mod_calls(monkeypatch, sample_invoice):
-    """A gateway with the right `.model_chain` is not sufficient on its own.
-
-    `AuditorAgent.audit()` (agents/audit.py) never reads the gateway it is
-    handed for its model chain — it calls `get_settings().auditor_model_chain`
-    directly, a leftover from when Classifier and Auditor shared ONE gateway
-    instance and the Auditor was routed by an explicit `model=` override
-    instead of by gateway identity. `pinned_gateways` alone therefore cannot
-    pin the Auditor; `evaluate()`'s `_pinned_auditor_chain` closes that gap by
-    substituting what `audit_mod.get_settings()` returns for the run. This
-    test would pass on a build where the OBJECT looks pinned but `audit()`
-    still silently reaches the two-entry `DEFAULT_AUDITOR_CHAIN` — exactly the
-    leak Task 4 is told to watch for ("if two appear, the pin leaked").
-    """
-    from scripts.eval_classification import _pinned_auditor_chain, pinned_gateways
+def test_pinning_the_auditor_actually_reaches_the_single_model(monkeypatch, sample_invoice):
+    """`pinned_gateways` alone builds a gateway with the right `.model_chain`,
+    but `AuditorAgent.audit()` does not read it — it takes an explicit `model`
+    keyword (agents/audit.py) that defaults to the CONFIGURED chain, not the
+    gateway's. `evaluate()` must pass `model=auditor_gateway.model_chain`
+    explicitly at the call site (review 2026-08-05, replacing an earlier
+    monkeypatch-based approach) or a "pinned" Auditor would silently reach the
+    full `DEFAULT_AUDITOR_CHAIN` on every call — exactly the leak Task 4 is
+    told to watch for ("if two appear, the pin leaked")."""
+    from scripts.eval_classification import pinned_gateways
 
     from invoice_agent.agents import audit as audit_mod
     from invoice_agent.agents.models import AuditVerdict, ClassificationResult
@@ -112,12 +125,7 @@ def test_pinning_the_auditor_actually_changes_what_audit_mod_calls(monkeypatch, 
     proposal = ClassificationResult(
         category="MARKETING", department="MKT", confidence=0.9, reasoning="vì"
     )
-    original_get_settings = audit_mod.get_settings
-    with _pinned_auditor_chain(base, "gemini/gemini-3.5-flash"):
-        audit_mod.audit(sample_invoice, proposal, gateway=auditor)
-        assert seen["model"] == ["gemini/gemini-3.5-flash"]
-
-    # The substitution must not leak past the `with` block — it patches a
-    # process-wide `lru_cache` singleton's name binding, and a later test in
-    # the same session must see the real one again.
-    assert audit_mod.get_settings is original_get_settings
+    audit_mod.audit(
+        sample_invoice, proposal, gateway=auditor, model=auditor.model_chain
+    )
+    assert seen["model"] == ["gemini/gemini-3.5-flash"]

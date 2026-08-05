@@ -13,13 +13,11 @@ Usage:
 """
 
 import argparse
-import contextlib
 import functools
 import json
 import pathlib
 import time
 from collections import Counter
-from collections.abc import Iterator
 from typing import Any
 
 from scripts.generator import manifest
@@ -27,6 +25,7 @@ from scripts.seed_reference import CATEGORIES
 
 from invoice_agent.agents import audit as audit_mod
 from invoice_agent.agents import classification
+from invoice_agent.agents.families import family_of
 from invoice_agent.config import DEFAULT_AUDITOR_CHAIN, DEFAULT_MODEL_CHAIN, Settings, get_settings
 from invoice_agent.db.engine import get_engine
 from invoice_agent.eval import baseline
@@ -124,62 +123,50 @@ def pinned_gateways(
 ) -> tuple[LLMGateway, LLMGateway]:
     """Two gateways with single-entry chains — no fallback to demote to.
 
-    Pinning by rebuilding Settings (`model_copy(update=...)`) rather than by
-    adding a `model=` parameter to `classify()`/`audit()`: those agents'
-    signatures are part of the surface M6-A measured its security numbers
-    against, and this needs no change to them.
+    Pinning by rebuilding Settings (`model_copy(update=...)`) and constructing
+    a gateway from it, rather than adding a `model=` parameter to `classify()`
+    — `classify()` never took one, and doesn't need to: it calls
+    `gateway.generate()` with no override, so it falls straight to
+    `gateway.model_chain`.
 
-    Both are built by overriding `llm_model_chain`, INCLUDING the auditor's.
-    `LLMGateway.__init__` (llm/gateway.py) only ever reads `llm_model_chain`
-    into `self.model_chain` — verified empirically 2026-08-05, overriding
-    `auditor_model_chain` instead leaves `LLMGateway.model_chain` at the
-    two-entry default, which is a real bug in this task's original brief
-    snippet (it would fail `test_a_pinned_gateway_has_no_fallback_at_all`).
+    Both gateways are built by overriding `llm_model_chain`, INCLUDING the
+    auditor's. `LLMGateway.__init__` (llm/gateway.py) only ever reads
+    `llm_model_chain` into `self.model_chain` — verified empirically
+    2026-08-05, overriding `auditor_model_chain` instead leaves
+    `LLMGateway.model_chain` at the two-entry default, which was a real bug in
+    this task's original brief snippet (it would fail
+    `test_a_pinned_gateway_has_no_fallback_at_all`).
 
-    This alone is enough to pin the Classifier: `classify()` calls
-    `gateway.generate()` with no `model=` override, so it falls straight to
-    `gateway.model_chain`. It is NOT enough to pin the Auditor on its own:
-    `audit()` (agents/audit.py) always overrides with
-    `model=get_settings().auditor_model_chain` — a leftover from when
-    Classifier and Auditor shared ONE gateway instance and the Auditor was
-    routed by an explicit override rather than by gateway identity. Closing
-    that gap needs `_pinned_auditor_chain` below, used by `evaluate()`.
+    Pinning the Auditor's OWN call needs one more step this function does not
+    do: `audit()` (agents/audit.py) takes an explicit `model` parameter that
+    defaults to `get_settings().auditor_model_chain` rather than reading the
+    gateway it is handed — a leftover from when Classifier and Auditor shared
+    ONE gateway instance. `evaluate()` passes `model=auditor_gateway.model_chain`
+    at the call site; review 2026-08-05 rejected an earlier version that
+    monkeypatched `audit_mod.get_settings` instead — a parameter is
+    caller-chosen and unreachable by the LLM (cannot self-authorize, same
+    reasoning as `calls=`), while a monkeypatch mutates process-wide state for
+    the run and (worse) is not type-checkable under this repo's mypy config.
+
+    The two pinned models must not share a model FAMILY (design §6.3): a
+    same-family Auditor shares the Classifier's failure mode and agrees with
+    its mistake more confidently, regardless of whether the two model NAMES
+    differ — `groq/llama-3.3-70b-versatile` and `groq/llama-3.1-8b-instant`
+    are different strings but the same `meta-llama` family
+    (agents/families.py), exactly the case a name-only check misses.
     """
-    if classifier_model == auditor_model:
+    classifier_family = family_of(classifier_model)
+    auditor_family = family_of(auditor_model)
+    if classifier_family == auditor_family:
         raise ValueError(
-            f"Classifier and Auditor pinned to the same model ({classifier_model}). "
-            "Design §6.3 wants a different failure mode; a self-graded run reports "
-            "agreement as corroboration."
+            f"Classifier ({classifier_model}) and Auditor ({auditor_model}) pinned to "
+            f"the same model family ('{classifier_family}'). Design §6.3 wants a "
+            "different failure mode; a same-family run reports agreement as "
+            "corroboration even under different model names."
         )
     classifier = LLMGateway(settings.model_copy(update={"llm_model_chain": [classifier_model]}))
     auditor = LLMGateway(settings.model_copy(update={"llm_model_chain": [auditor_model]}))
     return classifier, auditor
-
-
-@contextlib.contextmanager
-def _pinned_auditor_chain(settings: Settings, auditor_model: str) -> Iterator[None]:
-    """Make `audit()` actually reach for the pinned single model.
-
-    See `pinned_gateways`'s docstring: `audit()` reads `get_settings()`
-    directly instead of the gateway it is handed, so a gateway with the right
-    `.model_chain` is not sufficient — without this, a pinned Auditor run
-    would silently fall through to `DEFAULT_AUDITOR_CHAIN`'s second entry on a
-    rate limit, reproducing the exact M4-C failure this task exists to close.
-
-    `config.get_settings` is a process-wide `lru_cache` singleton, so the
-    substitution targets `invoice_agent.agents.audit`'s OWN name binding
-    (`from invoice_agent.config import get_settings`) rather than the shared
-    cache, and is restored in `finally` — leaving it patched would affect any
-    other code importing `audit_mod` in the same process, including a later
-    test in the same pytest session.
-    """
-    pinned = settings.model_copy(update={"auditor_model_chain": [auditor_model]})
-    original = audit_mod.get_settings
-    audit_mod.get_settings = lambda: pinned
-    try:
-        yield
-    finally:
-        audit_mod.get_settings = original
 
 
 def call_with_retry(
@@ -212,7 +199,6 @@ def evaluate(
     *,
     classifier_gateway: LLMGateway,
     auditor_gateway: LLMGateway,
-    base_settings: Settings,
     rpm: float | None = None,
     retry_attempts: int = 3,
     persist_conn: Any = None,
@@ -228,6 +214,7 @@ def evaluate(
     baseline_pairs: list[tuple[str, str | None]] = []
     agent_category_pairs: list[tuple[str, str | None]] = []
     agent_department_pairs: list[tuple[str, str | None]] = []
+    measured_auditor = 0
 
     total_calls: list[LLMCallRecord] = []
     persisted_ids: list[int] = []
@@ -241,116 +228,119 @@ def evaluate(
     rpm_delay = 60.0 / rpm if rpm else 0.0
     backoff_seconds = rpm_delay if rpm_delay else 1.0
 
-    # `audit()` (agents/audit.py) does not read the gateway it is handed for
-    # its model chain at all — see `pinned_gateways`'s docstring. Route its
-    # `get_settings()` call to the pinned single auditor model for the whole
-    # run, or a "pinned" Auditor would silently fall through to
-    # `DEFAULT_AUDITOR_CHAIN`'s second entry on a rate limit.
-    auditor_model = auditor_gateway.model_chain[0]
-    with _pinned_auditor_chain(base_settings, auditor_model):
-        for record in xml_records:
-            xml_file = corpus_dir.parent / record["path"]
-            invoice = parse_invoice_xml(xml_file.read_bytes())
-            truth_cat = record["category"]
-            truth_dept = record.get("department", "")
+    for record in xml_records:
+        xml_file = corpus_dir.parent / record["path"]
+        invoice = parse_invoice_xml(xml_file.read_bytes())
+        truth_cat = record["category"]
+        truth_dept = record.get("department", "")
 
-            # Baseline prediction
-            text = " ".join(ln.description or "" for ln in invoice.lines)
-            base_pred = baseline.classify(text, KEYWORDS)
-            baseline_pairs.append((truth_cat, base_pred))
+        # Baseline prediction
+        text = " ".join(ln.description or "" for ln in invoice.lines)
+        base_pred = baseline.classify(text, KEYWORDS)
+        baseline_pairs.append((truth_cat, base_pred))
 
-            # Agent predictions. A pinned chain has nothing to fall through to
-            # on failure, so each call is wrapped in `call_with_retry` rather
-            # than left to raise — see that function's docstring.
-            classify_calls: list[LLMCallRecord] = []
-            audit_calls: list[LLMCallRecord] = []
+        # Agent predictions. A pinned chain has nothing to fall through to
+        # on failure, so each call is wrapped in `call_with_retry` rather
+        # than left to raise — see that function's docstring.
+        classify_calls: list[LLMCallRecord] = []
+        audit_calls: list[LLMCallRecord] = []
 
-            if rpm_delay and classifier_gateway.mode != "replay":
+        if rpm_delay and classifier_gateway.mode != "replay":
+            time.sleep(rpm_delay)
+        # `functools.partial` binds `invoice`/`classify_calls` at creation
+        # time rather than by name lookup at call time — a plain lambda
+        # would rebind to whatever the loop variables hold on a LATER
+        # iteration if it ever escaped this one (ruff B023).
+        class_res, class_unmeasured = call_with_retry(
+            functools.partial(
+                classification.classify,
+                invoice, gateway=classifier_gateway, calls=classify_calls,
+            ),
+            attempts=retry_attempts,
+            backoff_seconds=backoff_seconds,
+        )
+
+        # No proposal means nothing for the Auditor to critique — skip the
+        # audit call rather than send it a non-answer, and record the row
+        # unmeasured for the reason the Classifier failed. `model=` pins the
+        # Auditor to its single chain entry directly — a plain, typed keyword
+        # argument (agents/audit.py), not a monkeypatch of `get_settings()`.
+        audit_res, audit_unmeasured = None, None
+        if class_res is not None:
+            if rpm_delay and auditor_gateway.mode != "replay":
                 time.sleep(rpm_delay)
-            # `functools.partial` binds `invoice`/`classify_calls` at creation
-            # time rather than by name lookup at call time — a plain lambda
-            # would rebind to whatever the loop variables hold on a LATER
-            # iteration if it ever escaped this one (ruff B023).
-            class_res, class_unmeasured = call_with_retry(
+            audit_res, audit_unmeasured = call_with_retry(
                 functools.partial(
-                    classification.classify,
-                    invoice, gateway=classifier_gateway, calls=classify_calls,
+                    audit_mod.audit,
+                    invoice, class_res, gateway=auditor_gateway, calls=audit_calls,
+                    model=auditor_gateway.model_chain,
                 ),
                 attempts=retry_attempts,
                 backoff_seconds=backoff_seconds,
             )
+            if audit_res is not None:
+                measured_auditor += 1
 
-            # No proposal means nothing for the Auditor to critique — skip the
-            # audit call rather than send it a non-answer, and record the row
-            # unmeasured for the reason the Classifier failed.
-            audit_res, audit_unmeasured = None, None
-            if class_res is not None:
-                if rpm_delay and auditor_gateway.mode != "replay":
-                    time.sleep(rpm_delay)
-                audit_res, audit_unmeasured = call_with_retry(
-                    functools.partial(
-                        audit_mod.audit,
-                        invoice, class_res, gateway=auditor_gateway, calls=audit_calls,
-                    ),
-                    attempts=retry_attempts,
-                    backoff_seconds=backoff_seconds,
+        dispute_finding = (
+            classification.dispute(class_res, audit_res)
+            if class_res is not None and audit_res is not None
+            else None
+        )
+
+        total_calls.extend(classify_calls)
+        total_calls.extend(audit_calls)
+
+        if persist_conn is not None:
+            persisted_ids.extend(
+                telemetry.record(
+                    persist_conn, classify_calls, node="classify", agent="ClassificationAgent"
                 )
-
-            dispute_finding = (
-                classification.dispute(class_res, audit_res)
-                if class_res is not None and audit_res is not None
-                else None
+            )
+            persisted_ids.extend(
+                telemetry.record(
+                    persist_conn, audit_calls, node="audit", agent="AuditorAgent"
+                )
             )
 
-            total_calls.extend(classify_calls)
-            total_calls.extend(audit_calls)
+        if class_res is not None:
+            agent_category_pairs.append((truth_cat, class_res.category))
+            agent_department_pairs.append((truth_dept, class_res.department))
 
-            if persist_conn is not None:
-                persisted_ids.extend(
-                    telemetry.record(
-                        persist_conn, classify_calls, node="classify", agent="ClassificationAgent"
-                    )
-                )
-                persisted_ids.extend(
-                    telemetry.record(
-                        persist_conn, audit_calls, node="audit", agent="AuditorAgent"
-                    )
-                )
-
-            if class_res is not None:
-                agent_category_pairs.append((truth_cat, class_res.category))
-                agent_department_pairs.append((truth_dept, class_res.department))
-
-            eval_rows.append(
-                {
-                    "id": record["invoice_id"],
-                    "truth": truth_cat,
-                    "truth_department": truth_dept,
-                    "baseline_category": base_pred,
-                    "classifier_category": class_res.category if class_res else None,
-                    "classifier_department": class_res.department if class_res else None,
-                    "classifier_confidence": class_res.confidence if class_res else None,
-                    "classifier_reason": class_res.reasoning if class_res else None,
-                    "auditor_agrees": audit_res.agrees if audit_res else None,
-                    "auditor_category": audit_res.proposed_category if audit_res else None,
-                    "auditor_department": audit_res.proposed_department if audit_res else None,
-                    "auditor_reason": audit_res.reason if audit_res else None,
-                    "disputed": dispute_finding is not None,
-                    # `ambiguous_category` is an entry in the `defects` LIST, not a
-                    # field. Reading it as a field returned None for every invoice,
-                    # so the group spec §4 requires scoring SEPARATELY was silently
-                    # empty — a wrong number, not a crash. Found 2026-08-01.
-                    "ambiguous": "ambiguous_category" in (record.get("defects") or []),
-                    "alternative_category": record.get("alternative_category"),
-                    "classifier_model": models_used(classify_calls),
-                    "auditor_model": models_used(audit_calls),
-                    "classifier_answering_model": answering_model(classify_calls),
-                    "auditor_answering_model": answering_model(audit_calls),
-                    # The INV-0029 precedent: a persistent failure is a
-                    # first-class outcome, not dropped and not scored wrong.
-                    "unmeasured": class_unmeasured or audit_unmeasured,
-                }
-            )
+        eval_rows.append(
+            {
+                "id": record["invoice_id"],
+                "truth": truth_cat,
+                "truth_department": truth_dept,
+                "baseline_category": base_pred,
+                "classifier_category": class_res.category if class_res else None,
+                "classifier_department": class_res.department if class_res else None,
+                "classifier_confidence": class_res.confidence if class_res else None,
+                "classifier_reason": class_res.reasoning if class_res else None,
+                "auditor_agrees": audit_res.agrees if audit_res else None,
+                "auditor_category": audit_res.proposed_category if audit_res else None,
+                "auditor_department": audit_res.proposed_department if audit_res else None,
+                "auditor_reason": audit_res.reason if audit_res else None,
+                "disputed": dispute_finding is not None,
+                # `ambiguous_category` is an entry in the `defects` LIST, not a
+                # field. Reading it as a field returned None for every invoice,
+                # so the group spec §4 requires scoring SEPARATELY was silently
+                # empty — a wrong number, not a crash. Found 2026-08-01.
+                "ambiguous": "ambiguous_category" in (record.get("defects") or []),
+                "alternative_category": record.get("alternative_category"),
+                "classifier_model": models_used(classify_calls),
+                "auditor_model": models_used(audit_calls),
+                "classifier_answering_model": answering_model(classify_calls),
+                "auditor_answering_model": answering_model(audit_calls),
+                # The INV-0029 precedent: a persistent failure is a
+                # first-class outcome, not dropped and not scored wrong. Split
+                # per agent (review 2026-08-05: a combined flag alone left no
+                # auditor-specific measured_n) — `unmeasured` stays as the
+                # combined at-a-glance flag Task 4's own inspection script reads.
+                "classifier_unmeasured": class_unmeasured,
+                "auditor_unmeasured": audit_unmeasured,
+                "unmeasured": class_unmeasured or audit_unmeasured,
+            }
+        )
 
     total_xml = len(xml_records)
     base_acc = sum(1 for t, p in baseline_pairs if t == p) / total_xml if total_xml else 0.0
@@ -414,8 +404,17 @@ def evaluate(
             "gate_target": base_acc + 0.15,
             "gate_passed": agent_cat_acc >= (base_acc + 0.15),
             # N behind `accuracy`/`macro_f1`/`department_accuracy` above —
-            # smaller than `total_invoices` whenever a row is `unmeasured`.
+            # smaller than `total_invoices` whenever a row's classify failed.
             "measured_n": measured_classifier,
+        },
+        # A separate `measured_n`: review 2026-08-05 — `classifier.measured_n`
+        # only excludes classify failures, so it is NOT `total_invoices minus
+        # every unmeasured row` (an audit-only failure still counts toward
+        # it, correctly, since the Classifier DID answer). The Auditor needs
+        # its own N for Tasks 5/6 to publish a dispute/override precision
+        # against the invoices it actually reached a verdict on.
+        "auditor": {
+            "measured_n": measured_auditor,
         },
         "precisions": prec_res,
         "ambiguous_summary": {
@@ -482,9 +481,10 @@ def main() -> None:
         type=float,
         default=None,
         help="Requests-per-minute throttle, applied before each of the two "
-             "per-invoice calls (classify, audit). Omit only under "
-             "LLM_MODE=replay — an unthrottled live run can outrun free-tier "
-             "limits. Wall-clock at N invoices, no retries: 2*N*(60/rpm)s.",
+             "per-invoice calls (classify, audit). REQUIRED outside "
+             "LLM_MODE=replay — a pinned run has no fallback chain, so an "
+             "unthrottled run turns rate limits into unmeasured rows. "
+             "Wall-clock at N invoices, no retries: 2*N*(60/rpm)s.",
     )
     parser.add_argument(
         "--retry-attempts",
@@ -501,6 +501,22 @@ def main() -> None:
         print("M4-C cannot measure itself without a provider key. Stopping Task 6 per plan.")
         return
 
+    # A pinned chain has no fallback to demote to (that is the whole point),
+    # so an unthrottled live/record run turns every rate limit straight into
+    # `unmeasured` rows — silently shrinking N, the exact failure this task
+    # exists to close. Refuse loudly rather than quietly picking a number
+    # (review 2026-08-05): the old code this replaced defaulted to a fixed
+    # 0.5s delay, which is not a value worth resurrecting as a silent default
+    # for a mode that no longer has a fallback safety net.
+    if settings.llm_mode != "replay" and args.rpm is None:
+        print("ERROR: --rpm is required outside LLM_MODE=replay.")
+        print(
+            "A pinned run has no fallback chain, so an unthrottled run turns every "
+            "rate limit into an unmeasured row instead of a delay. Pass --rpm "
+            "explicitly (Task 4 uses --rpm 20)."
+        )
+        return
+
     corpus_dir = args.corpus.parent if args.corpus.is_file() else args.corpus
     classifier_gateway, auditor_gateway = pinned_gateways(
         settings, classifier_model=args.classifier_model, auditor_model=args.auditor_model
@@ -514,7 +530,6 @@ def main() -> None:
     eval_kwargs: dict[str, Any] = dict(
         classifier_gateway=classifier_gateway,
         auditor_gateway=auditor_gateway,
-        base_settings=settings,
         rpm=args.rpm,
         retry_attempts=args.retry_attempts,
     )

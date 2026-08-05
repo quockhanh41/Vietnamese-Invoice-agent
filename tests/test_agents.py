@@ -98,6 +98,24 @@ def test_audit_runs_on_the_auditor_chain(monkeypatch, sample_invoice):
     assert seen["model"] == Settings().auditor_model_chain
 
 
+def test_audit_model_param_overrides_the_configured_chain(monkeypatch, sample_invoice):
+    """M6-C's pinned-rater eval needs the Auditor on a single model the
+    process-wide `get_settings()` singleton does not carry. `model=` is a
+    plain function parameter — caller-chosen, unreachable by the LLM, so it
+    cannot self-authorize — and wins over the configured chain when supplied."""
+    seen = {}
+
+    def fake_call_structured(gateway, *, response_model, prompt, model=None, **kw):
+        seen["model"] = model
+        return AuditVerdict(agrees=True, reason="ok")
+
+    monkeypatch.setattr(audit_mod, "call_structured", fake_call_structured)
+    audit_mod.audit(
+        sample_invoice, _result(), gateway=object(), model=["gemini/gemini-3.5-flash"]
+    )
+    assert seen["model"] == ["gemini/gemini-3.5-flash"]
+
+
 def test_agent_vocabularies_match_the_seeded_reference_data():
     """The Literal sets in `agents/models.py` are duplicated from
     `scripts.seed_reference` because `src/` must not import from `scripts/`.
