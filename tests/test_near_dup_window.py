@@ -13,6 +13,15 @@ discriminate any window >= 5 from any other — `test_near_dup_window_plateau`
 pins that plateau as a running assertion, not a docstring claim, so a future
 change that breaks it fails loudly instead of silently.
 
+ORDERING, checked because it could have mattered: `sweep_inputs` below sorts
+invoices by `_join`'s actual canonical key, `(issue_date, invoice_series,
+invoice_number)` (batch.py:175-179) — NOT raw manifest/generation order.
+Verified 2026-08-05 (fix note in task-5-report.md): the two orderings differ
+at 284 of the 300 positions in this corpus, so this is not a formality. Both
+orderings were measured and produce the IDENTICAL table below — a stronger,
+separately-checked statement than either measurement alone, and it means the
+constant is insensitive to which order the priors arrive in.
+
 The floor of 6 false positives is structural, not window-driven: it is the
 six §9.1 prompt-injection payload / negative-control twin pairs (INV-0004/5,
 0006/7, 0008/9, 0010/11, 0012/13, 0014/15) — same seller, same total, same
@@ -48,9 +57,10 @@ def _key(record):
 
 
 def _score(xml_records, truth, order, keys):
-    """TP/FP against `near_duplicate`'s only production consumer's ordering:
-    each candidate is scored against priors earlier in manifest/generation
-    order — the same order `serial_join` feeds it (batch.py:267)."""
+    """TP/FP against `near_duplicate`'s only production consumer: each
+    candidate is scored against priors earlier in `order` — the caller
+    (`sweep_inputs`) sorts `order` into `_join`'s canonical key so this
+    matches what `serial_join` actually feeds it (batch.py:267)."""
     flagged = set()
     for i, inv_id in enumerate(order):
         priors = [keys[o] for o in order[:i]]
@@ -66,7 +76,17 @@ def sweep_inputs(corpus):
     xml = [r for r in corpus if r["source_type"] == "xml"]
     truth = {r["invoice_id"] for r in xml if "near_duplicate" in r["defects"]}
     assert len(truth) == 9, "corpus's seeded near_duplicate count drifted from 9"
-    order = [r["invoice_id"] for r in xml]
+    by_id = {r["invoice_id"]: r for r in xml}
+    # `_join`'s canonical key (batch.py:175-179), not manifest/generation
+    # order — see the module docstring's ORDERING note for why this matters.
+    order = sorted(
+        by_id,
+        key=lambda iid: (
+            by_id[iid]["issue_date"],
+            by_id[iid]["invoice_series"],
+            by_id[iid]["invoice_number"],
+        ),
+    )
     keys = {r["invoice_id"]: _key(r) for r in xml}
     return xml, truth, order, keys
 
