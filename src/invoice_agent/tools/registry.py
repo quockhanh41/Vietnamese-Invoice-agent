@@ -22,7 +22,7 @@ from invoice_agent.db import queries
 from invoice_agent.db.repositories import approvals as approvals_repo
 from invoice_agent.db.repositories import invoices as invoices_repo
 from invoice_agent.memory import vendor_profile
-from invoice_agent.tools import models
+from invoice_agent.tools import explain, models
 
 
 @dataclass(frozen=True)
@@ -98,8 +98,21 @@ REGISTRY: tuple[ToolSpec, ...] = (
         mcp_exposed=True,
         handler=approvals_repo.list_pending,
     ),
-    # `explain_flags` (Task 2), `spend_summary` (Task 3) and
-    # `submit_approval_decision` (Task 5) arrive in later M7 tasks.
+    ToolSpec(
+        name="explain_flags",
+        description=(
+            "Narrate, in Vietnamese, every open flag on one invoice — why it "
+            "was raised and the evidence behind it. Template-rendered from "
+            "deterministic facts; no model is involved."
+        ),
+        args_model=models.ExplainFlagsArgs,
+        return_model=models.ExplainedFlags,
+        side_effect="read",
+        mcp_exposed=True,
+        handler=explain.explain_flags,
+    ),
+    # `spend_summary` (Task 3) and `submit_approval_decision` (Task 5) arrive in
+    # later M7 tasks.
 )
 
 

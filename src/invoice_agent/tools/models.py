@@ -145,3 +145,30 @@ class PendingApproval(BaseModel):
 
 class ListPendingApprovalsResult(BaseModel):
     approvals: list[PendingApproval]
+
+
+# ---- explain_flags : tools.explain.explain_flags ----------------------------
+
+
+class ExplainFlagsArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    invoice_id: uuid.UUID
+
+
+class ExplainedFlag(BaseModel):
+    """`code`/`severity`/`raised_by` come from `domain.findings.CODE_REGISTRY`,
+    not from the `invoice_flags` row's own (redundant) columns of the same
+    name — CODE_REGISTRY is the one place severity/producer are decided, and
+    reading it from there rather than from the row keeps that a single source
+    of truth even though the schema happens to store both."""
+
+    code: str
+    severity: str
+    raised_by: str
+    narrative_vi: str
+
+
+class ExplainedFlags(BaseModel):
+    flags: list[ExplainedFlag]
+    summary_vi: str
