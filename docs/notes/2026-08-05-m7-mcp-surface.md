@@ -421,16 +421,20 @@ green on the **pushed** commit and CI agrees.
 
 | | |
 |---|---|
-| SHA | `a2b4d94dda3c2277fe6108b30f4c0dc4e1bd9819` |
-| Run | https://github.com/quockhanh41/Vietnamese-Invoice-agent/actions/runs/31030926213 |
+| SHA | `4b98cc1d209be1329b5abda5fff986c00721de3a` |
+| Run | https://github.com/quockhanh41/Vietnamese-Invoice-agent/actions/runs/31032966630 |
 | Conclusion | **success** — both jobs (`secrets`, `test`) |
 
 ```
 secrets   gitleaks (toàn bộ history)   success
 test      Lint (ruff)                 All checks passed!
 test      Typecheck (mypy)            success
-test      Test (pytest)               832 passed, 2 xfailed, 1 warning in 67.42s
+test      Test (pytest)               832 passed, 2 xfailed, 1 warning in 76.81s
 ```
+
+This SHA is the commit that fixed the resources-are-not-generated overclaim a review round found in
+this note's own headline (§2) — the record was re-taken after that fix rather than left pointing at
+a superseded, pre-fix commit.
 
 **832 on CI vs 825 locally is not a discrepancy**: `ci.yml` sets `HITL_RUNS=10` where the local
 default is 3, and 825 + 7 = 832 — the exact accounting M6-B/M6-C's own notes already established for
