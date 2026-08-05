@@ -4,9 +4,11 @@ Date: 2026-08-05 (implementation) / closed 2026-08-06.
 Roadmap items 7.1–7.6. Spec `docs/superpowers/specs/2026-08-05-m7-mcp-surface-design.md`, design
 doc §8. ADR `docs/adr/0006-no-nextjs-streamlit-is-the-ui.md`.
 
-M7 gives the project a second consumer: seven read tools, five resources and one human-authorised
-write, all served over MCP to Claude Desktop (or any MCP client), generated from the same
-`src/invoice_agent/tools/registry.py` the architecture test also reads. This note is distilled from
+M7 gives the project a second consumer: seven read tools and one human-authorised write, generated
+from `src/invoice_agent/tools/registry.py` — the same registry the architecture test reads — plus
+five further resources, reusing the same handlers, registered separately in
+`src/invoice_agent/mcp/server.py`. All eight are served over MCP to Claude Desktop (or any MCP
+client). This note is distilled from
 the milestone's execution ledger (`.superpowers/sdd/2026-08-05-m7-mcp-surface/progress.md`) and the
 six task reports in the same directory — that directory is git-ignored and is deleted once the
 milestone finishes, so anything worth keeping from it had to end up here.
@@ -73,11 +75,24 @@ species of overclaim M6-A and M6-B each had to retract in their own notes. If a 
 exists, the registry is ready to feed it — that is the honest framing, not a claim that it already
 does.
 
+**A second, narrower version of the same overclaim, caught by review: resources are not generated
+from the registry either.** `REGISTRY` holds exactly eight entries, all `ToolSpec` — the seven read
+tools plus `submit_approval_decision` — and nothing else; there is no resource-spec type and no
+resource entries in it. The five resources (`invoice://`, `invoice-xml://`, `budget://`,
+`vendor://`, `report://`) are registered by a separate, hand-written function,
+`mcp/server.py::_register_resources()`, whose own docstring says so directly: *"Unlike the tool loop
+in `build_server`, this is a fixed set of five -- there is no 'resource registry' in
+`tools/registry.py` to generate them from."* Each resource reuses an existing handler — the same
+one its sibling tool calls, or `db/queries` directly — so none of them reimplements a query, which
+is the property that matters; it is a fixed, hand-registered set, not a generated one. A first draft
+of this note's own headline sentence made exactly this smaller version of the claim it exists to
+refuse, which review caught before it shipped.
+
 Handlers are **existing functions**, never reimplementations — a second implementation of, say,
 `budget_report` reachable only over MCP would be a second source of truth and the first thing to
 drift. This was tested, not just asserted: Task 3's args-model-vs-handler-signature check
 introspected every `ToolSpec` in the registry and confirmed every `args_model` field name is a real
-parameter on the handler it wraps, for all seven tools.
+parameter on the handler it wraps, for all seven read tools.
 
 ### 2.1 Two gaps Task 1's review found in the design doc's own tool table, closed in Task 3
 
