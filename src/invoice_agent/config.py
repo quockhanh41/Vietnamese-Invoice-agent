@@ -175,6 +175,14 @@ class Settings(BaseSettings):
     langfuse_host: str = "https://cloud.langfuse.com"
     langfuse_tracing_enabled: bool = True
 
+    # --- MCP -----------------------------------------------------------------
+    # Design §8.2 permits exactly one human-authorised write over MCP. It ships
+    # OFF: a tool that can approve invoices should require a deliberate act to
+    # enable, not merely a client that knows the name.
+    mcp_allow_approvals: bool = False
+    mcp_actor_token: str = ""
+    mcp_client_name: str = "claude-desktop"
+
     @field_validator(
         "llm_model_chain",
         "auditor_model_chain",

@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from invoice_agent.db import queries
 from invoice_agent.db.repositories import approvals as approvals_repo
+from invoice_agent.mcp import approvals as mcp_approvals
 from invoice_agent.memory import vendor_profile
 from invoice_agent.tools import explain, models
 
@@ -122,7 +123,19 @@ REGISTRY: tuple[ToolSpec, ...] = (
         mcp_exposed=True,
         handler=queries.spend_summary,
     ),
-    # `submit_approval_decision` (Task 5) arrives in a later M7 task.
+    ToolSpec(
+        name="submit_approval_decision",
+        description=(
+            "Resume a pending approval with a human decision (approved, "
+            "rejected or edited). Gated by MCP_ALLOW_APPROVALS and an actor "
+            "token; refuses an invoice that already has a decision."
+        ),
+        args_model=models.SubmitApprovalDecisionArgs,
+        return_model=models.SubmitApprovalDecisionResult,
+        side_effect="write",
+        mcp_exposed=True,
+        handler=mcp_approvals.submit_approval_decision,
+    ),
 )
 
 

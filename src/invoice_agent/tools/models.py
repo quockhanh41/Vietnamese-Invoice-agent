@@ -17,6 +17,7 @@ to defend.
 import datetime
 import uuid
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -231,3 +232,30 @@ class SpendSummaryLine(BaseModel):
 
 class SpendSummaryResult(BaseModel):
     lines: list[SpendSummaryLine]
+
+
+# ---- submit_approval_decision : mcp.approvals.submit_approval_decision -----
+# THE ONLY WRITE (registry.MCP_WRITE_ALLOWLIST). No `decided_by` field: the
+# actor is fixed server-side to `mcp:{settings.mcp_client_name}`, never taken
+# from the caller -- the same defence `api/schemas.py::DecisionRequest`'s own
+# docstring names (the dangerous value must not be EXPRESSIBLE).
+
+
+class SubmitApprovalDecisionArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    invoice_id: uuid.UUID
+    decision: str
+    # The shared secret gate (config.py's `mcp_actor_token`). Required, no
+    # default: an omitted token is a schema-level rejection, not a silent
+    # empty-string call.
+    actor_token: str
+    reason: str | None = None
+    corrections: dict[str, Any] | None = None
+
+
+class SubmitApprovalDecisionResult(BaseModel):
+    invoice_id: str
+    decision: str
+    status: str | None
+    entry_id: str | None

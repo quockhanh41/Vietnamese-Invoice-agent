@@ -13,7 +13,9 @@ long-lived stdio server, not a FastAPI request, so there is no request-scoped
 connection to reuse (verified against `db/engine.py`'s own docstring).
 
 `submit_approval_decision` (Task 5, the one write MCP is allowed under
-`registry.MCP_WRITE_ALLOWLIST`) is not wired here -- this server is read-only.
+`registry.MCP_WRITE_ALLOWLIST`) needs no separate wiring here -- it is a
+`ToolSpec` like any other, registered by the same loop. `mcp/approvals.py`
+holds its two gates; this file stays exactly as generic as it already was.
 """
 
 import dataclasses
