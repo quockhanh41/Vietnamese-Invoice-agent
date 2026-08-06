@@ -75,3 +75,18 @@ def test_read_tools_never_point_at_the_ledger_guard_module():
         if spec.side_effect == "read" and spec.handler.__module__ == guard_module
     ]
     assert offenders == [], f"read tools whose handler lives in the ledger guard: {offenders}"
+
+
+# Considered and rejected: widening the check above to "any read handler whose
+# MODULE is a write-capable repository" rather than only `tools.guards`. It
+# does not fit cleanly — `list_pending_approvals` is a real, already-registered
+# read tool whose handler (`approvals_repo.list_pending`) lives in
+# `invoice_agent.db.repositories.approvals`, a module that ALSO contains
+# `open_approval`/`record_decision` writes. A module-level check would flag
+# that legitimate tool as an offender on day one. Catching a mislabelled
+# `ToolSpec(side_effect="read", handler=flags_repo.resolve_flag)` needs a
+# per-FUNCTION write/read classification, not a per-module one — that is a
+# second, hand-maintained list of which functions in each repository write,
+# the exact kind of second source of truth this project's registry already
+# exists to avoid. Left as a known gap rather than papered over with a check
+# that would need its own allowlist to stay correct.
