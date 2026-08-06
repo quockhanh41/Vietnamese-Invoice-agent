@@ -1,0 +1,409 @@
+{
+  "n": 24,
+  "seed": 42,
+  "generated_at": "2026-08-06T05:03:58.006858+00:00",
+  "model": "groq/llama-3.3-70b-versatile",
+  "llm_mode": "live",
+  "llm": {
+    "fidelity": 0.8333333333333334,
+    "coverage": 0.5
+  },
+  "template": {
+    "fidelity": 1.0,
+    "coverage": 1.0
+  },
+  "details": [
+    {
+      "index": 0,
+      "period": "2026-01",
+      "over_budget_count": 4,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": false,
+        "rejected": []
+      }
+    },
+    {
+      "index": 1,
+      "period": "2026-02",
+      "over_budget_count": 2,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "template",
+        "faithful": false,
+        "covered": true,
+        "rejected": [
+          "100"
+        ]
+      }
+    },
+    {
+      "index": 2,
+      "period": "2026-03",
+      "over_budget_count": 2,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "template",
+        "faithful": false,
+        "covered": true,
+        "rejected": [
+          "100"
+        ]
+      }
+    },
+    {
+      "index": 3,
+      "period": "2026-04",
+      "over_budget_count": 2,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "template",
+        "faithful": false,
+        "covered": true,
+        "rejected": [
+          "100"
+        ]
+      }
+    },
+    {
+      "index": 4,
+      "period": "2026-05",
+      "over_budget_count": 1,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": false,
+        "rejected": []
+      }
+    },
+    {
+      "index": 5,
+      "period": "2026-06",
+      "over_budget_count": 1,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": false,
+        "rejected": []
+      }
+    },
+    {
+      "index": 6,
+      "period": "2026-07",
+      "over_budget_count": 5,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": true,
+        "rejected": []
+      }
+    },
+    {
+      "index": 7,
+      "period": "2026-08",
+      "over_budget_count": 2,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": false,
+        "rejected": []
+      }
+    },
+    {
+      "index": 8,
+      "period": "2026-09",
+      "over_budget_count": 2,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": true,
+        "rejected": []
+      }
+    },
+    {
+      "index": 9,
+      "period": "2026-10",
+      "over_budget_count": 1,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": false,
+        "rejected": []
+      }
+    },
+    {
+      "index": 10,
+      "period": "2026-11",
+      "over_budget_count": 0,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": true,
+        "rejected": []
+      }
+    },
+    {
+      "index": 11,
+      "period": "2026-12",
+      "over_budget_count": 1,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": true,
+        "rejected": []
+      }
+    },
+    {
+      "index": 12,
+      "period": "2026-01",
+      "over_budget_count": 1,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": false,
+        "rejected": []
+      }
+    },
+    {
+      "index": 13,
+      "period": "2026-02",
+      "over_budget_count": 3,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": false,
+        "rejected": []
+      }
+    },
+    {
+      "index": 14,
+      "period": "2026-03",
+      "over_budget_count": 0,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "template",
+        "faithful": false,
+        "covered": true,
+        "rejected": [
+          "26"
+        ]
+      }
+    },
+    {
+      "index": 15,
+      "period": "2026-04",
+      "over_budget_count": 0,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": true,
+        "rejected": []
+      }
+    },
+    {
+      "index": 16,
+      "period": "2026-05",
+      "over_budget_count": 2,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": true,
+        "rejected": []
+      }
+    },
+    {
+      "index": 17,
+      "period": "2026-06",
+      "over_budget_count": 1,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": false,
+        "rejected": []
+      }
+    },
+    {
+      "index": 18,
+      "period": "2026-07",
+      "over_budget_count": 1,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": false,
+        "rejected": []
+      }
+    },
+    {
+      "index": 19,
+      "period": "2026-08",
+      "over_budget_count": 1,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": false,
+        "rejected": []
+      }
+    },
+    {
+      "index": 20,
+      "period": "2026-09",
+      "over_budget_count": 1,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": false,
+        "rejected": []
+      }
+    },
+    {
+      "index": 21,
+      "period": "2026-10",
+      "over_budget_count": 1,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": true,
+        "rejected": []
+      }
+    },
+    {
+      "index": 22,
+      "period": "2026-11",
+      "over_budget_count": 1,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": true,
+        "rejected": []
+      }
+    },
+    {
+      "index": 23,
+      "period": "2026-12",
+      "over_budget_count": 1,
+      "template": {
+        "faithful": true,
+        "covered": true,
+        "unsupported": []
+      },
+      "llm": {
+        "source": "llm",
+        "faithful": true,
+        "covered": false,
+        "rejected": []
+      }
+    }
+  ]
+}

@@ -44,9 +44,8 @@ def cost() -> dict[str, Any]:
 def commentary(period: str) -> dict[str, Any]:
     """Vietnamese narrative over this period's aggregates.
 
-    `source` tells the reader whether a model or the template wrote it — the
-    model's commentary is only used when every number in it is one this
-    endpoint's own `facts` payload contains (`agents.reporting.narrate`).
+    Per ADR 0007's verdict (eval N=24: LLM fidelity 0.8333 < 0.90 and coverage
+    0.5000 <= template 1.0000), `render_template` is the default baseline.
     """
     with get_engine().begin() as conn:
         facts = reporting.build_facts(
@@ -57,12 +56,13 @@ def commentary(period: str) -> dict[str, Any]:
             cost=queries.cost_report(conn),
             spend=queries.spend_summary(conn, period=period, group_by="department"),
         )
-    narration = reporting.narrate(facts, gateway=LLMGateway())
+    comm = reporting.render_template(facts)
     return {
         "period": period,
-        "source": narration.source,
-        "summary": narration.commentary.summary,
-        "observations": narration.commentary.observations,
+        "source": "template",
+        "summary": comm.summary,
+        "observations": comm.observations,
         "facts": reporting.as_payload(facts),
     }
+
 
