@@ -891,11 +891,11 @@ xanh; Next.js làm được vòng approve/reject đầy đủ **hoặc** đã qu
 | MCP answers the gate question | ✅ | client-driven smoke transcript against real seeded/loaded data — MKT over budget by 6,525,000 in 2026-07 (note §8) |
 | Write tool gated, off by default, via `submit_decision` | ✅ | mutations 3, 4, 5 red (note §4); no path to the DB or the ledger bypassing the seam |
 | Audit shows `actor='mcp:<client>'` | ⚠️ **partly — accepted by ruling** | `approvals.decided_by` is the bare form; `audit_log.actor`/`journal_entries.posted_by` read `human:mcp:<client>` because a pre-existing, untouched node prefixes `human:` regardless of transport — distinguishability still holds (note §5) |
-| `explain_flags` Vietnamese and LLM-free | ✅ | `test_no_gateway_call_happens` — gateway patched to raise, `render()` still succeeds |
+| `explain_flags` Vietnamese and LLM-free | ✅ | `test_no_gateway_call_happens` — all three `LLMGateway` entry points patched to raise, the real `explain_flags()` still succeeds; `test_explain_module_imports_no_llm_gateway` pins the import-level guard (both corrected by the final whole-branch review — the original only patched `generate` and called `render()`) |
 | No load-bearing pin moved | ✅ | 9-package before/after table, byte-identical (note §1) |
 | Next.js: full loop **or** a recorded decision to stop | ✅ | ADR `0006-no-nextjs-streamlit-is-the-ui.md` — stopped before the time-box (item 7.5) |
 | Claude Desktop recording | ⚠️ **user's to capture** | server, config and a client-driven transcript delivered here (note §8); the Desktop session itself needs the user's own machine |
-| `make check` green on the pushed commit, CI agreeing | ✅ | Local **825 passed / 2 xfailed, zero skips**, identical count with **every provider key unset** under `LLM_MODE=replay`. CI run `31032966630` on SHA `4b98cc1`: **832 passed / 2 xfailed, ZERO skipped** (832 = 825 + 7, `HITL_RUNS=10` on CI vs 3 locally — same accounting M6-B/M6-C established). Note `2026-08-05-m7-mcp-surface.md` §11. |
+| `make check` green on the pushed commit, CI agreeing | ✅ | Local **827 passed / 2 xfailed, zero skips** (825 + 2 tests added by the final whole-branch review's fix round), identical count with **every provider key unset** under `LLM_MODE=replay`. CI run `31061588419` on SHA `fc9171a`: **834 passed / 2 xfailed, ZERO skipped** (834 = 827 + 7, `HITL_RUNS=10` on CI vs 3 locally — same accounting M6-B/M6-C established). Note `2026-08-05-m7-mcp-surface.md` §11. |
 
 **Two criteria are only partly met, and both are recorded as deliberate, ruled outcomes rather than
 gaps quietly closed at the table**: the audit-actor form (accepted by the user's 2026-08-05 ruling,

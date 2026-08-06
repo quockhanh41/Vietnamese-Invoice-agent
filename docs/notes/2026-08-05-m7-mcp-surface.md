@@ -475,8 +475,13 @@ All checks passed!
 .venv/bin/mypy
 Success: no issues found in 76 source files
 .venv/bin/python -m pytest
-825 passed, 2 xfailed, 1 warning in 41.80s
+827 passed, 2 xfailed, 1 warning in 42.79s
 ```
+
+(**827, not 825** — the final whole-branch review's fix round, §2.2/§3/§10.1 above, added two tests:
+`test_list_invoices_filters_by_period_and_composes_with_department` and
+`test_explain_module_imports_no_llm_gateway`. Same zero-skipped, every-provider-key-unset property
+holds; re-measured below.)
 
 Zero skipped — Postgres was up throughout. The suite also runs green with **every provider key
 unset**, the condition CI and the live demo run under:
@@ -495,7 +500,7 @@ gives the count —
 ```
 $ env -u GROQ_API_KEY -u GROQ_API_KEYS -u GEMINI_API_KEY -u GEMINI_API_KEYS -u OPENROUTER_API_KEY \
   LLM_MODE=replay .venv/bin/python -m pytest tests/
-825 passed, 2 xfailed, 1 warning in 47.67s
+827 passed, 2 xfailed, 1 warning in 42.13s
 ```
 
 Same count as `make check`, zero skipped, every provider key unset.
@@ -507,24 +512,24 @@ green on the **pushed** commit and CI agrees.
 
 | | |
 |---|---|
-| SHA | `4b98cc1d209be1329b5abda5fff986c00721de3a` |
-| Run | https://github.com/quockhanh41/Vietnamese-Invoice-agent/actions/runs/31032966630 |
+| SHA | `fc9171a616c70941728857793a44e9e168a73a37` |
+| Run | https://github.com/quockhanh41/Vietnamese-Invoice-agent/actions/runs/31061588419 |
 | Conclusion | **success** — both jobs (`secrets`, `test`) |
 
 ```
 secrets   gitleaks (toàn bộ history)   success
 test      Lint (ruff)                 All checks passed!
 test      Typecheck (mypy)            success
-test      Test (pytest)               832 passed, 2 xfailed, 1 warning in 76.81s
+test      Test (pytest)               834 passed, 2 xfailed, 1 warning in 63.63s
 ```
 
-This SHA is the commit that fixed the resources-are-not-generated overclaim a review round found in
-this note's own headline (§2) — the record was re-taken after that fix rather than left pointing at
-a superseded, pre-fix commit.
+This SHA is the commit that closes the M7 final whole-branch review's six Important findings
+(§2.2, §3's `period` and `test_no_gateway_call_happens` corrections, §10.1) — the record was
+re-taken after that fix round rather than left pointing at a superseded, pre-fix commit.
 
-**832 on CI vs 825 locally is not a discrepancy**: `ci.yml` sets `HITL_RUNS=10` where the local
-default is 3, and 825 + 7 = 832 — the exact accounting M6-B/M6-C's own notes already established for
-this same gap. Zero skipped on CI.
+**834 on CI vs 827 locally is not a discrepancy**: `ci.yml` sets `HITL_RUNS=10` where the local
+default is 3, and 827 + 7 = 834 — the exact accounting M6-B/M6-C's own notes already established for
+this same gap (825 + 7 = 832 before this fix round added two tests). Zero skipped on CI.
 
 ---
 
