@@ -114,13 +114,61 @@ review is what found this, not the plan:
   previously claimed a trim parity with the route that was not accurate (the route keeps ~23
   columns; the old flat model kept 11) — was corrected to describe the real subset relationship.
 
+### 2.2 A gap in the architecture test's own coverage, found by the final whole-branch review
+
+`tests/test_no_write_tools_in_mcp.py` enumerates `registry.REGISTRY`, which holds exactly the eight
+`ToolSpec`s (§2 above). The five resources are not `ToolSpec`s and are not in that tuple — they are
+registered separately by `mcp/server.py::_register_resources()` (§2 again). This has a consequence
+no task review caught, because no task review was positioned to compare the resource surface against
+the write-tool architecture test at all: **mutating the body of an existing resource to call
+`tools.guards.create_journal_entry` directly passes the entire test suite.** It is invisible to
+`test_no_write_tools_in_mcp.py` (not in `REGISTRY`) and, before this fix, invisible to
+`tests/test_api_boundary.py` too (that file's import-scan only walked
+`src/invoice_agent/api/routes`). The exact argument `test_api_boundary.py`'s own module docstring
+makes for routes — *"the behavioural tests stay GREEN if a route imports the guard and posts
+directly... only an import check can see the second door"* — applied to MCP resources and nobody had
+extended the check there.
+
+**Separately, nothing anywhere guarded `invoice_flags` writes.** A `ToolSpec(name="close_flag",
+side_effect="read", handler=flags_repo.resolve_flag, mcp_exposed=True)` would pass all five
+architecture tests that existed before this fix: wrong `side_effect` to be checked against
+`MCP_WRITE_ALLOWLIST`, wrong name to match the `create_journal_entry`/`post_batch` literal check, and
+a handler module (`db.repositories.flags`) that is not `tools.guards`.
+
+**Fix, test-only, no production change**: `tests/test_api_boundary.py::test_no_route_reaches_the_ledger_directly`
+now also walks `src/invoice_agent/mcp`, applying the same `tools.guards`/journal-repository checks it
+already applied to routes, plus one MCP-specific check: `db.repositories.flags` is forbidden there too.
+Flags is not forbidden for ROUTES — `api/routes/invoices.py` legitimately imports it inline
+(`flags.open_flags_for`) — but MCP has no legitimate reason to import it directly at all; every flag
+read already goes through an existing handler (`queries.invoice_detail`, `tools.explain.explain_flags`)
+that imports it elsewhere.
+
+**Verified by mutation, twice, each reverted and confirmed clean by `git diff`:**
+
+| Mutation | Test that bit | Measured output |
+|---|---|---|
+| `read_budget` (a resource body) imports `invoice_agent.tools.guards` | `test_no_route_reaches_the_ledger_directly` | `AssertionError: the ledger must be reached through submit_decision only: src/invoice_agent/mcp/server.py: imports tools.guards` |
+| `read_budget` imports `invoice_agent.db.repositories.flags` | `test_no_route_reaches_the_ledger_directly` | `AssertionError: ...: src/invoice_agent/mcp/server.py: imports the flags repository` |
+
+**Considered and rejected: widening `test_read_tools_never_point_at_the_ledger_guard_module` to reject
+any read handler whose MODULE is a write-capable repository, not only `tools.guards`.** This does not
+fit cleanly. `list_pending_approvals` is a real, already-registered read tool whose handler
+(`approvals_repo.list_pending`) lives in `invoice_agent.db.repositories.approvals` — a module that
+also contains `open_approval`/`record_decision` writes. A module-granularity check would flag that
+legitimate tool as an offender from day one. Catching a mislabelled
+`ToolSpec(side_effect="read", handler=flags_repo.resolve_flag)` needs a per-FUNCTION write/read
+classification, which would mean hand-maintaining a second list of which function in each repository
+writes — the exact second source of truth the registry exists to avoid. Left as a documented,
+known gap (comment in `tests/test_no_write_tools_in_mcp.py`) rather than a check that would need its
+own allowlist to stay correct.
+
 ---
 
 ## 3. The seven read tools, and `explain_flags` — Vietnamese, and LLM-free
 
 | Tool | Backed by |
 |---|---|
-| `search_invoices(status?, department?, vendor?, min_amount?)` | `db/queries.list_invoices` |
+| `search_invoices(status?, department?, period?, vendor?, min_amount?)` | `db/queries.list_invoices` |
 | `get_invoice_detail(invoice_id)` | `db/queries.invoice_detail` (composition, §2.1) |
 | `get_budget_status(department?, period?)` | `db/queries.budget_report` |
 | `get_vendor_profile(tax_code)` | `memory/vendor_profile.stats_for` |
@@ -132,12 +180,22 @@ review is what found this, not the plan:
 invoice was flagged and the evidence behind it, from 18 hand-written templates (one per
 `findings.CODE_REGISTRY` code), checked against every real `findings.make`/`raise_flag` call site
 rather than invented field names. **No LLM is in this path** —
-`tests/test_explain_flags.py::test_no_gateway_call_happens` monkeypatches `LLMGateway.generate` to
-raise, and `render()` still succeeds, because nothing in `tools/explain.py` imports
-`invoice_agent.llm.gateway` at all. This keeps the property CLAUDE.md's exception names explicitly:
+`tests/test_explain_flags.py::test_no_gateway_call_happens` monkeypatches all three of
+`LLMGateway`'s entry points (`generate`, `generate_with_model`, `generate_stream`) to raise, and the
+real `explain_flags(conn, invoice_id)` still succeeds, because nothing in `tools/explain.py` imports
+`invoice_agent.llm.gateway` at all — now also pinned by
+`test_explain_module_imports_no_llm_gateway`, a source-import guard mirroring
+`tests/test_ui_boundary.py`'s shape. This keeps the property CLAUDE.md's exception names explicitly:
 `explain_flags` is text a human reads, so it stays Vietnamese, and the flags themselves are
 deterministic Python facts narrated from a template, not an LLM decision re-explained by another
 LLM.
+
+**A final-review correction to the gate's own evidence**: before this fix, the test above patched only
+`LLMGateway.generate` and called `render()` — a pure `str.format` that can never reach a gateway call
+regardless of what `explain_flags()` itself does, and that does not exercise `generate_with_model`
+(gateway.py:359) or `generate_stream` (gateway.py:511) either. The test now patches all three and calls
+the real `explain_flags()`, and the import guard above closes the second half of the gap: the note's
+own claim ("nothing in `tools/explain.py` imports the gateway") had no test behind it until now.
 
 Two codes turned out to carry thinner real-world detail than their key names suggest, recorded
 rather than smoothed over: `BUDGET_UNRECONCILED`'s `department` detail key is `None` in the only
@@ -154,6 +212,19 @@ nobody asked for.
 
 `search_invoices` gained `vendor` (matched on `seller_tax_code`) and `min_amount` (inclusive) —
 both new optional filters over the existing `list_invoices` query, no new SQL.
+
+**A gap the task reviews missed and the final whole-branch review caught: `search_invoices` shipped
+without `period`.** Both spec §3.2 and design §8 give the tool's signature as `search_invoices(department?,
+period?, status?, vendor?, min_amount?)` — `period` was always part of the asked-for surface. The plan's
+Task 3 narrowed the tool to "gains vendor and min_amount" with no stated reason to drop `period`, and
+because every task review checked the implementation against the plan rather than against the spec, the
+narrowing went unnoticed through five reviews. Closed by the final review: `period: str | None = None`
+added to `db.queries.list_invoices` (the same `func.to_char(issue_date, "YYYY-MM") == period` predicate
+`spend_summary` already uses, reused rather than reinvented) and to `SearchInvoicesArgs`, with a test
+(`tests/test_api_read.py::test_list_invoices_filters_by_period_and_composes_with_department`) proving it
+composes with `department` rather than silently overriding it. The tool's signature above and in
+`docs/mcp-claude-desktop.md` were both restating the narrowed surface as if it were the asked-for one;
+both are corrected now.
 
 ---
 
@@ -377,6 +448,21 @@ then restored, confirmed green.
   coexists in the same venv as `fastapi` at all (§1 above). An HTTP-transport MCP endpoint, if M8
   wants one for a hosted demo, is a separate decision with its own auth story this project
   deliberately does not have (roadmap §4).
+
+### 10.1 M6's three debts, carried forward again — none discharged by M7
+
+The roadmap's M6 row (`docs/Plan_Project_F_2026-07-25.md:976`) ends "**Owed to M7**" naming three
+items. M7's own closing did not discharge any of them and, before this fix, mentioned none of them —
+the pattern every other milestone row follows (carry the debt forward explicitly) broke here. All
+three are still true today and are carried to **M8**, stated as still-owed, not resolved:
+
+- **`make check`'s mypy covers only `invoice_agent`** (`pyproject.toml`: `packages = ["invoice_agent"]`,
+  under `[tool.mypy]`), so all of `scripts/` is untyped in CI. **M7 made this slightly worse**, not
+  better: it added two more scripts into the untyped area, `scripts/load_gate_overspend.py` and
+  `scripts/mcp_smoke.py`, rather than shrinking it.
+- **The vision digest and `ALLOWED_MISSES` are macOS/ARM measurements**, not re-measured on CI's
+  platform since M6 recorded this debt.
+- **The PII git-history purge review** is still outstanding.
 
 ---
 

@@ -1,7 +1,11 @@
 # Claude Desktop -> the invoice-agent MCP server
 
-M7 exposes seven read tools, five resources, and one gated write over MCP (`src/invoice_agent/mcp/server.py`,
-`build_server()`, generated from `src/invoice_agent/tools/registry.py`). This document is the config that
+M7 exposes seven read tools, five resources, and one gated write over MCP
+(`src/invoice_agent/mcp/server.py`). The seven read tools and the one gated write are *generated* from
+`src/invoice_agent/tools/registry.py` -- `build_server()` loops `registry.exposed_tools()`. The five
+resources are not: they are registered separately, by a fixed, hand-written function
+(`_register_resources()`), reusing the same handlers -- there is no resource registry in
+`tools/registry.py` to generate them from. This document is the config that
 points Claude Desktop at it, plus a reproducible transcript that answers the M7 gate question --
 *"which department went over budget in July?"* -- through a real MCP client, independent of anyone's
 Desktop install (see [Reproducing the transcript yourself](#reproducing-the-transcript-yourself) below).
@@ -98,7 +102,7 @@ it is off by default and shown commented out above, not a toggle to flip reflexi
 
 | Read tool | Returns |
 |---|---|
-| `search_invoices(status?, department?, vendor?, min_amount?)` | invoices, most recent first |
+| `search_invoices(status?, department?, period?, vendor?, min_amount?)` | invoices, most recent first |
 | `get_invoice_detail(invoice_id)` | fields, line items, open flags |
 | `get_budget_status(department?, period?)` | limit, consumed, remaining per budget line |
 | `get_vendor_profile(tax_code)` | entity-memory stats (count, avg, stddev) |
@@ -119,8 +123,12 @@ it is off by default and shown commented out above, not a toggle to flip reflexi
 | `report://{period}` | budget lines for every department in that period |
 
 Every tool that can toggle a flag, post a journal entry, or write anywhere outside the one gated
-approval decision is absent from this surface on purpose -- `tests/test_no_write_tools_in_mcp.py`
-asserts the write allowlist is exactly `{"submit_approval_decision"}`.
+approval decision is absent from the two tool tables above on purpose -- `tests/test_no_write_tools_in_mcp.py`
+enumerates `registry.REGISTRY` and asserts the write allowlist is exactly `{"submit_approval_decision"}`.
+**That guard covers the tool tables only.** It does not enumerate the five resources in the table
+above them -- resources are not `ToolSpec`s, so `registry.REGISTRY` (and this test) cannot see them;
+`tests/test_api_boundary.py` separately walks `src/invoice_agent/mcp` for a forbidden import of the
+ledger guard or the flags repository, which is the guard that actually covers the resource surface.
 
 ## The gate question, answered through a real MCP client
 
