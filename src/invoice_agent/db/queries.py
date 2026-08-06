@@ -28,6 +28,7 @@ def list_invoices(
     *,
     status: str | None = None,
     department: str | None = None,
+    period: str | None = None,
     vendor: str | None = None,
     min_amount: Decimal | None = None,
     limit: int = 50,
@@ -42,6 +43,12 @@ def list_invoices(
         stmt = stmt.where(inv.c.status == status)
     if department is not None:
         stmt = stmt.where(inv.c.department == department)
+    if period is not None:
+        # Same predicate `queries.spend_summary` already uses: issue_date is a
+        # full date, period is "YYYY-MM" (design §8, spec §3.2 both put
+        # `period` on `search_invoices`; reusing the existing approach rather
+        # than inventing a second one).
+        stmt = stmt.where(func.to_char(inv.c.issue_date, "YYYY-MM") == period)
     if vendor is not None:
         stmt = stmt.where(inv.c.seller_tax_code == vendor)
     if min_amount is not None:

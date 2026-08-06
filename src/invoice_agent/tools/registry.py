@@ -47,8 +47,9 @@ REGISTRY: tuple[ToolSpec, ...] = (
     ToolSpec(
         name="search_invoices",
         description=(
-            "List invoices, optionally filtered by status, department, vendor "
-            "(seller tax code) and/or a minimum amount, most recent first."
+            "List invoices, optionally filtered by status, department, period "
+            "(YYYY-MM), vendor (seller tax code) and/or a minimum amount, most "
+            "recent first."
         ),
         args_model=models.SearchInvoicesArgs,
         return_model=models.SearchInvoicesResult,

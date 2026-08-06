@@ -27,6 +27,35 @@ def test_list_invoices_filters_by_status_and_department(committed_rows):
     assert db_id not in [r["id"] for r in nobody]
 
 
+def test_list_invoices_filters_by_period_and_composes_with_department(committed_rows):
+    """`period` (YYYY-MM) is the filter `search_invoices` shipped without --
+    spec §3.2 and design §8 both name it on the tool's signature. Reuses the
+    same `to_char(issue_date, 'YYYY-MM')` predicate `queries.spend_summary`
+    already applies (queries.py's own comment), rather than a second one.
+
+    The fixture invoice (`viettelpost_gtgt_2.1.0.xml`) has `issue_date =
+    2026-03-31`, so `period="2026-03"` matches it and `period="2026-04"`
+    does not; composed with `department="ADMIN"` (the department
+    `_persisted_invoice` always sets) to prove the two filters AND together
+    rather than one silently overriding the other.
+    """
+    db_id, _ = _persisted_invoice(committed_rows, category="OFFICE_SUPPLIES")
+    with get_engine().begin() as conn:
+        same_period = queries.list_invoices(conn, period="2026-03")
+        other_period = queries.list_invoices(conn, period="2026-04")
+        same_period_and_department = queries.list_invoices(
+            conn, period="2026-03", department="ADMIN"
+        )
+        same_period_wrong_department = queries.list_invoices(
+            conn, period="2026-03", department="MKT"
+        )
+
+    assert db_id in [r["id"] for r in same_period]
+    assert db_id not in [r["id"] for r in other_period]
+    assert db_id in [r["id"] for r in same_period_and_department]
+    assert db_id not in [r["id"] for r in same_period_wrong_department]
+
+
 def test_list_invoices_respects_its_limit(committed_rows):
     for _ in range(3):
         _persisted_invoice(committed_rows)

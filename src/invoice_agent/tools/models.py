@@ -29,6 +29,7 @@ class SearchInvoicesArgs(BaseModel):
 
     status: str | None = None
     department: str | None = None
+    period: str | None = None
     vendor: str | None = None
     min_amount: Decimal | None = None
     limit: int = 50
