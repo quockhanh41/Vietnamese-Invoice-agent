@@ -8,7 +8,6 @@ import argparse
 import datetime
 import json
 import random
-from decimal import Decimal
 from typing import Any
 
 from invoice_agent.agents import reporting
@@ -131,7 +130,7 @@ def main() -> None:
     eval_data = {
         "n": n,
         "seed": args.seed,
-        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         "model": get_settings().llm_model_chain[0],
         "llm_mode": get_settings().llm_mode,
         "llm": {

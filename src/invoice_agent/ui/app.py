@@ -151,10 +151,11 @@ def page_reports() -> None:
         # the last đồng. st.bar_chart cannot plot Decimal.
         chart = {
             row["department_code"]: {
-                "Hạn mức": float(row["amount_limit"]),
-                "Đã dùng": float(row["consumed"]),
+                "Hạn mức": float(row.get("amount_limit", 0)),
+                "Đã dùng": float(row.get("consumed", 0)),
             }
             for row in budgets
+            if "department_code" in row
         }
         st.bar_chart(chart)
     st.dataframe(budgets, use_container_width=True)

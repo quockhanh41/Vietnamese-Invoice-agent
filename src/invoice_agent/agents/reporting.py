@@ -13,8 +13,9 @@ agent's commentary explicitly.
 
 import json
 import re
+from dataclasses import asdict, dataclass, field
 from decimal import Decimal, InvalidOperation
-from typing import Literal
+from typing import Any, Literal
 
 from invoice_agent.agents.models import ReportCommentary
 from invoice_agent.extraction.sanitize import wrap
@@ -63,9 +64,6 @@ def numbers_in(text: str) -> set[Decimal]:
             found.add(value)
     return found
 
-
-from dataclasses import asdict, dataclass, field
-from typing import Any
 
 # One decimal place on every percentage. Chosen so the rendered string and the
 # fact are byte-identical: a template writing `76.66666...%` from an unrounded

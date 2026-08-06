@@ -11,7 +11,7 @@ from fastapi import APIRouter
 from invoice_agent.agents import reporting
 from invoice_agent.db import queries
 from invoice_agent.db.engine import get_engine
-from invoice_agent.llm.gateway import LLMGateway
+from invoice_agent.llm.gateway import LLMGateway  # noqa: F401
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
