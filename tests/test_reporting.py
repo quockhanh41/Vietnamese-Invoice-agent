@@ -142,3 +142,83 @@ def test_template_handles_a_period_with_nothing_wrong():
     )
 
 
+class _FakeGateway:
+    """Stands in for LLMGateway. `call_structured` only calls `.generate`."""
+
+    def __init__(self, reply: str | Exception):
+        self.reply = reply
+        self.calls = 0
+
+    def generate(self, prompt, **kwargs):
+        self.calls += 1
+        if isinstance(self.reply, Exception):
+            raise self.reply
+        return self.reply
+
+
+def _json_reply(summary: str, observations: list[str]) -> str:
+    import json
+
+    return json.dumps({"summary": summary, "observations": observations}, ensure_ascii=False)
+
+
+def test_a_faithful_narrative_is_kept():
+    gw = _FakeGateway(
+        _json_reply(
+            "Kỳ 2026-07 có 1 phòng ban vượt ngân sách.",
+            ["MKT vượt 6.525.000 đồng."],
+        )
+    )
+    result = reporting.narrate(_facts(), gateway=gw)
+    assert result.source == "llm"
+    assert "MKT" in result.commentary.observations[0]
+
+
+def test_a_fabricated_number_rejects_the_whole_commentary():
+    """The number 8.000.000 is in no fact. The commentary does not get repaired
+    or partially kept — a retry asking the model to fix its own arithmetic would
+    put the model back in the arithmetic path."""
+    gw = _FakeGateway(
+        _json_reply(
+            "Kỳ 2026-07 có 1 phòng ban vượt ngân sách.",
+            ["MKT vượt 8.000.000 đồng."],
+        )
+    )
+    result = reporting.narrate(_facts(), gateway=gw)
+    assert result.source == "template"
+    assert Decimal("8000000") in result.rejected
+
+
+def test_a_supported_number_written_vietnamese_style_survives_the_guard():
+    """A guard that rejected `6.525.000` because the fact reads `6525000.00`
+    would reject every correctly-written narrative — as broken as one that
+    accepts anything."""
+    gw = _FakeGateway(_json_reply("Vượt 6.525.000 đồng.", ["Đã dùng 118,6% hạn mức."]))
+    assert reporting.narrate(_facts(), gateway=gw).source == "llm"
+
+
+def test_a_replay_miss_degrades_to_the_template_not_an_error():
+    """The public demo runs LLM_MODE=replay. An uncached period must render
+    plainer prose, never a 500 (spec §8 risk 2)."""
+    from invoice_agent.llm.cache import LLMReplayMiss
+
+    gw = _FakeGateway(LLMReplayMiss("no fixture"))
+    result = reporting.narrate(_facts(), gateway=gw)
+    assert result.source == "template"
+
+
+def test_the_facts_reach_the_model_wrapped_as_data():
+    """A vendor name reaches this prompt through `spend`, and vendor names are
+    attacker-controlled text (design §9.1)."""
+    captured = {}
+
+    class _Capture(_FakeGateway):
+        def generate(self, prompt, **kwargs):
+            captured["prompt"] = prompt
+            return _json_reply("Kỳ 2026-07 ổn định.", [])
+
+    reporting.narrate(_facts(), gateway=_Capture(""))
+    assert "<invoice_data>" in captured["prompt"]
+
+
+
