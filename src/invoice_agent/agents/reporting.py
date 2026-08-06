@@ -55,3 +55,156 @@ def numbers_in(text: str) -> set[Decimal]:
         if value is not None:
             found.add(value)
     return found
+
+
+from dataclasses import asdict, dataclass, field
+from typing import Any
+
+# One decimal place on every percentage. Chosen so the rendered string and the
+# fact are byte-identical: a template writing `76.66666...%` from an unrounded
+# fact would put a number in the prose that the fact set does not contain, and
+# the guard would reject the TEMPLATE. Rounding at the fact is the fix.
+PCT_QUANT = Decimal("0.1")
+
+
+@dataclass(frozen=True)
+class ReportFacts:
+    """Everything the narrative is allowed to say, computed by Python.
+
+    NOT in `agents/models.py`: `top_flag_code` contains the substring "flag",
+    which `tests/test_agent_schema_boundary.py` forbids in agent RESPONSE
+    models. These are the model's input, not its output.
+    """
+
+    period: str
+    over_budget: list[dict[str, Any]] = field(default_factory=list)
+    warning: list[dict[str, Any]] = field(default_factory=list)
+    total_overspend: Decimal = Decimal(0)
+    top_flag_code: str | None = None
+    top_flag_total: int = 0
+    top_flag_open: int = 0
+    auto_entries: int = 0
+    human_entries: int = 0
+    auto_pct: Decimal = Decimal(0)
+    human_pct: Decimal = Decimal(0)
+    shadow_cost_usd: Decimal = Decimal(0)
+    llm_calls: int = 0
+    spend: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _pct(numerator: Decimal, denominator: Decimal) -> Decimal:
+    if denominator == 0:
+        return Decimal(0)
+    return (numerator / denominator * 100).quantize(PCT_QUANT)
+
+
+def build_facts(
+    *,
+    period: str,
+    budgets: list[dict[str, Any]],
+    flags: list[dict[str, Any]],
+    posting: list[dict[str, Any]],
+    cost: dict[str, Any],
+    spend: list[dict[str, Any]],
+) -> ReportFacts:
+    """Aggregates in, every derived quantity out.
+
+    The model computes nothing: whatever it may say must be here first.
+    """
+    over_budget, warning, total_overspend = [], [], Decimal(0)
+    for row in budgets:
+        limit = Decimal(row["amount_limit"])
+        consumed = Decimal(row["consumed"])
+        pct_used = _pct(consumed, limit)
+        if consumed > limit:
+            overspend = consumed - limit
+            total_overspend += overspend
+            over_budget.append(
+                {
+                    "department": row["department_code"],
+                    "period": row["period"],
+                    "limit": limit,
+                    "consumed": consumed,
+                    "overspend": overspend,
+                    "pct_used": pct_used,
+                }
+            )
+        elif limit > 0 and consumed / limit >= Decimal(row["warn_threshold_pct"]):
+            warning.append(
+                {
+                    "department": row["department_code"],
+                    "period": row["period"],
+                    "limit": limit,
+                    "consumed": consumed,
+                    "pct_used": pct_used,
+                }
+            )
+
+    top = flags[0] if flags else None
+    counts = {r["posting_authority"]: int(r["entries"]) for r in posting}
+    auto, human = counts.get("auto", 0), counts.get("human", 0)
+    total_entries = Decimal(auto + human)
+
+    return ReportFacts(
+        period=period,
+        over_budget=over_budget,
+        warning=warning,
+        total_overspend=total_overspend,
+        top_flag_code=top["code"] if top else None,
+        top_flag_total=int(top["total"]) if top else 0,
+        top_flag_open=int(top["open_count"]) if top else 0,
+        auto_entries=auto,
+        human_entries=human,
+        auto_pct=_pct(Decimal(auto), total_entries),
+        human_pct=_pct(Decimal(human), total_entries),
+        shadow_cost_usd=Decimal(str(cost["shadow_cost_usd"])),
+        llm_calls=int(cost["calls"]),
+        spend=[
+            {
+                "group": r["group_key"],
+                "invoice_count": int(r["invoice_count"]),
+                "total_amount": Decimal(r["total_amount"]),
+            }
+            for r in spend
+        ],
+    )
+
+
+def _walk(value: Any) -> list[str]:
+    if isinstance(value, dict):
+        return [s for v in value.values() for s in _walk(v)]
+    if isinstance(value, (list, tuple)):
+        return [s for v in value for s in _walk(v)]
+    if value is None:
+        return []
+    return [str(value)]
+
+
+def fact_numbers(facts: ReportFacts) -> set[Decimal]:
+    """Every number reachable in `facts`, including inside string values.
+
+    The period `'2026-07'` yields 2026 and 7, so a narrative may write
+    `tháng 7/2026`. Read by the SAME normalizer the narrative is read by.
+    """
+    numbers: set[Decimal] = set()
+    for text in _walk(asdict(facts)):
+        numbers |= numbers_in(text)
+    return numbers
+
+
+def as_payload(facts: ReportFacts) -> dict[str, Any]:
+    """JSON-safe facts for the prompt and the HTTP response. Decimals become
+    strings, per this project's money rule — JSON numbers are IEEE 754 doubles
+    and would lose the last đồng (`db/queries.budget_report`)."""
+
+    def convert(value: Any) -> Any:
+        if isinstance(value, Decimal):
+            return str(value)
+        if isinstance(value, dict):
+            return {k: convert(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [convert(v) for v in value]
+        return value
+
+    return convert(asdict(facts))
+
