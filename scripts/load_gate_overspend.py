@@ -13,7 +13,8 @@ of why `build_batch_graph()` -- not `make seed`, not `scripts/run_one.py` --
 is the only path that populates `app.budget_consumption` at all.
 
 WHAT IT LOADS AND WHY THESE EIGHT IDS. `corpus/manifest.jsonl` has 62
-MKT-department, July-2026 invoices (measured 2026-08-05, task-6-report.md):
+MKT-department, July-2026 invoices (measured 2026-08-05,
+docs/notes/2026-08-05-m7-mcp-surface.md §8, which names the same eight ids and their total):
 3 of them are `scripts/generator/gate_batch.GATE_BATCH_IDS`'s own MKT members
 (a different, already-declared demo batch -- deliberately NOT reused here so
 this script never collides with anything the M4 gate or its tests persist),
