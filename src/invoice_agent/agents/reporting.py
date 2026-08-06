@@ -14,6 +14,8 @@ agent's commentary explicitly.
 import re
 from decimal import Decimal, InvalidOperation
 
+from invoice_agent.agents.models import ReportCommentary
+
 # A run of digits with optional `.`/`,` groupers. Percent signs, currency words
 # and punctuation around it are not part of the token.
 _NUMBER_TOKEN = re.compile(r"\d[\d.,]*")
@@ -79,6 +81,8 @@ class ReportFacts:
     period: str
     over_budget: list[dict[str, Any]] = field(default_factory=list)
     warning: list[dict[str, Any]] = field(default_factory=list)
+    over_budget_count: int = 0
+    warning_count: int = 0
     total_overspend: Decimal = Decimal(0)
     top_flag_code: str | None = None
     top_flag_total: int = 0
@@ -149,6 +153,8 @@ def build_facts(
         period=period,
         over_budget=over_budget,
         warning=warning,
+        over_budget_count=len(over_budget),
+        warning_count=len(warning),
         total_overspend=total_overspend,
         top_flag_code=top["code"] if top else None,
         top_flag_total=int(top["total"]) if top else 0,
@@ -207,4 +213,67 @@ def as_payload(facts: ReportFacts) -> dict[str, Any]:
         return value
 
     return convert(asdict(facts))
+
+
+def fmt_vnd(amount: Decimal) -> str:
+    """`6525000.00` -> `6.525.000`. Vietnamese grouping, no currency symbol.
+
+    Rounded to whole đồng: the narrative is read by a person, and no accountant
+    writes the cents of a 35-million-đồng budget. The underlying Decimal is
+    untouched — this is a rendering, and `fact_numbers` reads the same rounded
+    value back because `numbers_in` collapses the grouping dots.
+    """
+    whole = int(amount.to_integral_value())
+    return f"{whole:,}".replace(",", ".")
+
+
+def fmt_pct(pct: Decimal) -> str:
+    """`118.6` -> `118,6`. Vietnamese decimal comma."""
+    return str(pct).replace(".", ",")
+
+
+def render_template(facts: ReportFacts) -> ReportCommentary:
+    """The non-LLM baseline every LLM metric is reported against (Principle 3).
+
+    Also the fallback when `narrate` rejects the model's commentary, so a
+    rejection degrades to plainer prose rather than to an error page.
+    """
+    if facts.over_budget:
+        summary = (
+            f"Kỳ {facts.period}: {len(facts.over_budget)} phòng ban vượt ngân sách, "
+            f"tổng vượt {fmt_vnd(facts.total_overspend)} đồng."
+        )
+    elif facts.warning:
+        summary = (
+            f"Kỳ {facts.period}: không có phòng ban nào vượt ngân sách, "
+            f"{len(facts.warning)} phòng ban đã chạm ngưỡng cảnh báo."
+        )
+    else:
+        summary = f"Kỳ {facts.period}: ngân sách các phòng ban đều trong hạn mức."
+
+    observations = []
+    for row in facts.over_budget:
+        observations.append(
+            f"{row['department']} vượt ngân sách {fmt_vnd(row['overspend'])} đồng "
+            f"(đã dùng {fmt_pct(row['pct_used'])}% hạn mức {fmt_vnd(row['limit'])} đồng)."
+        )
+    for row in facts.warning:
+        observations.append(
+            f"{row['department']} đã dùng {fmt_pct(row['pct_used'])}% hạn mức "
+            f"{fmt_vnd(row['limit'])} đồng, chưa vượt nhưng cần theo dõi."
+        )
+    if facts.top_flag_code:
+        observations.append(
+            f"Cảnh báo nhiều nhất: {facts.top_flag_code} — {facts.top_flag_total} lần, "
+            f"{facts.top_flag_open} đang mở."
+        )
+    if facts.auto_entries or facts.human_entries:
+        observations.append(
+            f"Hạch toán: {facts.auto_entries} bút toán tự động ({fmt_pct(facts.auto_pct)}%), "
+            f"{facts.human_entries} bút toán do người duyệt ({fmt_pct(facts.human_pct)}%)."
+        )
+    if not observations:
+        observations.append("Không có ghi nhận bất thường nào trong kỳ.")
+    return ReportCommentary(summary=summary, observations=observations)
+
 

@@ -110,3 +110,35 @@ def test_fact_numbers_include_numbers_hiding_inside_string_values():
 def test_a_number_nobody_computed_is_not_a_fact():
     assert Decimal("8000000") not in reporting.fact_numbers(_facts())
 
+
+def test_template_narrates_the_breach_in_vietnamese():
+    c = reporting.render_template(_facts())
+    assert "MKT" in c.summary or any("MKT" in o for o in c.observations)
+    assert "6.525.000" in " ".join([c.summary, *c.observations])
+
+
+def test_the_template_says_no_number_it_was_not_given():
+    """Fidelity 1.0 'by construction' is exactly the kind of claim this
+    project's reviews keep disproving, so it is measured like any other."""
+    facts = _facts()
+    c = reporting.render_template(facts)
+    said = reporting.numbers_in(" ".join([c.summary, *c.observations]))
+    assert said <= reporting.fact_numbers(facts), said - reporting.fact_numbers(facts)
+
+
+def test_template_handles_a_period_with_nothing_wrong():
+    facts = reporting.build_facts(
+        period="2026-08",
+        budgets=[],
+        flags=[],
+        posting=[],
+        cost={"calls": 0, "succeeded": 0, "cost_usd": "0", "shadow_cost_usd": "0"},
+        spend=[],
+    )
+    c = reporting.render_template(facts)
+    assert c.summary
+    assert reporting.numbers_in(" ".join([c.summary, *c.observations])) <= reporting.fact_numbers(
+        facts
+    )
+
+
