@@ -215,3 +215,26 @@ def test_list_invoices_passes_filters_through(api, committed_rows):
     assert str(db_id) in [r["id"] for r in hit]
     assert str(db_id) not in [r["id"] for r in miss]
 
+
+def test_commentary_round_trips_through_the_real_route(api, monkeypatch):
+    """The UI is an HTTP client and nothing else — the M5-D boundary. A Streamlit
+    page importing `agents.reporting` directly would leave M5-C's only consumer
+    bypassing the API, which the existing UI source guard forbids.
+
+    The gateway is made unreachable for the same reason as in
+    `tests/test_reports_api.py`: `make check` must not call a provider."""
+    from invoice_agent.api.routes import reports
+    from invoice_agent.llm.cache import LLMReplayMiss
+
+    class _Unreachable:
+        def generate(self, *a, **kw):
+            raise LLMReplayMiss("no fixture in tests")
+
+    monkeypatch.setattr(reports, "LLMGateway", lambda *a, **kw: _Unreachable())
+
+    body = ui.commentary("2026-07", client=api)
+    assert body["period"] == "2026-07"
+    assert body["source"] == "template"
+    assert isinstance(body["observations"], list)
+
+

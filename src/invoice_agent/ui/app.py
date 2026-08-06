@@ -132,14 +132,48 @@ def page_detail() -> None:
 
 def page_reports() -> None:
     st.header("Báo cáo")
+
+    period = st.text_input("Kỳ (YYYY-MM)", value="2026-07")
+    note = _guard(api.commentary, period)
+    if note:
+        st.info(note["summary"])
+        for line in note["observations"]:
+            st.write(f"- {line}")
+        # Which one wrote it is not decoration: the model's version is used only
+        # when every number in it is one Python computed (agents/reporting.py).
+        st.caption(f"Nguồn nhận xét: {note['source']}")
+
+    budgets = _guard(api.budget_report) or []
     st.subheader("Ngân sách")
-    st.dataframe(_guard(api.budget_report) or [], use_container_width=True)
+    if budgets:
+        # float() is DISPLAY ONLY. Money is Decimal everywhere else in this
+        # system (M1); a float that reached the API or the database would lose
+        # the last đồng. st.bar_chart cannot plot Decimal.
+        chart = {
+            row["department_code"]: {
+                "Hạn mức": float(row["amount_limit"]),
+                "Đã dùng": float(row["consumed"]),
+            }
+            for row in budgets
+        }
+        st.bar_chart(chart)
+    st.dataframe(budgets, use_container_width=True)
+
+    flags = _guard(api.flag_report) or []
     st.subheader("Cảnh báo theo mã")
-    st.dataframe(_guard(api.flag_report) or [], use_container_width=True)
+    if flags:
+        st.bar_chart({row["code"]: row["total"] for row in flags})
+    st.dataframe(flags, use_container_width=True)
+
+    posting = _guard(api.posting_report) or []
     st.subheader("Hạch toán tự động vs người duyệt")
-    st.dataframe(_guard(api.posting_report) or [], use_container_width=True)
+    if posting:
+        st.bar_chart({row["posting_authority"]: row["entries"] for row in posting})
+    st.dataframe(posting, use_container_width=True)
+
     st.subheader("Chi phí LLM")
     st.json(_guard(api.cost_report) or {})
+
 
 
 def main() -> None:

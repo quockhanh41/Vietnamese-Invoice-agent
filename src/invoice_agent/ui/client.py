@@ -204,3 +204,11 @@ def departments(*, client: httpx.Client | None = None) -> list[str]:
     return sorted({row["department_code"] for row in budget_report(client=client)})
 
 
+def commentary(period: str, *, client: httpx.Client | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = _get(
+        "/reports/commentary", client=client, params={"period": period}
+    )
+    return result
+
+
+
