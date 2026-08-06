@@ -10,6 +10,7 @@ The narrative is VIETNAMESE: a human reads it, so CLAUDE.md's product-output
 exception applies and it must not be translated.
 """
 
+import pathlib
 import uuid
 
 from invoice_agent.domain import findings
@@ -33,16 +34,42 @@ def test_explaining_an_invoice_with_no_flags_says_so_rather_than_returning_empty
     assert result.summary_vi != ""
 
 
-def test_no_gateway_call_happens(monkeypatch):
-    """Mutation-proof: if someone later routes this through a model, this fails."""
+def test_no_gateway_call_happens(monkeypatch, runtime_conn):
+    """Mutation-proof: if someone later routes this through a model, this fails.
+
+    Patches all three of `LLMGateway`'s entry points -- `generate`,
+    `generate_with_model` (gateway.py:359) and `generate_stream` (gateway.py:511)
+    -- not just `generate`, and calls the real `explain_flags(conn, invoice_id)`
+    under the patch, not just `render()`. `render()` alone is a pure `str.format`
+    that could never reach a gateway call regardless of what `explain_flags`
+    itself does; the plausible regression this guards against is an
+    LLM-generated `summary_vi` inside `explain_flags()`, which only calling the
+    real function can catch.
+    """
     from invoice_agent.llm import gateway as gw
 
     def _boom(*a, **k):
         raise AssertionError("explain_flags must not call an LLM")
 
     monkeypatch.setattr(gw.LLMGateway, "generate", _boom)
-    text = explain.render(findings.NEW_VENDOR, {})
-    assert text
+    monkeypatch.setattr(gw.LLMGateway, "generate_with_model", _boom)
+    monkeypatch.setattr(gw.LLMGateway, "generate_stream", _boom)
+
+    result = explain.explain_flags(runtime_conn, uuid.uuid4())
+    assert result.summary_vi != ""
+
+
+def test_explain_module_imports_no_llm_gateway():
+    """Structural guard, mirroring `tests/test_ui_boundary.py`'s shape: not
+    satisfiable by behaviour alone, since a behavioural test only proves the
+    gateway wasn't CALLED, not that the import doesn't exist waiting to be used.
+
+    This note's own record (docs/notes/2026-08-05-m7-mcp-surface.md §3) already
+    asserted "nothing in `tools/explain.py` imports `invoice_agent.llm.gateway`
+    at all" -- true, but with no test behind it until now.
+    """
+    source = pathlib.Path("src/invoice_agent/tools/explain.py").read_text(encoding="utf-8")
+    assert "invoice_agent.llm" not in source, "tools/explain.py must not import the LLM gateway"
 
 
 def test_render_with_a_missing_detail_key_renders_a_placeholder_not_a_crash():
