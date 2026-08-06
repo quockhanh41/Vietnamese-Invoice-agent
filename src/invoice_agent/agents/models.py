@@ -63,3 +63,20 @@ class AuditVerdict(BaseModel):
     proposed_category: CATEGORIES | None = None
     proposed_department: DEPARTMENTS | None = None
     reason: str
+
+
+class ReportCommentary(BaseModel):
+    """Period commentary — prose only.
+
+    Deliberately has no numeric field. Numbers come from `ReportFacts`, which
+    Python computes; `agents.reporting.narrate` rejects any commentary quoting a
+    number that is not in them. A numeric field here would be a channel for the
+    model to assert a figure the dashboard never computed, and the reader could
+    not tell which was which.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    summary: str
+    observations: list[str]
+
